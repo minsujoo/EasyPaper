@@ -551,17 +551,33 @@ async def check_ollama_health() -> dict:
         return {"status": "error", "detail": str(e), "model_available": False}
 
 
+# 문서(session_id)당 하나의 Claude Code 대화 세션만 사용하도록 직렬화하는 락.
+# 번역/채팅/카테고리 태깅 호출이 모두 같은 --session-id를 공유하므로,
+# 동시 호출이 세션 생성/재개 순서를 어긋나게 하지 않도록 보장한다.
+_claude_code_session_locks: dict = {}
+
+
+def _get_claude_code_session_lock(session_id: str):
+    import asyncio
+    if not session_id:
+        return asyncio.Lock()
+    if session_id not in _claude_code_session_locks:
+        _claude_code_session_locks[session_id] = asyncio.Lock()
+    return _claude_code_session_locks[session_id]
+
+
 async def stream_claude_code(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
     import asyncio
     import os
-    
+    import codecs
+
     claude_path = get_claude_code_path()
     if not os.path.exists(claude_path):
         claude_path = "claude"
-        
+
     # --print - : stdin으로 프롬프트를 받아 처리 (--print 인자로 넘기면 Claude가 수학 기호를 _MB_N 으로 치환하는 버그 발생)
-    cmd = [claude_path, "--permission-mode", "dontAsk", "--output-format", "text", "--print", "-"]
-    
+    base_cmd = [claude_path, "--permission-mode", "dontAsk", "--output-format", "text", "--print", "-"]
+
     # Prepare custom HOME for Claude Code session isolation to prevent concurrent locks
     env = get_agy_env()
     if session_id:
@@ -570,19 +586,18 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         home_dir = os.path.join(cache_dir, f"claude_home_{session_id}")
         claude_dir = os.path.join(home_dir, ".claude")
         os.makedirs(claude_dir, exist_ok=True)
-        
+
         orig_credentials = os.path.expanduser("~/.claude/.credentials.json")
         dest_credentials = os.path.join(claude_dir, ".credentials.json")
         if os.path.exists(orig_credentials) and not os.path.exists(dest_credentials):
             shutil.copy2(orig_credentials, dest_credentials)
-            
+
         orig_settings = os.path.expanduser("~/.claude/settings.json")
         dest_settings = os.path.join(claude_dir, "settings.json")
         if os.path.exists(orig_settings) and not os.path.exists(dest_settings):
             shutil.copy2(orig_settings, dest_settings)
-            
+
         env["HOME"] = home_dir
-        cmd.extend(["--session-id", session_id])
 
     # model 값이 'sonnet|high' 처럼 파이프(|)로 모델과 effort를 구분할 수 있음
     model_name = None
@@ -597,9 +612,9 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
             model_name = raw
 
     if model_name:
-        cmd.extend(["--model", model_name])
+        base_cmd.extend(["--model", model_name])
     if effort_level:
-        cmd.extend(["--effort", effort_level])
+        base_cmd.extend(["--effort", effort_level])
 
     # 프롬프트에 직접 출력 포맷 지시 추가 (뷰어가 markdown+LaTeX를 렌더링하므로 그대로 출력 허용)
     guided_prompt = (
@@ -610,6 +625,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         "Start the output immediately.\n\n"
         f"{prompt}"
     )
+    encoded_prompt = guided_prompt.encode("utf-8")
 
     try:
         from services.usage_tracker import record_call
@@ -617,43 +633,71 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     except Exception:
         pass
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env
-        )
-        
-        # 프롬프트를 stdin으로 전달 후 닫기
-        encoded_prompt = guided_prompt.encode("utf-8")
-        process.stdin.write(encoded_prompt)
-        await process.stdin.drain()
-        process.stdin.close()
-        
-        import codecs
-        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        
-        while True:
-            chunk = await process.stdout.read(1024)
-            if not chunk:
-                break
-            decoded = decoder.decode(chunk)
-            if decoded:
-                yield decoded
-        
-        final_decoded = decoder.decode(b"", final=True)
-        if final_decoded:
-            yield final_decoded
-            
-        await process.wait()
-        
-        if process.returncode and process.returncode != 0:
-            stderr_out = await process.stderr.read()
-            print(f"[Claude Code CLI Error] code={process.returncode} stderr={stderr_out.decode('utf-8', errors='replace')}")
-    except Exception as e:
-        print(f"[Claude Code CLI Exec Error] {e}")
+    # 한 문서(session_id)는 하나의 Claude Code 세션만 사용한다:
+    # 처음에는 --resume으로 기존 세션 이어붙이기를 시도하고, 세션이 아직 없으면(최초 호출)
+    # "No conversation found" 에러를 받고 --session-id로 새로 생성한다.
+    # 같은 --session-id로 두 번 세션을 생성하려 하면 CLI가 즉시
+    # "Session ID ... is already in use" 에러로 죽기 때문에, 최초 1회를 제외하고는
+    # 항상 --resume을 써야 한다.
+    session_flag = ["--resume", session_id] if session_id else []
+
+    lock = _get_claude_code_session_lock(session_id)
+    async with lock:
+        for attempt in range(2):
+            cmd = base_cmd + session_flag
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
+                )
+
+                process.stdin.write(encoded_prompt)
+                await process.stdin.drain()
+                process.stdin.close()
+
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                produced_output = False
+
+                while True:
+                    chunk = await process.stdout.read(1024)
+                    if not chunk:
+                        break
+                    decoded = decoder.decode(chunk)
+                    if decoded:
+                        produced_output = True
+                        yield decoded
+
+                final_decoded = decoder.decode(b"", final=True)
+                if final_decoded:
+                    produced_output = True
+                    yield final_decoded
+
+                await process.wait()
+
+                if process.returncode == 0:
+                    return
+
+                stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+
+                # --resume 대상 세션이 아직 존재하지 않는 최초 호출인 경우에만
+                # --session-id로 세션을 새로 만들며 1회 재시도한다.
+                if (
+                    not produced_output
+                    and attempt == 0
+                    and session_flag[:1] == ["--resume"]
+                    and "No conversation found" in stderr_out
+                ):
+                    session_flag = ["--session-id", session_id]
+                    continue
+
+                print(f"[Claude Code CLI Error] code={process.returncode} stderr={stderr_out}")
+                return
+            except Exception as e:
+                print(f"[Claude Code CLI Exec Error] {e}")
+                return
 
 
 def get_mapped_conversation_id(session_id: str) -> str:
