@@ -656,6 +656,43 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         print(f"[Claude Code CLI Exec Error] {e}")
 
 
+def get_mapped_conversation_id(session_id: str) -> str:
+    if not session_id:
+        return None
+    import os
+    from config import LIBRARY_DIR
+    path = os.path.join(LIBRARY_DIR, session_id, "conversation_id.txt")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return None
+
+def save_mapped_conversation_id(session_id: str, conversation_id: str) -> None:
+    if not session_id or not conversation_id:
+        return
+    import os
+    from config import LIBRARY_DIR
+    path = os.path.join(LIBRARY_DIR, session_id, "conversation_id.txt")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(conversation_id.strip())
+    except Exception as e:
+        print(f"[save_mapped_conversation_id Error] {e}")
+
+def get_existing_conversations() -> set:
+    import glob
+    import os
+    try:
+        db_files = glob.glob("/home/ubuntu/.gemini/antigravity-cli/conversations/*.db")
+        return {os.path.basename(f)[:-3] for f in db_files}
+    except Exception:
+        return set()
+
+
 async def stream_antigravity(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
     import asyncio
     import os
@@ -664,13 +701,20 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
     if not os.path.exists(agy_path):
         agy_path = "agy"
         
+    mapped_conv_id = get_mapped_conversation_id(session_id)
+    target_conv_id = mapped_conv_id if mapped_conv_id else session_id
+
     cmd = [agy_path, "--dangerously-skip-permissions"]
     if model and model.strip() and model.strip().lower() != "custom":
         cmd.extend(["--model", model.strip()])
-    if session_id:
-        cmd.extend(["--conversation", session_id])
+    if target_conv_id:
+        cmd.extend(["--conversation", target_conv_id])
 
-    # agy --print 는 단일 프롬프트를 받아 출력을 스트리밍함
+    # 만약 기존에 매핑된 conversation ID가 없다면, 백그라운드에서 새로 생성되는 ID를 감지해 저장함
+    before_set = set()
+    if session_id and not mapped_conv_id:
+        before_set = get_existing_conversations()
+
     # 충분한 제약을 주어서 확실하게 완전한 출력을 유도
     guided_prompt = (
         "You are a direct-output assistant. "
@@ -696,6 +740,20 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             env=get_agy_env()
         )
         
+        # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
+        if session_id and not mapped_conv_id:
+            async def detect_and_save():
+                for _ in range(20): # 최대 10초 대기
+                    await asyncio.sleep(0.5)
+                    current_set = get_existing_conversations()
+                    new_ids = current_set - before_set
+                    if new_ids:
+                        new_id = list(new_ids)[0]
+                        save_mapped_conversation_id(session_id, new_id)
+                        print(f"[stream_antigravity] Mapped session {session_id} to new Antigravity conversation {new_id}")
+                        break
+            asyncio.create_task(detect_and_save())
+
         import codecs
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         
