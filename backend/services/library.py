@@ -138,13 +138,48 @@ def list_documents(
     return docs
 
 
+def delete_chat_sessions(doc_id: str) -> None:
+    """논문 삭제 시 연동된 Claude Code 및 Antigravity 채팅 세션을 삭제합니다."""
+    # 1. Claude Code 세션 캐시 디렉터리 삭제
+    cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
+    claude_home = os.path.join(cache_dir, f"claude_home_{doc_id}")
+    if os.path.exists(claude_home):
+        try:
+            shutil.rmtree(claude_home, ignore_errors=True)
+            print(f"[delete_chat_sessions] Deleted Claude Code session directory: {claude_home}")
+        except Exception as e:
+            print(f"[delete_chat_sessions Claude Code Error] {e}")
+
+    # 2. Antigravity 세션 삭제
+    conv_txt_path = os.path.join(LIBRARY_DIR, doc_id, "conversation_id.txt")
+    if os.path.exists(conv_txt_path):
+        try:
+            with open(conv_txt_path, "r", encoding="utf-8") as f:
+                conv_id = f.read().strip()
+            if conv_id:
+                # conversations/<conv_id>.db 파일 삭제
+                db_path = f"/home/ubuntu/.gemini/antigravity-cli/conversations/{conv_id}.db"
+                if os.path.exists(db_path):
+                    os.remove(db_path)
+                    print(f"[delete_chat_sessions] Deleted Antigravity conversation db: {db_path}")
+                # brain/<conv_id>/ 디렉터리 삭제
+                brain_dir = f"/home/ubuntu/.gemini/antigravity-cli/brain/{conv_id}"
+                if os.path.exists(brain_dir):
+                    shutil.rmtree(brain_dir, ignore_errors=True)
+                    print(f"[delete_chat_sessions] Deleted Antigravity brain directory: {brain_dir}")
+        except Exception as e:
+            print(f"[delete_chat_sessions Antigravity Error] {e}")
+
+
 def delete_document(doc_id: str) -> bool:
     """라이브러리에서 문서 파일 및 데이터베이스 레코드를 삭제합니다."""
     doc_dir = os.path.join(LIBRARY_DIR, doc_id)
-    # 1. 파일 삭제
+    # 1. 채팅 세션 삭제
+    delete_chat_sessions(doc_id)
+    # 2. 파일 삭제
     if os.path.exists(doc_dir):
         shutil.rmtree(doc_dir, ignore_errors=True)
-    # 2. DB 삭제
+    # 3. DB 삭제
     return db_delete_document(doc_id)
 
 
