@@ -46,37 +46,79 @@ def _extract_page(page: fitz.Page, page_num: int) -> Dict[str, Any]:
     }
 
 
+# 블록 폭이 페이지 폭의 이 비율 이상이면 "전체 폭" 블록(제목/헤더/푸터/전체 폭 표 등)으로 간주.
+# 일반적인 2단 컬럼 블록은 여백/거터를 제외하면 페이지 폭의 절반 미만이므로 안전하게 구분됨.
+_WIDE_BLOCK_RATIO = 0.6
+
+
+def _classify_block(block: tuple, page_width: float, mid: float) -> str:
+    """블록을 'wide'(전체 폭) / 'left' / 'right' 중 하나로 분류합니다."""
+    x0, y0, x1, y1 = block[0], block[1], block[2], block[3]
+    if (x1 - x0) >= page_width * _WIDE_BLOCK_RATIO:
+        return "wide"
+    return "left" if (x0 + x1) / 2 < mid else "right"
+
+
 def _detect_two_column(blocks: list, page_width: float) -> bool:
-    """2단 레이아웃 여부를 감지합니다."""
+    """2단 레이아웃 여부를 감지합니다.
+
+    PyMuPDF는 한 컬럼 전체를 하나의 큰 블록으로 병합하는 경우가 많아
+    블록 '개수' 비율로 판단하면 (예: 좌측 5개 vs 우측 1개) 실제로는 2단인데도
+    감지에 실패한다. 따라서 블록 개수가 아니라 좌/우에 배치된 텍스트의 '글자 수'로 판단한다.
+    """
     if not blocks:
         return False
 
     mid = page_width / 2
-    left_blocks = [b for b in blocks if b[2] < mid * 1.1 and b[0] < mid]
-    right_blocks = [b for b in blocks if b[0] > mid * 0.9]
+    left_chars = 0
+    right_chars = 0
+    for b in blocks:
+        kind = _classify_block(b, page_width, mid)
+        if kind == "left":
+            left_chars += len(b[4])
+        elif kind == "right":
+            right_chars += len(b[4])
 
-    # 좌우 블록이 비슷한 수라면 2단 레이아웃
-    total = len(blocks)
-    if total < 4:
-        return False
-
-    left_ratio = len(left_blocks) / total
-    right_ratio = len(right_blocks) / total
-    return left_ratio > 0.3 and right_ratio > 0.3
+    # 양쪽 모두 최소한의 본문 분량(약 30~40단어 이상)이 있어야 진짜 2단 레이아웃으로 판단
+    return left_chars > 200 and right_chars > 200
 
 
 def _sort_two_column(blocks: list, page_width: float) -> list:
-    """2단 레이아웃 블록을 읽기 순서(좌단 → 우단)로 정렬합니다."""
+    """2단 레이아웃 블록을 읽기 순서(좌단 전체 → 우단 전체)로 정렬합니다.
+
+    전체 블록을 y좌표 순으로 훑다가 제목/헤더/푸터처럼 전체 폭을 차지하는 블록을
+    만나면, 그때까지 쌓인 좌단 블록을 전부(y순) 배출한 뒤 우단 블록을 전부(y순) 배출하고,
+    그 다음 전체 폭 블록을 배출한다. 이렇게 해야 오른쪽 컬럼의 시작 y좌표가 왼쪽 컬럼의
+    특정 문단과 우연히 비슷해도(예: Abstract와 우측 본문이 같은 높이에서 시작) 좌단을
+    끝까지 읽은 뒤 우단으로 넘어가는 순서가 보장된다.
+    """
     mid = page_width / 2
-    left = sorted(
-        [b for b in blocks if (b[0] + b[2]) / 2 < mid],
-        key=lambda b: b[1]
-    )
-    right = sorted(
-        [b for b in blocks if (b[0] + b[2]) / 2 >= mid],
-        key=lambda b: b[1]
-    )
-    return left + right
+    ordered = sorted(blocks, key=lambda b: b[1])  # y0 순
+
+    result = []
+    left_buf: list = []
+    right_buf: list = []
+
+    def flush():
+        left_buf.sort(key=lambda b: b[1])
+        right_buf.sort(key=lambda b: b[1])
+        result.extend(left_buf)
+        result.extend(right_buf)
+        left_buf.clear()
+        right_buf.clear()
+
+    for b in ordered:
+        kind = _classify_block(b, page_width, mid)
+        if kind == "wide":
+            flush()
+            result.append(b)
+        elif kind == "left":
+            left_buf.append(b)
+        else:
+            right_buf.append(b)
+
+    flush()
+    return result
 
 
 def _build_text(blocks: list) -> str:
