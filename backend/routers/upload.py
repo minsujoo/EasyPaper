@@ -175,6 +175,10 @@ async def delete_session(session_id: str):
 
     session = sessions.pop(session_id)
     session_dir = os.path.dirname(session["pdf_path"])
+    
+    from services.library import delete_chat_sessions
+    delete_chat_sessions(session_id)
+    
     shutil.rmtree(session_dir, ignore_errors=True)
 
     from services.cache import clear_session_cache

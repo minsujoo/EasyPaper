@@ -70,7 +70,7 @@ async def chat_stream(data: ChatRequest):
         yield " "
         full_response = []
         try:
-            async for token in stream_chat(system_prompt, history_messages):
+            async for token in stream_chat(system_prompt, history_messages, session_id=session_id):
                 full_response.append(token)
                 yield token
             
