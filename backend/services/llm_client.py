@@ -781,7 +781,7 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
 
 from typing import List
 
-async def classify_paper_category(title: str, text: str) -> List[str]:
+async def classify_paper_category(title: str, text: str, session_id: str = None) -> List[str]:
     prompt = f"""You are an academic paper classifier. Analyze the following paper title and beginning text (abstract) and classify it into one or two specific sub-categories of computer science / artificial intelligence (e.g. LLM, VLM, VLA, VAE, GAN, Diffusion, Optimizer, Object Detection, Segmentation, Speech Synthesis, RL, GNN, Transformer, etc.).
 Output ONLY the category name(s) as a comma-separated list of words (e.g., "LLM" or "LLM, VLM" or "GAN, VAE" or "Optimizer"). Do not include any explanations, introduction, punctuation (other than commas), or markdown formatting. Keep the tags concise and uppercase if appropriate.
 
@@ -810,10 +810,10 @@ Category Tags:"""
             async for token in stream_claude(messages, model=model, temperature=0.1):
                 tokens.append(token)
         elif provider == "antigravity":
-            async for token in stream_antigravity(prompt, model=model):
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id):
                 tokens.append(token)
         elif provider == "claude_code":
-            async for token in stream_claude_code(prompt, model=model):
+            async for token in stream_claude_code(prompt, model=model, session_id=session_id):
                 tokens.append(token)
         else:
             # Fallback to Ollama chat api

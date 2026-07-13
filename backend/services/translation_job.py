@@ -247,7 +247,7 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
             from services.llm_client import classify_paper_category
             from services.library import update_document_metadata
             
-            tags = await classify_paper_category(doc_title, combined_text)
+            tags = await classify_paper_category(doc_title, combined_text, session_id=session_id)
             if tags:
                 doc = get_document(session_id)
                 if doc:
