@@ -562,7 +562,7 @@ function formatTranslationHtml(text) {
     if (!item) return _
     if (window.katex) {
       try {
-        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'html' })
+        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'htmlAndMathml' })
         if (item.display) {
           return `<div class="katex-display-wrap" data-formula="${encodeURIComponent(item.formula)}" data-display="true">${r}</div>`
         } else {
@@ -587,7 +587,7 @@ function applyKatexToElement(el) {
     try {
       const formula = decodeURIComponent(code.dataset.formula || '')
       const display = code.dataset.display === 'true'
-      const r = window.katex.renderToString(formula, { displayMode: display, throwOnError: false, output: 'html' })
+      const r = window.katex.renderToString(formula, { displayMode: display, throwOnError: false, output: 'htmlAndMathml' })
       const wrapper = display
         ? Object.assign(document.createElement('div'), { className: 'katex-display-wrap', innerHTML: r })
         : Object.assign(document.createElement('span'), { className: 'katex-inline-wrap', innerHTML: r })
@@ -4146,7 +4146,7 @@ function formatChatHtml(text) {
     if (!item) return _
     if (window.katex) {
       try {
-        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'html' })
+        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'htmlAndMathml' })
         if (item.display) {
           return `<div class="katex-display-wrap" data-formula="${encodeURIComponent(item.formula)}" data-display="true">${r}</div>`
         } else {
