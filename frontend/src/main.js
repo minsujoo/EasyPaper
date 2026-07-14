@@ -5166,36 +5166,29 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
 //  3. Native Selection 보존: 브라우저 기본 텍스트 드래그/선택 완전 보존
 //
 // buildVirtualTextMap: textLayer 내부 스팬을 읽어 가상 텍스트 인덱스 맵 구성 (DOM 비수정)
-// PDF.js 텍스트 레이어의 left/top은 px 리터럴이 아니라 "18.24%"처럼 퍼센트 문자열이거나
-// "round(var(--scale-factor) * 612px, 1px)" 같은 CSS 수식 문자열일 수 있다.
-// px 단위만 찾는 정규식으로는 항상 매치에 실패해 모든 좌표가 0으로 취급되어 버리므로,
-// 퍼센트 단위는 실제 렌더링된 컨테이너 크기(dimensionPx) 기준의 px 값으로 환산한다.
-function parsePositionPx(styleValue, dimensionPx) {
-  if (!styleValue) return 0;
-  const pctMatch = styleValue.match(/([\d.-]+)%/);
-  if (pctMatch) return (parseFloat(pctMatch[1]) / 100) * dimensionPx;
-  const pxMatch = styleValue.match(/([\d.-]+)px/);
-  if (pxMatch) return parseFloat(pxMatch[1]);
-  return 0;
-}
-
 function buildVirtualTextMap(container, pageNum) {
   const allElements = Array.from(container.children).filter(el => el.nodeType === 1);
   if (allElements.length === 0) return null;
 
-  // style.width/height는 "round(var(--scale-factor) * 612px, 1px)" 같은 CSS 수식일 수 있어
-  // parseFloat로 직접 읽을 수 없으므로, 실제 렌더링된 픽셀 크기(clientWidth/Height)를 사용한다.
-  const pageWidth  = container.clientWidth  || parseFloat(container.style.width)  || 600;
-  const pageHeight = container.clientHeight || parseFloat(container.style.height) || 792;
+  // left/top을 el.style.left/top 문자열(px, %, calc() 등 PDF.js 버전·문서마다 다를 수
+  // 있음)로 역산하는 대신, 브라우저가 실제로 계산한 렌더링 좌표(getBoundingClientRect)를
+  // 컨테이너 기준 상대좌표로 직접 사용한다. 이전에 퍼센트 단위를 컨테이너 크기 기준으로
+  // 환산하는 방식을 썼었는데, 일부 문서에서는 그 환산값이 실제 렌더링 위치와 수십~백
+  // px씩 어긋났다(원인 불명 - 아마도 PDF.js가 퍼센트의 기준으로 삼는 상자와 textLayer의
+  // clientWidth/Height가 문서에 따라 정확히 일치하지 않는 경우가 있는 듯하다). 실제
+  // 렌더링 좌표를 직접 읽으면 이런 불일치가 원천적으로 발생하지 않는다.
+  const containerRect = container.getBoundingClientRect();
+  const pageWidth  = container.clientWidth  || containerRect.width  || 600;
 
   // 줄 번호 필터링 + 노드 메타데이터 수집
   const spans = [];
   allElements.forEach(el => {
     const text = el.textContent.trim();
-    const leftVal   = parsePositionPx(el.style.left, pageWidth);
-    const topVal    = parsePositionPx(el.style.top, pageHeight);
+    const rect = el.getBoundingClientRect();
+    const leftVal   = rect.left - containerRect.left;
+    const topVal    = rect.top  - containerRect.top;
     const fsMatch   = el.style.fontSize?.match(/([\d.]+)/);
-    const fsVal     = fsMatch   ? parseFloat(fsMatch[1])   : 10;
+    const fsVal     = fsMatch   ? parseFloat(fsMatch[1])   : (rect.height || 10);
     const ratio     = leftVal / pageWidth;
 
     // 줄 번호: 3~4자리 숫자, 좌측 마진 8% 이내
@@ -5223,13 +5216,20 @@ function buildVirtualTextMap(container, pageNum) {
   // 그 줄의 세로 구간(envelope)을 확장해 나가는 구간 병합(interval merging) 방식을 쓴다.
   // 첨자처럼 조금씩 어긋나는 스팬들은 서로 겹치는 구간이 연쇄적으로 이어지므로 같은
   // 줄로 안전하게 묶이고, 실제 다른 줄은 세로 구간 자체가 겹치지 않으므로 섞이지 않는다.
+  // 세로 구간 폭은 fontSize에 비례시키지 않는다 - 논문마다 실제 줄간격 대비
+  // fontSize 비율이 달라서(빽빽하게 조판된 2단 논문 등), fontSize를 그대로 쓰면
+  // 한 줄의 구간이 바로 다음 줄까지 삼켜버리고 그게 연쇄적으로 이어져 문단 여러
+  // 개가 통째로 한 줄로 합쳐지는 문제가 있었다(실측). 대신 첨자 오프셋 실측치
+  // (~6~8px)에 맞춘 고정값을 쓴다 - 이 정도면 첨자는 여전히 같은 줄로 묶이면서도,
+  // 다음 실제 줄(보통 14px 이상 떨어짐)까지 삼키지는 않는다.
+  const LINE_ENVELOPE_REACH = 8;
   function groupSpansIntoLines(spansArr) {
     const byTop = [...spansArr].sort((a, b) => a.top - b.top);
     const lines = [];
     let current = [];
     let envelopeBottom = -Infinity;
     for (const s of byTop) {
-      const sBottom = s.top + (s.fontSize || 10);
+      const sBottom = s.top + LINE_ENVELOPE_REACH;
       if (current.length === 0 || s.top < envelopeBottom) {
         current.push(s);
         envelopeBottom = Math.max(envelopeBottom, sBottom);
@@ -5245,30 +5245,60 @@ function buildVirtualTextMap(container, pageNum) {
   }
 
   // 2단 레이아웃 감지
-  // 단순히 "중앙 좌우에 각각 30% 이상 스팬이 있는가"만 보면, 폭이 넓은 단일 컬럼
-  // 페이지(문장이나 수식이 페이지 중앙을 자연스럽게 가로지르는 경우)도 좌/우 양쪽에
-  // 스팬이 골고루 분포하므로 2단으로 오판된다. 실제 2단 레이아웃이라면 두 컬럼 사이에
-  // 텍스트가 거의 없는 "거터(gutter)"가 존재해야 하므로, 중앙 근처 좁은 띠에 시작하는
-  // 스팬 비율이 충분히 낮을 때만 2단으로 판정한다.
+  // "중앙 좌우에 각각 스팬이 있는가"나 "중앙 근처에 시작하는 스팬이 적은가" 같은
+  // 집계 기반 판정은 판별력이 낮다 - 폭 넓은 단일 컬럼도, 실제 2단 컬럼도(전체 폭
+  // 제목/캡션이 섞여 있으면) 중앙 근처 스팬 비율이 비슷하게 나올 수 있다(실측: 두
+  // 경우 모두 약 13~15%). "줄 안에 큰 가로 간격이 있는가"만 보는 것도 부족하다 -
+  // 수식 번호(예: "... = f(x)      (1)")도 한 줄 안에 큰 간격을 만들기 때문에
+  // 단일 컬럼 논문에서도 다수의 줄이 큰 간격을 갖는다(실측 40%+). 진짜 거터와
+  // 수식 번호 간격의 결정적 차이는: 거터는 페이지의 모든 줄에서 항상 같은 x좌표에
+  // 나타나지만, 수식 번호 간격은 수식마다 길이가 달라 x좌표가 줄마다 들쭉날쭉하다.
+  // 그래서 "중앙 부근"인지가 아니라 "큰 간격들이 하나의 x좌표에 얼마나 몰려있는지
+  // (일관성)"로 판정한다 - 실측상 거터의 x좌표는 페이지 정중앙(pageWidth/2)이
+  // 아닐 수 있다(여백이 좌우 비대칭인 논문들이 있음).
   const mid = pageWidth / 2;
-  const leftCount  = spans.filter(n => n.left < mid * 1.05).length;
-  const rightCount = spans.filter(n => n.left > mid * 0.95).length;
-  const gutterLo = mid - pageWidth * 0.04;
-  const gutterHi = mid + pageWidth * 0.04;
-  const gutterCount = spans.filter(n => n.left >= gutterLo && n.left <= gutterHi).length;
-  const isTwoColumn = spans.length > 5
-    && (leftCount  / spans.length > 0.3)
-    && (rightCount / spans.length > 0.3)
-    && (gutterCount / spans.length < 0.05);
-
-  let sortedSpans;
-  if (isTwoColumn) {
-    const leftLines  = groupSpansIntoLines(spans.filter(n => n.left < mid));
-    const rightLines = groupSpansIntoLines(spans.filter(n => n.left >= mid));
-    sortedSpans = leftLines.flat().concat(rightLines.flat());
-  } else {
-    sortedSpans = groupSpansIntoLines(spans).flat();
+  const probeLines = groupSpansIntoLines(spans);
+  const bigGapMids = [];
+  for (const line of probeLines) {
+    let biggest = null;
+    for (let i = 0; i < line.length - 1; i++) {
+      const gap = line[i + 1].left - line[i].left;
+      if (gap > pageWidth * 0.06 && (!biggest || gap > biggest.gap)) {
+        biggest = { gap, mid: (line[i + 1].left + line[i].left) / 2 };
+      }
+    }
+    if (biggest) bigGapMids.push(biggest.mid);
   }
+  let isTwoColumn = false;
+  let gutterX = mid;
+  if (bigGapMids.length > probeLines.length * 0.3) {
+    const sorted = [...bigGapMids].sort((a, b) => a - b);
+    const medianMid = sorted[Math.floor(sorted.length / 2)];
+    const consistentCount = bigGapMids.filter(m => Math.abs(m - medianMid) < pageWidth * 0.03).length;
+    isTwoColumn = spans.length > 5
+      && probeLines.length > 3
+      && (consistentCount / probeLines.length) > 0.3;
+    if (isTwoColumn) gutterX = medianMid;
+  }
+
+  // 2단 레이아웃에서는 좌단 전체를 다 훑은 뒤 우단으로 넘어가므로, 이어붙인 배열
+  // 안에서 top이 다시 페이지 상단 값으로 되돌아가는 지점(컬럼 경계)이 생긴다.
+  // findDisplayEquationsFromVTM처럼 top 값만으로 순차적으로 "같은 줄"을 재판정하는
+  // 코드가 있으면, 이 역행 지점에서 직전 줄의 늘어난 세로 구간(envelope) 안에
+  // 다음 컬럼의 첫 줄이 우연히 걸려 두 컬럼이 하나의 "줄"로 잘못 합쳐질 수 있다.
+  // 그래서 각 스팬에 실제로 몇 번째 줄에 속하는지(lineIndex)를 미리 기록해두고,
+  // 이후 단계는 top을 다시 비교하지 않고 이 lineIndex로만 줄 경계를 판정한다.
+  let sortedSpans;
+  let lineGroups;
+  if (isTwoColumn) {
+    const leftLines  = groupSpansIntoLines(spans.filter(n => n.left < gutterX));
+    const rightLines = groupSpansIntoLines(spans.filter(n => n.left >= gutterX));
+    lineGroups = leftLines.concat(rightLines);
+  } else {
+    lineGroups = groupSpansIntoLines(spans);
+  }
+  lineGroups.forEach((line, idx) => line.forEach(s => { s.lineIndex = idx; }));
+  sortedSpans = lineGroups.flat();
 
   // 줄간격 중앙값 및 폰트 크기 중앙값 계산
   const gaps = [];
@@ -5360,21 +5390,21 @@ function findDisplayEquationsFromVTM(vtm) {
   const lines = [];
   let currentLine = [];
 
-  // groupSpansIntoLines와 동일한 구간 병합(interval merging) 방식.
-  // spans는 이미 buildVirtualTextMap에서 줄 단위로 정렬되어 들어오므로 순차적으로
-  // 세로 구간이 겹치는 동안만 같은 줄로 묶는다.
-  let envelopeBottom = -Infinity;
+  // top 값으로 줄 경계를 다시 판정하지 않는다: 2단 레이아웃에서는 좌단을 다 훑은 뒤
+  // 우단으로 넘어가면서 top이 페이지 상단 값으로 되돌아가는데, 그 지점에서 직전 줄의
+  // 늘어난 세로 구간(envelope) 안에 다음 컬럼의 첫 줄이 우연히 걸려버리면 두 컬럼
+  //전체가 하나의 "줄"로 잘못 합쳐진다(실측: 문단 여러 개가 통째로 합쳐짐). 대신
+  // buildVirtualTextMap이 이미 정확히 판정해 둔 lineIndex가 바뀔 때만 줄을 나눈다.
+  let currentLineIndex = null;
   for (const spanInfo of spans) {
     if (spanInfo.charStart === undefined || spanInfo.charEnd === undefined) continue;
-    const sBottom = spanInfo.top + (spanInfo.fontSize || 10);
-    if (currentLine.length === 0 || spanInfo.top < envelopeBottom) {
+    if (currentLine.length === 0 || spanInfo.lineIndex === currentLineIndex) {
       currentLine.push(spanInfo);
-      envelopeBottom = Math.max(envelopeBottom, sBottom);
     } else {
       lines.push(currentLine);
       currentLine = [spanInfo];
-      envelopeBottom = sBottom;
     }
+    currentLineIndex = spanInfo.lineIndex;
   }
   if (currentLine.length > 0) lines.push(currentLine);
 
