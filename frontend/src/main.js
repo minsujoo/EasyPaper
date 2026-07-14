@@ -4704,8 +4704,26 @@ if (viewerScrollContainer) {
 
 window.addEventListener('resize', hideSelectionMenu);
 
+// 문장 중간에 섞여 있는 짧은 인라인 수식 조각인지 휴리스틱으로 판단.
+// findDisplayEquationsFromVTM은 줄 전체가 수식인 "독립 수식 줄"만 찾아내므로,
+// "The extracted representation Fenc(Φmodal(...)) will..." 처럼 영문 산문 문장
+// 한가운데에 끼어 있는 짧은 수식 조각은 isEquation으로 표시되지 않는다. 선택된
+// 조각 자체가 그리스 문자/수학 기호 위주이고 영단어가 거의 없으면 수식으로 간주한다.
+function looksLikeEquationFragment(text) {
+  const t = text.trim();
+  if (!t || t.length >= 100) return false;
+  const hasMathSymbol = /[=<>+−⋅Ͱ-Ͽ∀-⋿\-*/×÷_\^\\]/.test(t);
+  if (!hasMathSymbol) return false;
+  const words = t.split(/\s+/);
+  const engWordCount = words.filter(w => {
+    const c = w.replace(/[^a-zA-Z]/g, '');
+    return c.length >= 3 && !w.startsWith('\\');
+  }).length;
+  return engWordCount <= 2;
+}
+
 // 유니코드 수식 텍스트를 LaTeX 문법으로 변환하는 휴리스틱 헬퍼 함수
-function convertRawTextToLatex(text) {
+function convertRawTextToLatex(text, inline = false) {
   let clean = text.trim();
   
   // 그리스 문자 및 수학 기호 매핑
@@ -4748,7 +4766,7 @@ function convertRawTextToLatex(text) {
   // 아래첨자 자동 교정 (예: p\theta -> p_\theta)
   clean = clean.replace(/([a-zA-Z])(\\theta|\\phi|\\mu|\\sigma|\\alpha|\\beta|\\lambda)/g, '$1_$2');
   
-  return `$$ ${clean} $$`;
+  return inline ? `$ ${clean} $` : `$$ ${clean} $$`;
 }
 
 // ── LaTeX 스마트 클립보드 인터셉터 ────────────────────────────────────────
@@ -4844,12 +4862,26 @@ document.addEventListener('copy', (e) => {
     if (overlappingSentences.length === 0) return;
 
     // 3. 각 sentenceRange에 대해 선택된 텍스트 조각을 추출하고 수식 변환 적용
-    const parts = [];
-    for (const r of overlappingSentences) {
-      const partStart = Math.max(r.charStart, selCharStart);
-      const partEnd   = Math.min(r.charEnd,   selCharEnd);
-      if (partStart >= partEnd) continue;
+    // alignSentencesToText의 정렬 결과가 드물게 서로 겹치는 범위를 만들어낼 수 있는데
+    // (예: 전역 검색 폴백이 이미 다른 문장이 차지한 구간보다 앞쪽에서 매칭되는 경우),
+    // 그대로 두면 겹치는 부분의 텍스트가 두 번 복사된다. 겹치는 후보 중에서는 더
+    // 넓은(구체적인) 범위를 우선 채택한다 - 폭이 1~2자뿐인 잔여 조각이 먼저 선택되어
+    // 실제로 맞는 넓은 범위를 밀어내는 것을 방지하기 위함이다. 채택된 범위만 다시
+    // 위치 순으로 정렬해 읽는 순서대로 이어붙인다.
+    const candidates = overlappingSentences
+      .map(r => ({ r, partStart: Math.max(r.charStart, selCharStart), partEnd: Math.min(r.charEnd, selCharEnd) }))
+      .filter(c => c.partStart < c.partEnd)
+      .sort((a, b) => (b.partEnd - b.partStart) - (a.partEnd - a.partStart));
 
+    const kept = [];
+    for (const c of candidates) {
+      if (kept.some(k => c.partStart < k.partEnd && c.partEnd > k.partStart)) continue;
+      kept.push(c);
+    }
+    kept.sort((a, b) => a.partStart - b.partStart);
+
+    const parts = [];
+    for (const { r, partStart, partEnd } of kept) {
       let text = vtm.fullText.substring(partStart, partEnd);
 
       if (r.isEquation) {
@@ -4867,6 +4899,9 @@ document.addEventListener('copy', (e) => {
           if (!latex.startsWith('$')) latex = `$ ${latex.trim()} $`;
           parts.push(' ' + latex + ' ');
         }
+      } else if (looksLikeEquationFragment(text)) {
+        // 산문 문장 중간에 섞인 짧은 인라인 수식 조각 (독립 수식 줄 감지에는 걸리지 않음)
+        parts.push(' ' + convertRawTextToLatex(text, true) + ' ');
       } else {
         // 일반 텍스트: 그대로 사용
         parts.push(text);
