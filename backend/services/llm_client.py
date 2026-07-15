@@ -28,15 +28,64 @@ async def stream_translation(
     ignore_refs: bool = False,
     doc_title: str = "",
     prev_context: str = "",
-    session_id: str = None
+    session_id: str = None,
+    page_num: int = None
 ) -> AsyncGenerator[str, None]:
     """
     Ollama /api/chat 엔드포인트를 사용해 번역 결과를 스트리밍합니다.
     사용자의 요구에 따른 언어, 번역 스타일, 제외 요소 옵션에 맞춰 프롬프트를 동적으로 구성합니다.
     """
+    provider = get_trans_provider()
+    model = get_trans_model()
+
+    # antigravity/claude code는 문서(session_id)당 세션(대화)이 실제로 이어지므로,
+    # 매 페이지마다 문체·수식·표·참고문헌 처리 규칙 전체를 통째로 반복해서 보낼
+    # 필요가 없다 - 이미 앞선 페이지에서 같은 대화 안에 전달된 지시사항을 모델이
+    # 기억하고 있다. 다만 대화가 길어질수록 규칙이 흐려질 수 있으므로, 완전히
+    # 한 번만 보내고 끝내지는 않고 5페이지마다 한 번씩 전체 규칙을 다시 리마인드
+    # 한다. 세션 개념이 없는 provider(openai/gemini/claude API/ollama)는 매 호출이
+    # 독립적이라 이 최적화가 의미가 없으므로 항상 전체 프롬프트를 보낸다. 만약
+    # provider를 중간에 바꾸면 그 문서는 처음부터 다시 번역해야 하므로(새 세션이라
+    # 이전 페이지의 지시사항을 전혀 모름), 그 경우도 page_num이 그대로 1부터
+    # 시작되어 자연히 첫 페이지에서 전체 규칙을 다시 받게 된다.
+    REMINDER_INTERVAL = 5
+    is_session_persistent = provider in ("antigravity", "claude_code")
+    is_reminder_page = (
+        page_num is None
+        or page_num == 1
+        or (page_num - 1) % REMINDER_INTERVAL == 0
+    )
+    use_short_prompt = is_session_persistent and session_id and not is_reminder_page
+
+    if use_short_prompt:
+        context_part = ""
+        if prev_context:
+            truncated_prev = prev_context[-1000:] if len(prev_context) > 1000 else prev_context
+            context_part = f"\n[참고 문맥 정보]\n- 이전 페이지/단락의 번역 결과 (참고용):\n\"\"\"\n{truncated_prev}\n\"\"\"\n"
+
+        prompt = (
+            "앞서 안내한 문체·용어·수식·표·참고문헌 처리 규칙을 동일하게 유지하며 이어지는 다음 원문을 번역하세요.\n"
+            "서론이나 설명 없이 번역 결과만 즉시 출력하세요. 입력 텍스트의 각 문장 앞에 있는 [S0], [S1] 등 문장 식별자 "
+            "태그는 번역 결과에서도 반드시 그대로, 순서를 바꾸거나 누락 없이 유지하세요.\n"
+            f"{context_part}\n"
+            f"원문:\n{text}\n\n"
+            f"{target_lang} 번역:"
+        )
+
+        if provider == "antigravity":
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id):
+                yield token
+            return
+        elif provider == "claude_code":
+            async for token in stream_claude_code(prompt, model=model, session_id=session_id):
+                yield token
+            return
+        # 세션 지속 provider가 아니면 여기 도달하지 않지만, 안전하게 아래 전체
+        # 프롬프트 경로로 흘러가도록 둔다.
+
     # 1. 번역 목적어 설정
     lang_instruction = f"다음 영어 논문 텍스트를 자연스러운 {target_lang}로 번역하세요."
-    
+
     # 2. 번역 스타일 문구 조립
     if style == "literal":
         style_instruction = f"자연스러운 직역을 수행하고 원문의 어순을 가능한 한 유지하여 단어 대조가 쉽도록 번역하세요."
@@ -108,8 +157,6 @@ async def stream_translation(
         }
     ]
 
-    provider = get_trans_provider()
-    model = get_trans_model()
     if provider == "openai":
         async for token in stream_openai(messages, model=model, temperature=0.3):
             yield token
@@ -443,17 +490,23 @@ async def stream_chat(
             record_call("chat")
         except Exception:
             pass
+        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리(우리가 보낸
+        # 논문 원문+가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번
+        # 보냈다면 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만
+        # 붙이고 이후에는 질문만 전달한다.
+        include_full_context = not _chat_context_already_sent(session_id, "antigravity")
         formatted_prompt = []
-        formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리를 가지고 있으므로,
-        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if include_full_context:
+            formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
-        
+
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
+        if include_full_context:
+            _mark_chat_context_sent(session_id, "antigravity")
         return
     elif provider == "claude_code":
         try:
@@ -461,17 +514,23 @@ async def stream_chat(
             record_call("chat")
         except Exception:
             pass
+        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리(논문 원문+
+        # 가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번 보냈다면
+        # 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만 붙이고
+        # 이후에는 질문만 전달한다.
+        include_full_context = not _chat_context_already_sent(session_id, "claude_code")
         formatted_prompt = []
-        formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리를 가지고 있으므로,
-        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if include_full_context:
+            formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
-        
+
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
+        if include_full_context:
+            _mark_chat_context_sent(session_id, "claude_code")
         return
 
     # Fallback to Ollama:
@@ -743,13 +802,62 @@ def save_ai_session_meta(session_id: str, provider: str, conversation_id: str = 
     path = _ai_session_meta_path(session_id)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+        provider_changed = existing.get("provider") != provider
+
         data = {"provider": provider}
         if conversation_id:
             data["conversation_id"] = conversation_id
+        elif not provider_changed and existing.get("conversation_id"):
+            data["conversation_id"] = existing["conversation_id"]
+
+        # provider가 바뀌면 새 네이티브 세션은 컨텍스트가 비어있으므로 채팅
+        # 풀 컨텍스트(논문 원문+가이드라인)를 다시 보내야 한다는 표시로 초기화한다.
+        # provider가 안 바뀌었으면(예: 번역 호출이 매번 이 함수를 호출) 기존
+        # chat_context_sent 값을 그대로 보존해야 채팅 쪽 최적화가 유지된다.
+        data["chat_context_sent"] = False if provider_changed else existing.get("chat_context_sent", False)
+
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception as e:
         print(f"[save_ai_session_meta Error] {e}")
+
+def _chat_context_already_sent(session_id: str, provider: str) -> bool:
+    """이 문서(session_id)의 현재 provider 네이티브 세션에 이미 채팅 풀 컨텍스트
+    (논문 원문+답변 가이드라인)를 보낸 적이 있는지 확인한다."""
+    meta = get_ai_session_meta(session_id)
+    if not meta or meta.get("provider") != provider:
+        return False
+    return bool(meta.get("chat_context_sent"))
+
+def _mark_chat_context_sent(session_id: str, provider: str) -> None:
+    """방금 이 provider 세션에 채팅 풀 컨텍스트를 보냈음을 기록한다. 기존
+    provider/conversation_id는 그대로 보존한다."""
+    if not session_id or not provider:
+        return
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    try:
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+        existing["provider"] = provider
+        existing["chat_context_sent"] = True
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(existing, f)
+    except Exception as e:
+        print(f"[_mark_chat_context_sent Error] {e}")
 
 # 하위 호환: 기존 conversation_id.txt만 남아있는 문서를 위한 폴백 판독
 def get_mapped_conversation_id(session_id: str) -> str:

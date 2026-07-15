@@ -207,7 +207,8 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
                     ignore_refs=ignore_refs,
                     doc_title=doc_title,
                     prev_context=prev_context,
-                    session_id=session_id
+                    session_id=session_id,
+                    page_num=page_num
                 )
                 # 태그 분석 및 매핑 생성
                 cleaned_translation, sentences = parse_tagged_translation(translation, src_sentences)
@@ -278,7 +279,8 @@ async def _translate_page(
     ignore_refs: bool,
     doc_title: str = "",
     prev_context: str = "",
-    session_id: str = None
+    session_id: str = None,
+    page_num: int = None
 ) -> str:
     """단일 페이지 텍스트를 번역합니다."""
     if not text:
@@ -288,7 +290,7 @@ async def _translate_page(
     for chunk_idx, chunk in enumerate(chunks):
         # 첫 청크면 이전 페이지 번역 결과 사용, 그 외에는 페이지 내 이전 청크들의 누적 번역 사용
         current_prev = prev_context if chunk_idx == 0 else "\n\n".join(results)
-        
+
         tokens: list[str] = []
         async for token in stream_translation(
             chunk,
@@ -299,7 +301,8 @@ async def _translate_page(
             ignore_refs=ignore_refs,
             doc_title=doc_title,
             prev_context=current_prev,
-            session_id=session_id
+            session_id=session_id,
+            page_num=page_num
         ):
             tokens.append(token)
         results.append("".join(tokens))
