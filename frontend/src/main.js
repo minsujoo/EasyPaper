@@ -4712,7 +4712,10 @@ window.addEventListener('resize', hideSelectionMenu);
 function looksLikeEquationFragment(text) {
   const t = text.trim();
   if (!t || t.length >= 100) return false;
-  const hasMathSymbol = /[=<>+−⋅Ͱ-Ͽ∀-⋿\-*/×÷_\^\\]/.test(t);
+  // 앞뒤가 모두 글자인 하이픈(영어 복합어 하이픈, 예: "state-of-the-art")은
+  // 수학 기호로 치지 않는다 - findDisplayEquationsFromVTM과 동일한 이유.
+  const hasMathSymbol = /[=<>+−⋅Ͱ-Ͽ∀-⋿*/×÷_\^\\]/.test(t)
+    || /(?<![a-zA-Z])-(?![a-zA-Z])/.test(t);
   if (!hasMathSymbol) return false;
   const words = t.split(/\s+/);
   const engWordCount = words.filter(w => {
@@ -5084,7 +5087,6 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
     if (idx !== -1) {
       const cleanStart = idx;
       const cleanEnd = Math.min(cleanText.length, idx + cleanSent.length);
-      
       const rawStart = cleanToRaw[cleanStart] ?? (cleanToRaw[cleanToRaw.length - 1] ?? 0);
       const lastCleanIdx = cleanEnd - 1;
       const rawEnd = (cleanToRaw[lastCleanIdx] !== undefined)
@@ -5184,6 +5186,13 @@ function buildVirtualTextMap(container, pageNum) {
   const spans = [];
   allElements.forEach(el => {
     const text = el.textContent.trim();
+    // 텍스트가 없는(공백뿐이거나 빈) 요소는 건너뛴다. PDF.js가 줄마다 끼워 넣는
+    // 빈 마커/공백 전용 스팬은 어차피 fullText에 아무 글자도 보태지 않는데,
+    // getBoundingClientRect()가 0,0 같은 퇴화된 좌표를 반환하는 경우가 있어
+    // 그대로 두면 줄 안의 최대 간격(gap) 계산이 이 가짜 좌표에 낚여 엉뚱한
+    // 위치를 거터로 오판하게 만든다(실측: 실제 텍스트는 left=88부터 시작하는데
+    // 빈 스팬이 left=0에 끼어들어 "0~88" 사이를 간격으로 오인).
+    if (!text) return;
     const rect = el.getBoundingClientRect();
     const leftVal   = rect.left - containerRect.left;
     const topVal    = rect.top  - containerRect.top;
@@ -5309,16 +5318,14 @@ function buildVirtualTextMap(container, pageNum) {
   let sortedSpans;
   let lineGroups;
   if (gutterX !== null) {
-    // 줄 단위로 "이 줄이 실제로 좌/우로 갈라져야 하는가"를 개별 판정한다.
-    //  1) 줄 폭이 좁으면(페이지 폭의 55% 미만) 한쪽 컬럼의 내용만 담고 있을
-    //     가능성이 높다 - 반대쪽 컬럼과 세로 위치가 조금 어긋나 같은 줄로 묶이지
-    //     못한 경우(제목 폰트 크기 차이 등으로 기준선이 8px 이상 어긋나는 경우)다.
-    //     이미 찾아둔 gutterX를 기준으로 스팬 단위로 좌/우를 나눈다.
-    //  2) 줄 폭이 넓어도(제목/초록처럼 페이지 폭 대부분을 차지) 그 줄 내부에
-    //     gutterX 부근의 큰 간격이 있다면 좌/우 컬럼이 한 줄로 합쳐진 것이므로
-    //     역시 분할한다.
-    //  3) 그 외(폭이 넓고 gutterX 부근에 간격도 없음)는 페이지 폭을 그대로 쓰는
-    //     단일 컬럼 줄(제목/초록 등)이므로 분할하지 않고 원래 순서 그대로 둔다.
+    // 줄 하나를 gutterX 기준으로 스팬 단위로 쪼개는 방식은 위험하다 - 좌/우 컬럼은
+    // 문단 길이가 달라 독립적으로 흐르므로, 어느 한쪽 컬럼의 줄이 유난히 길어 단어
+    // 하나가 gutterX를 살짝 넘기기만 해도(자연스러운 폭 변동) 그 단어가 반대쪽
+    // 스팬 목록에 섞여 들어가고, 우연히 비슷한 높이에 있는 반대쪽 컬럼의 무관한
+    // 내용과 하나의 줄로 잘못 합쳐지는 연쇄 문제가 생긴다(실측). 그래서 원칙을
+    // 바꾼다: 줄 내부에 실제로 큰 간격이 있는 경우에만(=이 줄 자체가 좌우 두 컬럼이
+    // 나란히 합쳐진 줄) 그 간격 위치에서 나누고, 간격이 없는 줄은 시작 위치만으로
+    // 통째로 좌/우 판정한다(줄 중간 단어가 gutterX를 넘어도 줄 자체는 쪼개지 않음).
     lineGroups = [];
     let leftBuf = [];
     let rightBuf = [];
@@ -5329,18 +5336,24 @@ function buildVirtualTextMap(container, pageNum) {
       rightBuf = [];
     };
     for (const line of probeLines) {
+      const gap = lineBiggestGap(line);
+      if (gap) {
+        for (const s of line) {
+          if (s.left < gap.mid) leftBuf.push(s); else rightBuf.push(s);
+        }
+        continue;
+      }
       const lineLeft = line[0].left;
       const lineRight = line[line.length - 1].left;
-      const isNarrow = (lineRight - lineLeft) < pageWidth * 0.55;
-      const gap = lineBiggestGap(line);
-      const hasGapAtGutter = gap && Math.abs(gap.mid - gutterX) < pageWidth * 0.05;
-      if (isNarrow || hasGapAtGutter) {
-        for (const s of line) {
-          if (s.left < gutterX) leftBuf.push(s); else rightBuf.push(s);
-        }
-      } else {
+      const isWide = (lineRight - lineLeft) >= pageWidth * 0.55;
+      if (isWide) {
+        // 폭 넓은 단일 컬럼 줄(제목/초록/헤딩 등): 누적된 좌/우 버퍼를 먼저
+        // 흘려보낸 뒤, 이 줄은 원래 세로 위치 그대로 삽입한다.
         flushColumns();
         lineGroups.push(line);
+      } else {
+        // 좁은 한쪽 컬럼 줄: 시작 위치만으로 판정해 줄 전체를 통째로 축적한다.
+        if (lineLeft < gutterX) leftBuf.push(...line); else rightBuf.push(...line);
       }
     }
     flushColumns();
@@ -5463,7 +5476,13 @@ function findDisplayEquationsFromVTM(vtm) {
     if (!lineText) continue;
 
     const hasEqNum = /[\(\[][\d\w\.]+[\]\)]\s*$/.test(lineText);
-    const hasMathSymbol = /[=<>+\u2212\u22c5\u0370-\u03ff\u2200-\u22ff\-*/\u00d7\u00f7_\^\\]/.test(lineText);
+    // \uc77c\ubc18 ASCII \ud558\uc774\ud508(-)\uc740 \uc218\ud559 \uae30\ud638 \ud310\uc815\uc5d0\uc11c \ube7c\uace0, \uae00\uc790\ub85c \ub458\ub7ec\uc2f8\uc774\uc9c0 \uc54a\uc740
+    // \uacbd\uc6b0\uc5d0\ub9cc(\uc608: "a - b", "x-1") \ubcc4\ub3c4\ub85c \uac80\uc0ac\ud55c\ub2e4. "state-of-the-art"\ucc98\ub7fc
+    // \uc55e\ub4a4\uac00 \ubaa8\ub450 \uae00\uc790\uc778 \ud558\uc774\ud508\uc740 \uc601\uc5b4 \ubcf5\ud569\uc5b4 \ud558\uc774\ud508\uc77c \ubfd0\uc778\ub370, \uc774\ub97c \uc218\uc2dd \uae30\ud638\ub85c
+    // \uc624\ud310\ud558\uba74 \uc774\ub7f0 \ub2e8\uc5b4\uac00 \ud3ec\ud568\ub41c \uc9e7\uc740 \uc904(\ud2b9\ud788 \uc904\ubc14\uafc8\uc73c\ub85c \ub2e8\uc5b4 \uc218\uac00 \uc801\uc5b4\uc9c0\ub294
+    // \ub9c8\uc9c0\ub9c9 \uc904)\uc774 \uc218\uc2dd\uc73c\ub85c \uc798\ubabb \ubd84\ub958\ub418\uc5b4 \ubb38\uc7a5 \ubc94\uc704\uac00 \uc911\uac04\uc5d0 \uc798\ub824\ub098\uac04\ub2e4(\uc2e4\uce21).
+    const hasMathSymbol = /[=<>+\u2212\u22c5\u0370-\u03ff\u2200-\u22ff*/\u00d7\u00f7_\^\\]/.test(lineText)
+      || /(?<![a-zA-Z])-(?![a-zA-Z])/.test(lineText);
     const words = lineText.split(/\s+/);
     const engWordCount = words.filter(w => {
       const c = w.replace(/[^a-zA-Z]/g, '');
@@ -5652,7 +5671,6 @@ function segmentPdfElements(container, pageNum) {
     if (!state.pdfPageSentences)  state.pdfPageSentences  = {};
     state.virtualTextMaps[pageNum]  = vtm;
     state.pdfPageSentences[pageNum] = sentenceRanges;
-
     container.dataset.segmented = 'true';
 
     // 6. 오버레이 레이어 생성 (pageWrapper 기준)
