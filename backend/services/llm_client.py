@@ -651,7 +651,8 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    env=env
+                    env=env,
+                    cwd="/home/ubuntu/programming/projects/EasyPaper"
                 )
 
                 process.stdin.write(encoded_prompt)
@@ -781,14 +782,19 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=get_agy_env()
+            env=get_agy_env(),
+            cwd="/home/ubuntu/programming/projects/EasyPaper"
         )
         
         # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
+        # 타임아웃을 60초(120회)로 대폭 늘려 생성 지연에 강인하게 함
         if session_id and not mapped_conv_id:
             async def detect_and_save():
-                for _ in range(20): # 최대 10초 대기
+                for _ in range(120): # 최대 60초 대기
                     await asyncio.sleep(0.5)
+                    # 만약 아래 wait() 이후의 최종 Sync에서 매핑에 성공했다면 조기 종료
+                    if get_mapped_conversation_id(session_id):
+                        break
                     current_set = get_existing_conversations()
                     new_ids = current_set - before_set
                     if new_ids:
@@ -814,6 +820,15 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             yield final_decoded
             
         await process.wait()
+
+        # 프로세스가 종료되었으므로 혹시 백그라운드 루프가 아직 감지하지 못했을 때를 위한 동기식 최종 Sync 및 저장
+        if session_id and not get_mapped_conversation_id(session_id):
+            current_set = get_existing_conversations()
+            new_ids = current_set - before_set
+            if new_ids:
+                new_id = list(new_ids)[0]
+                save_mapped_conversation_id(session_id, new_id)
+                print(f"[stream_antigravity] [Final Sync] Mapped session {session_id} to new Antigravity conversation {new_id}")
         
         # stderr 코드가 0이 아닌 경우 stderr 내용을 로그
         if process.returncode and process.returncode != 0:
