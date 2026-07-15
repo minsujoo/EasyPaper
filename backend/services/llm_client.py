@@ -810,6 +810,15 @@ def _build_catchup_prefix(session_id: str) -> str:
         "[요약 끝, 아래는 현재 질문]\n\n"
     )
 
+_antigravity_session_locks = {}
+
+def _get_antigravity_lock(session_id: str) -> asyncio.Lock:
+    if not session_id:
+        return None
+    if session_id not in _antigravity_session_locks:
+        _antigravity_session_locks[session_id] = asyncio.Lock()
+    return _antigravity_session_locks[session_id]
+
 async def stream_antigravity(
     prompt: str,
     model: str = None,
@@ -826,13 +835,13 @@ async def stream_antigravity(
         agy_path = "agy"
 
     # 문서(session_id)당 Antigravity 대화(conversation)를 하나만 만들어 재사용한다.
-    # 세션을 "만드는" 주체는 번역 잡 하나뿐이다 - 한 문서의 번역은 translation_job이
-    # 페이지를 순차적으로(동시성 없이) 처리하므로, 번역 쪽에서는 매핑이 없을 때만
-    # 만들면 되고 잠금(lock)이 필요 없다. 채팅/어시스턴트는 절대 세션을 새로
-    # 만들지 않고 이미 저장된 매핑만 읽는다 - 그래야 "번역 중에 사용자가 채팅으로
-    # 질문"처럼 서로 다른 두 호출이 동시에 세션을 만들려고 경합할 여지 자체가
-    # 없어진다. 아직 번역이 시작되지 않아 매핑이 없다면, 채팅은 그냥 대화 없이
-    # (--conversation 없이) 1회성으로 응답만 하고 끝난다.
+    # 번역뿐 아니라 채팅도 세션이 없으면 만들 수 있어야 한다 - "채팅은 절대 세션을
+    # 안 만든다"고 해봤더니, agy는 --conversation 없이 호출하면 그때마다 자기
+    # 내부적으로 새 임시 세션을 만들어버려서(우리가 추적만 안 할 뿐 실제로는
+    # 매번 새로 생김), 번역이 아직 세션을 못 만든 상태에서 채팅을 여러 번 쓰면
+    # 매 메시지가 새 세션을 낭비하는 문제가 실제로 있었다(실측: 채팅 3번에
+    # 새 세션 3개). 그래서 번역/채팅 둘 다 매핑이 없을 때 만들 수 있게 하되,
+    # 두 호출이 동시에 만들려는 경합만 짧게(워밍업 호출 동안만) 잠가서 막는다.
     session_meta = _get_effective_session_meta(session_id)
 
     # 이 문서를 마지막으로 쓴 provider가 antigravity가 아니면(예: claude code로
@@ -843,52 +852,60 @@ async def stream_antigravity(
 
     catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
 
-    if session_id and not target_conv_id and not is_chat:
-        log_dir = os.path.join(LIBRARY_DIR, session_id)
-        os.makedirs(log_dir, exist_ok=True)
-        temp_log_path = os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log")
+    if session_id and not target_conv_id:
+        lock = _get_antigravity_lock(session_id)
+        async with lock:
+            # 락을 기다리는 동안 다른 호출이 먼저 만들었을 수 있으므로 재확인
+            session_meta = _get_effective_session_meta(session_id)
+            provider_switched = session_meta is not None and session_meta.get("provider") != "antigravity"
+            target_conv_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
 
-        init_cmd = [agy_path, "--dangerously-skip-permissions"]
-        if model and model.strip() and model.strip().lower() != "custom":
-            init_cmd.extend(["--model", model.strip()])
-        init_cmd.extend(["--log-file", temp_log_path])
-        init_prompt = (
-            "You are a direct-output assistant. Output ONLY 'OK'.\n\n"
-            "Initialize session."
-        )
-        init_cmd.extend(["--print", init_prompt])
+            if not target_conv_id:
+                log_dir = os.path.join(LIBRARY_DIR, session_id)
+                os.makedirs(log_dir, exist_ok=True)
+                temp_log_path = os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log")
 
-        try:
-            init_proc = await asyncio.create_subprocess_exec(
-                *init_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=get_agy_env(),
-                cwd=get_project_root()
-            )
-            # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
-            # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
-            await init_proc.communicate()
+                init_cmd = [agy_path, "--dangerously-skip-permissions"]
+                if model and model.strip() and model.strip().lower() != "custom":
+                    init_cmd.extend(["--model", model.strip()])
+                init_cmd.extend(["--log-file", temp_log_path])
+                init_prompt = (
+                    "You are a direct-output assistant. Output ONLY 'OK'.\n\n"
+                    "Initialize session."
+                )
+                init_cmd.extend(["--print", init_prompt])
 
-            if os.path.exists(temp_log_path):
-                with open(temp_log_path, "r", encoding="utf-8") as lf:
-                    log_content = lf.read()
-                match = re.search(r"Created conversation\s+([a-f0-9\-]{36})", log_content)
-                if match:
-                    new_conv_id = match.group(1)
-                    save_ai_session_meta(session_id, provider="antigravity", conversation_id=new_conv_id)
-                    print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
-                    target_conv_id = new_conv_id
-                else:
-                    print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
-        except Exception as ie:
-            print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
-        finally:
-            if os.path.exists(temp_log_path):
                 try:
-                    os.remove(temp_log_path)
-                except Exception:
-                    pass
+                    init_proc = await asyncio.create_subprocess_exec(
+                        *init_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=get_agy_env(),
+                        cwd=get_project_root()
+                    )
+                    # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
+                    # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
+                    await init_proc.communicate()
+
+                    if os.path.exists(temp_log_path):
+                        with open(temp_log_path, "r", encoding="utf-8") as lf:
+                            log_content = lf.read()
+                        match = re.search(r"Created conversation\s+([a-f0-9\-]{36})", log_content)
+                        if match:
+                            new_conv_id = match.group(1)
+                            save_ai_session_meta(session_id, provider="antigravity", conversation_id=new_conv_id)
+                            print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
+                            target_conv_id = new_conv_id
+                        else:
+                            print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
+                except Exception as ie:
+                    print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
+                finally:
+                    if os.path.exists(temp_log_path):
+                        try:
+                            os.remove(temp_log_path)
+                        except Exception:
+                            pass
 
     cmd = [agy_path, "--dangerously-skip-permissions"]
     if model and model.strip() and model.strip().lower() != "custom":
