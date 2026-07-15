@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 from typing import AsyncGenerator
@@ -451,7 +452,7 @@ async def stream_chat(
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
-        async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id):
+        async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
         return
     elif provider == "claude_code":
@@ -737,27 +738,95 @@ def get_existing_conversations() -> set:
         return set()
 
 
-async def stream_antigravity(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
+_antigravity_session_locks = {}
+
+def _get_antigravity_lock(session_id: str) -> asyncio.Lock:
+    if not session_id:
+        return None
+    if session_id not in _antigravity_session_locks:
+        _antigravity_session_locks[session_id] = asyncio.Lock()
+    return _antigravity_session_locks[session_id]
+
+async def stream_antigravity(
+    prompt: str,
+    model: str = None,
+    session_id: str = None,
+    is_chat: bool = False
+) -> AsyncGenerator[str, None]:
     import asyncio
     import os
-    
+    import re
+    from config import LIBRARY_DIR
+
     agy_path = get_agy_path()
     if not os.path.exists(agy_path):
         agy_path = "agy"
-        
-    mapped_conv_id = get_mapped_conversation_id(session_id)
-    target_conv_id = mapped_conv_id if mapped_conv_id else session_id
+
+    target_conv_id = None
+
+    if session_id:
+        # 이중 확인 잠금(Double-Checked Locking)을 적용하여 동시성 레이스를 완전 방지
+        mapped_conv_id = get_mapped_conversation_id(session_id)
+        if mapped_conv_id:
+            target_conv_id = mapped_conv_id
+        else:
+            lock = _get_antigravity_lock(session_id)
+            async with lock:
+                mapped_conv_id = get_mapped_conversation_id(session_id)
+                if mapped_conv_id:
+                    target_conv_id = mapped_conv_id
+                else:
+                    # 최초 진입 태스크가 고유한 임시 로그를 지정해 대화 세션을 생성함
+                    log_dir = os.path.join(LIBRARY_DIR, session_id)
+                    os.makedirs(log_dir, exist_ok=True)
+                    temp_log_path = os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log")
+
+                    init_cmd = [agy_path, "--dangerously-skip-permissions"]
+                    if model and model.strip() and model.strip().lower() != "custom":
+                        init_cmd.extend(["--model", model.strip()])
+                    init_cmd.extend(["--log-file", temp_log_path])
+                    
+                    init_prompt = (
+                        "You are a direct-output assistant. Output ONLY 'OK'.\n\n"
+                        "Initialize session."
+                    )
+                    init_cmd.extend(["--print", init_prompt])
+
+                    try:
+                        init_proc = await asyncio.create_subprocess_exec(
+                            *init_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            env=get_agy_env(),
+                            cwd=get_project_root()
+                        )
+                        await init_proc.wait()
+
+                        if os.path.exists(temp_log_path):
+                            with open(temp_log_path, "r", encoding="utf-8") as lf:
+                                log_content = lf.read()
+                            match = re.search(r"Created conversation\s+([a-f0-9\-]{36})", log_content)
+                            if match:
+                                new_conv_id = match.group(1)
+                                save_mapped_conversation_id(session_id, new_conv_id)
+                                print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
+                                target_conv_id = new_conv_id
+                            else:
+                                print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
+                    except Exception as ie:
+                        print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
+                    finally:
+                        if temp_log_path and os.path.exists(temp_log_path):
+                            try:
+                                os.remove(temp_log_path)
+                            except Exception:
+                                pass
 
     cmd = [agy_path, "--dangerously-skip-permissions"]
     if model and model.strip() and model.strip().lower() != "custom":
         cmd.extend(["--model", model.strip()])
     if target_conv_id:
         cmd.extend(["--conversation", target_conv_id])
-
-    # 만약 기존에 매핑된 conversation ID가 없다면, 백그라운드에서 새로 생성되는 ID를 감지해 저장함
-    before_set = set()
-    if session_id and not mapped_conv_id:
-        before_set = get_existing_conversations()
 
     # 충분한 제약을 주어서 확실하게 완전한 출력을 유도
     guided_prompt = (
@@ -770,12 +839,12 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
     # 사용량 기록
     try:
         from services.usage_tracker import record_call
-        record_call("translate")
+        record_call("translate" if not is_chat else "chat")
     except Exception:
         pass
 
     cmd.extend(["--print", guided_prompt])
-    
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -784,28 +853,10 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             env=get_agy_env(),
             cwd=get_project_root()
         )
-        
-        # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
-        # 타임아웃을 60초(120회)로 대폭 늘려 생성 지연에 강인하게 함
-        if session_id and not mapped_conv_id:
-            async def detect_and_save():
-                for _ in range(120): # 최대 60초 대기
-                    await asyncio.sleep(0.5)
-                    # 만약 아래 wait() 이후의 최종 Sync에서 매핑에 성공했다면 조기 종료
-                    if get_mapped_conversation_id(session_id):
-                        break
-                    current_set = get_existing_conversations()
-                    new_ids = current_set - before_set
-                    if new_ids:
-                        new_id = list(new_ids)[0]
-                        save_mapped_conversation_id(session_id, new_id)
-                        print(f"[stream_antigravity] Mapped session {session_id} to new Antigravity conversation {new_id}")
-                        break
-            asyncio.create_task(detect_and_save())
 
         import codecs
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        
+
         while True:
             chunk = await process.stdout.read(1024)
             if not chunk:
@@ -813,27 +864,18 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             decoded = decoder.decode(chunk)
             if decoded:
                 yield decoded
-        
+
         final_decoded = decoder.decode(b"", final=True)
         if final_decoded:
             yield final_decoded
-            
+
         await process.wait()
 
-        # 프로세스가 종료되었으므로 혹시 백그라운드 루프가 아직 감지하지 못했을 때를 위한 동기식 최종 Sync 및 저장
-        if session_id and not get_mapped_conversation_id(session_id):
-            current_set = get_existing_conversations()
-            new_ids = current_set - before_set
-            if new_ids:
-                new_id = list(new_ids)[0]
-                save_mapped_conversation_id(session_id, new_id)
-                print(f"[stream_antigravity] [Final Sync] Mapped session {session_id} to new Antigravity conversation {new_id}")
-        
         # stderr 코드가 0이 아닌 경우 stderr 내용을 로그
         if process.returncode and process.returncode != 0:
             stderr_out = await process.stderr.read()
-            print(f"[Antigravity stderr]: {stderr_out.decode('utf-8', errors='ignore')[:500]}")
-        
+            print(f"[Antigravity stderr]: {stderr_out.decode('utf-8', errors='ignore')[:500]}", flush=True)
+
     except Exception as e:
         yield f"\n[Antigravity CLI 실행 에러: {str(e)}]"
 
