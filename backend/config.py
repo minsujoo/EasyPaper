@@ -19,6 +19,12 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
 CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
 LIBRARY_DIR = os.getenv("LIBRARY_DIR", "./library")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+PROJECT_ROOT = os.getenv("PROJECT_ROOT", "")
+if not PROJECT_ROOT:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_project_root() -> str:
+    return PROJECT_ROOT
 
 def get_ollama_host() -> str:
     return OLLAMA_HOST

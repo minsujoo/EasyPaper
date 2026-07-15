@@ -13,7 +13,8 @@ from config import (
     get_agy_path,
     get_agy_env,
     get_claude_code_path,
-    get_translation_prompt_template
+    get_translation_prompt_template,
+    get_project_root
 )
 
 
@@ -580,7 +581,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     env = get_agy_env()
     if session_id:
         import shutil
-        cache_dir = "/home/ubuntu/programming/projects/EasyPaper/cache"
+        cache_dir = os.path.join(get_project_root(), "cache")
         home_dir = os.path.join(cache_dir, f"claude_home_{session_id}")
         claude_dir = os.path.join(home_dir, ".claude")
         os.makedirs(claude_dir, exist_ok=True)
@@ -650,7 +651,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
-                    cwd="/home/ubuntu/programming/projects/EasyPaper"
+                    cwd=get_project_root()
                 )
 
                 process.stdin.write(encoded_prompt)
@@ -781,7 +782,7 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=get_agy_env(),
-            cwd="/home/ubuntu/programming/projects/EasyPaper"
+            cwd=get_project_root()
         )
         
         # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
