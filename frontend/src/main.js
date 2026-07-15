@@ -5237,154 +5237,51 @@ function buildVirtualTextMap(container, pageNum) {
 
   if (spans.length === 0) return null;
 
-  // 시각적 "줄" 단위로 스팬을 묶은 뒤, 줄 내부는 좌->우로 정렬한다.
+  // spans는 pdf.js가 만든 DOM 순서(=PDF 콘텐츠 스트림 순서) 그대로 담겨 있다. 2단
+  // 논문이라도 LaTeX 등 조판 엔진은 왼쪽 컬럼 전체를 위에서 아래로 다 쓴 뒤에
+  // 오른쪽 컬럼을 쓰므로, 이 순서 자체가 이미 올바른 읽기 순서다(실측 확인: 페이지
+  // 앞쪽 수십 개 스팬이 전부 왼쪽 컬럼이고 top이 정확히 오름차순으로 이어지며,
+  // 오른쪽 컬럼 내용은 전혀 섞여 있지 않았다). 예전에는 이 순서를 무시하고 top
+  // 좌표만으로 전체를 다시 정렬한 뒤 거터를 추정해 좌/우로 재조립하는 로직을
+  // 썼는데, 그 재정렬 자체가 왼쪽 컬럼 맨 아래 줄과 오른쪽 컬럼 맨 위 줄처럼 top이
+  // 우연히 비슷한 두 스팬을 섞어버리는 원인이었다(수식·헤딩이 섞인 페이지에서
+  // 특히 잦고, 기하학적 방법만으로는 "우연히 가까움"과 "진짜 같은 줄"을 구분할
+  // 수 없었다). 따라서 원래 순서를 그대로 신뢰하고, "같은 시각적 줄"인지만 그
+  // 순서를 따라가며 판정한다.
   //
-  // 고정 픽셀 임계값으로 top을 비교하는 방식(예: "9px 미만이면 같은 줄")은 페이지
-  // 전체를 대상으로 하면 위험하다: 서로 다른 두 줄이라도 첨자 때문에 한쪽의 top이
-  // 다른 쪽과 우연히 9px 이내로 가까워질 수 있고, 그러면 전혀 무관한 두 줄의 스팬들이
-  // 하나의 그룹으로 잘못 합쳐져 버린다(그 사이에 낀 다른 줄들의 글자 수만큼 문자
-  // 오프셋이 널뛰는 현상으로 관측됨). 따라서 top 값 자체가 아니라 각 스팬의 실제
-  // 세로 구간([top, top+height])이 서로 "겹치는지"로 판단하고, 같은 줄로 합쳐질 때마다
-  // 그 줄의 세로 구간(envelope)을 확장해 나가는 구간 병합(interval merging) 방식을 쓴다.
-  // 첨자처럼 조금씩 어긋나는 스팬들은 서로 겹치는 구간이 연쇄적으로 이어지므로 같은
-  // 줄로 안전하게 묶이고, 실제 다른 줄은 세로 구간 자체가 겹치지 않으므로 섞이지 않는다.
-  // 세로 구간 폭은 fontSize에 비례시키지 않는다 - 논문마다 실제 줄간격 대비
-  // fontSize 비율이 달라서(빽빽하게 조판된 2단 논문 등), fontSize를 그대로 쓰면
-  // 한 줄의 구간이 바로 다음 줄까지 삼켜버리고 그게 연쇄적으로 이어져 문단 여러
-  // 개가 통째로 한 줄로 합쳐지는 문제가 있었다(실측). 대신 첨자 오프셋 실측치
-  // (~6~8px)에 맞춘 고정값을 쓴다 - 이 정도면 첨자는 여전히 같은 줄로 묶이면서도,
-  // 다음 실제 줄(보통 14px 이상 떨어짐)까지 삼키지는 않는다.
+  // 세로 구간이 겹치는 동안 줄을 이어붙이는 구간 병합(interval merging)은 그대로
+  // 쓰되, 순서를 따라갈 때 위험한 지점이 하나 있다: 왼쪽 컬럼의 마지막 줄에서
+  // 오른쪽 컬럼의 첫 줄로 넘어갈 때 top이 페이지 하단에서 상단으로 "역행"한다.
+  // 이 역행한 top이 마침 직전 줄의 늘어난 세로 구간(envelope) 안에 들어가면 두
+  // 컬럼이 하나의 줄로 잘못 합쳐진다. 그래서 세로 구간이 겹치는지 뿐 아니라, 그
+  // 줄이 시작된 top에서 위로 크게 벗어나지 않는지도 함께 확인한다 - 첨자는
+  // 기준선보다 위/아래로 살짝만(~6~8px) 벗어나지만, 컬럼 전환은 수백 px씩
+  // 역행하므로 이 둘은 확실히 구분된다.
   const LINE_ENVELOPE_REACH = 8;
-  function groupSpansIntoLines(spansArr) {
-    const byTop = [...spansArr].sort((a, b) => a.top - b.top);
-    const lines = [];
-    let current = [];
-    let envelopeBottom = -Infinity;
-    for (const s of byTop) {
-      const sBottom = s.top + LINE_ENVELOPE_REACH;
-      if (current.length === 0 || s.top < envelopeBottom) {
-        current.push(s);
-        envelopeBottom = Math.max(envelopeBottom, sBottom);
-      } else {
-        lines.push(current);
-        current = [s];
-        envelopeBottom = sBottom;
-      }
+  const lineGroups = [];
+  let currentLine = [];
+  let lineTop = null;
+  let envelopeBottom = -Infinity;
+  for (const s of spans) {
+    const sBottom = s.top + LINE_ENVELOPE_REACH;
+    const withinLine = currentLine.length > 0
+      && s.top < envelopeBottom
+      && s.top > lineTop - LINE_ENVELOPE_REACH;
+    if (currentLine.length === 0 || withinLine) {
+      if (currentLine.length === 0) lineTop = s.top;
+      currentLine.push(s);
+      envelopeBottom = Math.max(envelopeBottom, sBottom);
+    } else {
+      lineGroups.push(currentLine);
+      currentLine = [s];
+      lineTop = s.top;
+      envelopeBottom = sBottom;
     }
-    if (current.length > 0) lines.push(current);
-    lines.forEach(line => line.sort((a, b) => a.left - b.left));
-    return lines;
   }
+  if (currentLine.length > 0) lineGroups.push(currentLine);
 
-  // 2단 레이아웃 감지
-  // "중앙 좌우에 각각 스팬이 있는가"나 "중앙 근처에 시작하는 스팬이 적은가" 같은
-  // 집계 기반 판정은 판별력이 낮다 - 폭 넓은 단일 컬럼도, 실제 2단 컬럼도(전체 폭
-  // 제목/캡션이 섞여 있으면) 중앙 근처 스팬 비율이 비슷하게 나올 수 있다(실측: 두
-  // 경우 모두 약 13~15%). "줄 안에 큰 가로 간격이 있는가"만 보는 것도 부족하다 -
-  // 수식 번호(예: "... = f(x)      (1)")도 한 줄 안에 큰 간격을 만들기 때문에
-  // 단일 컬럼 논문에서도 다수의 줄이 큰 간격을 갖는다(실측 40%+). 진짜 거터와
-  // 수식 번호 간격의 결정적 차이는: 거터는 페이지의 모든 줄에서 항상 같은 x좌표에
-  // 나타나지만, 수식 번호 간격은 수식마다 길이가 달라 x좌표가 줄마다 들쭉날쭉하다.
-  // 그래서 "중앙 부근"인지가 아니라 "큰 간격들이 하나의 x좌표에 얼마나 몰려있는지
-  // (일관성)"로 판정한다 - 실측상 거터의 x좌표는 페이지 정중앙(pageWidth/2)이
-  // 아닐 수 있다(여백이 좌우 비대칭인 논문들이 있음).
-  const mid = pageWidth / 2;
-  const probeLines = groupSpansIntoLines(spans);
-  function lineBiggestGap(line) {
-    let biggest = null;
-    for (let i = 0; i < line.length - 1; i++) {
-      const gap = line[i + 1].left - line[i].left;
-      if (gap > pageWidth * 0.06 && (!biggest || gap > biggest.gap)) {
-        biggest = { gap, mid: (line[i + 1].left + line[i].left) / 2 };
-      }
-    }
-    return biggest;
-  }
-  const bigGapMids = [];
-  for (const line of probeLines) {
-    const biggest = lineBiggestGap(line);
-    if (biggest) bigGapMids.push(biggest.mid);
-  }
-  // 페이지 전체에서 "그럴듯한 거터 후보 x좌표"가 있는지만 우선 찾는다. 실제로 이
-  // 좌표를 기준으로 분할할지는 아래에서 줄(line) 단위로 별도 판정한다 - 제목/저자/
-  // 초록처럼 폭 넓은 단일 컬럼 블록과, 그 아래에 이어지는 진짜 2단 본문이 한
-  // 페이지에 섞여 있는 경우(혼합 레이아웃), 페이지 전체를 2단 여부 하나로만
-  // 판정하면 혼합 레이아웃에서 틀리기 때문이다.
-  // 페이지 전체 간격 위치들의 "전역 중앙값"을 거터 후보로 쓰면, 제목/저자/초록처럼
-  // 폭 넓은 단일 컬럼 블록이 페이지 대부분을 차지하는 혼합 레이아웃에서 틀릴 수
-  // 있다 - 그런 블록에서 생기는 잡음성 큰 간격들의 개수가 실제 거터 간격 개수보다
-  // 많아지면, 전역 중앙값이 잡음 쪽으로 쏠려 진짜 거터를 놓친다(실측: 진짜 거터는
-  // 12개 줄에서 x≈282에 뚜렷이 몰려 있었는데도, 잡음 22개가 더 낮은 값대에 퍼져
-  // 있어 전역 중앙값은 x≈194로 계산됨). 따라서 전역 중앙값 대신, 값들 중 가장
-  // 촘촘하게 몰려있는 군집(최빈 위치)을 찾아 그 군집을 거터 후보로 삼는다.
-  let gutterX = null;
-  if (spans.length > 5 && probeLines.length > 3 && bigGapMids.length >= 4) {
-    let bestMid = null;
-    let bestCount = 0;
-    for (const m of bigGapMids) {
-      const count = bigGapMids.filter(x => Math.abs(x - m) < pageWidth * 0.03).length;
-      if (count > bestCount) { bestCount = count; bestMid = m; }
-    }
-    if (bestCount >= 4) {
-      const cluster = bigGapMids.filter(x => Math.abs(x - bestMid) < pageWidth * 0.03);
-      gutterX = cluster.reduce((a, b) => a + b, 0) / cluster.length;
-    }
-  }
-
-  // 2단 레이아웃에서는 좌단 전체를 다 훑은 뒤 우단으로 넘어가므로, 이어붙인 배열
-  // 안에서 top이 다시 페이지 상단 값으로 되돌아가는 지점(컬럼 경계)이 생긴다.
-  // findDisplayEquationsFromVTM처럼 top 값만으로 순차적으로 "같은 줄"을 재판정하는
-  // 코드가 있으면, 이 역행 지점에서 직전 줄의 늘어난 세로 구간(envelope) 안에
-  // 다음 컬럼의 첫 줄이 우연히 걸려 두 컬럼이 하나의 "줄"로 잘못 합쳐질 수 있다.
-  // 그래서 각 스팬에 실제로 몇 번째 줄에 속하는지(lineIndex)를 미리 기록해두고,
-  // 이후 단계는 top을 다시 비교하지 않고 이 lineIndex로만 줄 경계를 판정한다.
-  let sortedSpans;
-  let lineGroups;
-  if (gutterX !== null) {
-    // 줄 하나를 gutterX 기준으로 스팬 단위로 쪼개는 방식은 위험하다 - 좌/우 컬럼은
-    // 문단 길이가 달라 독립적으로 흐르므로, 어느 한쪽 컬럼의 줄이 유난히 길어 단어
-    // 하나가 gutterX를 살짝 넘기기만 해도(자연스러운 폭 변동) 그 단어가 반대쪽
-    // 스팬 목록에 섞여 들어가고, 우연히 비슷한 높이에 있는 반대쪽 컬럼의 무관한
-    // 내용과 하나의 줄로 잘못 합쳐지는 연쇄 문제가 생긴다(실측). 그래서 원칙을
-    // 바꾼다: 줄 내부에 실제로 큰 간격이 있는 경우에만(=이 줄 자체가 좌우 두 컬럼이
-    // 나란히 합쳐진 줄) 그 간격 위치에서 나누고, 간격이 없는 줄은 시작 위치만으로
-    // 통째로 좌/우 판정한다(줄 중간 단어가 gutterX를 넘어도 줄 자체는 쪼개지 않음).
-    lineGroups = [];
-    let leftBuf = [];
-    let rightBuf = [];
-    const flushColumns = () => {
-      if (leftBuf.length) lineGroups.push(...groupSpansIntoLines(leftBuf));
-      if (rightBuf.length) lineGroups.push(...groupSpansIntoLines(rightBuf));
-      leftBuf = [];
-      rightBuf = [];
-    };
-    for (const line of probeLines) {
-      const gap = lineBiggestGap(line);
-      if (gap) {
-        for (const s of line) {
-          if (s.left < gap.mid) leftBuf.push(s); else rightBuf.push(s);
-        }
-        continue;
-      }
-      const lineLeft = line[0].left;
-      const lineRight = line[line.length - 1].left;
-      const isWide = (lineRight - lineLeft) >= pageWidth * 0.55;
-      if (isWide) {
-        // 폭 넓은 단일 컬럼 줄(제목/초록/헤딩 등): 누적된 좌/우 버퍼를 먼저
-        // 흘려보낸 뒤, 이 줄은 원래 세로 위치 그대로 삽입한다.
-        flushColumns();
-        lineGroups.push(line);
-      } else {
-        // 좁은 한쪽 컬럼 줄: 시작 위치만으로 판정해 줄 전체를 통째로 축적한다.
-        if (lineLeft < gutterX) leftBuf.push(...line); else rightBuf.push(...line);
-      }
-    }
-    flushColumns();
-  } else {
-    lineGroups = groupSpansIntoLines(spans);
-  }
   lineGroups.forEach((line, idx) => line.forEach(s => { s.lineIndex = idx; }));
-  sortedSpans = lineGroups.flat();
+  const sortedSpans = lineGroups.flat();
 
   // 줄간격 중앙값 및 폰트 크기 중앙값 계산
   const gaps = [];
@@ -5466,7 +5363,7 @@ function buildVirtualTextMap(container, pageNum) {
     prevFontSize = fontSize;
   }
 
-  return { fullText, spans: sortedSpans, nodeRanges, isTwoColumn: gutterX !== null, pageNum };
+  return { fullText, spans: sortedSpans, nodeRanges, pageNum };
 }
 
 // 독립 수식 검출 (VirtualTextMap 기반)
