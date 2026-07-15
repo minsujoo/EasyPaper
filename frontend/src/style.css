@@ -3864,3 +3864,34 @@ body.light-theme .sentence-memo-box {
   pointer-events: none !important;
   opacity: 0.35;
 }
+
+/* 라이브러리 화면 새 논문 추가 플로팅 버튼 */
+#lib-upload-btn {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  z-index: 999;
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 50px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  border: none;
+  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5), 0 8px 10px -6px rgba(99, 102, 241, 0.5);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+#lib-upload-btn:hover {
+  transform: translateY(-4px) scale(1.02);
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 20px 30px -10px rgba(99, 102, 241, 0.7), 0 10px 15px -5px rgba(99, 102, 241, 0.5);
+}
+
+#lib-upload-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
