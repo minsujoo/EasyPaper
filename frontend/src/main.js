@@ -5258,8 +5258,7 @@ function buildVirtualTextMap(container, pageNum) {
   // 아닐 수 있다(여백이 좌우 비대칭인 논문들이 있음).
   const mid = pageWidth / 2;
   const probeLines = groupSpansIntoLines(spans);
-  const bigGapMids = [];
-  for (const line of probeLines) {
+  function lineBiggestGap(line) {
     let biggest = null;
     for (let i = 0; i < line.length - 1; i++) {
       const gap = line[i + 1].left - line[i].left;
@@ -5267,18 +5266,37 @@ function buildVirtualTextMap(container, pageNum) {
         biggest = { gap, mid: (line[i + 1].left + line[i].left) / 2 };
       }
     }
+    return biggest;
+  }
+  const bigGapMids = [];
+  for (const line of probeLines) {
+    const biggest = lineBiggestGap(line);
     if (biggest) bigGapMids.push(biggest.mid);
   }
-  let isTwoColumn = false;
-  let gutterX = mid;
-  if (bigGapMids.length > probeLines.length * 0.3) {
-    const sorted = [...bigGapMids].sort((a, b) => a - b);
-    const medianMid = sorted[Math.floor(sorted.length / 2)];
-    const consistentCount = bigGapMids.filter(m => Math.abs(m - medianMid) < pageWidth * 0.03).length;
-    isTwoColumn = spans.length > 5
-      && probeLines.length > 3
-      && (consistentCount / probeLines.length) > 0.3;
-    if (isTwoColumn) gutterX = medianMid;
+  // 페이지 전체에서 "그럴듯한 거터 후보 x좌표"가 있는지만 우선 찾는다. 실제로 이
+  // 좌표를 기준으로 분할할지는 아래에서 줄(line) 단위로 별도 판정한다 - 제목/저자/
+  // 초록처럼 폭 넓은 단일 컬럼 블록과, 그 아래에 이어지는 진짜 2단 본문이 한
+  // 페이지에 섞여 있는 경우(혼합 레이아웃), 페이지 전체를 2단 여부 하나로만
+  // 판정하면 혼합 레이아웃에서 틀리기 때문이다.
+  // 페이지 전체 간격 위치들의 "전역 중앙값"을 거터 후보로 쓰면, 제목/저자/초록처럼
+  // 폭 넓은 단일 컬럼 블록이 페이지 대부분을 차지하는 혼합 레이아웃에서 틀릴 수
+  // 있다 - 그런 블록에서 생기는 잡음성 큰 간격들의 개수가 실제 거터 간격 개수보다
+  // 많아지면, 전역 중앙값이 잡음 쪽으로 쏠려 진짜 거터를 놓친다(실측: 진짜 거터는
+  // 12개 줄에서 x≈282에 뚜렷이 몰려 있었는데도, 잡음 22개가 더 낮은 값대에 퍼져
+  // 있어 전역 중앙값은 x≈194로 계산됨). 따라서 전역 중앙값 대신, 값들 중 가장
+  // 촘촘하게 몰려있는 군집(최빈 위치)을 찾아 그 군집을 거터 후보로 삼는다.
+  let gutterX = null;
+  if (spans.length > 5 && probeLines.length > 3 && bigGapMids.length >= 4) {
+    let bestMid = null;
+    let bestCount = 0;
+    for (const m of bigGapMids) {
+      const count = bigGapMids.filter(x => Math.abs(x - m) < pageWidth * 0.03).length;
+      if (count > bestCount) { bestCount = count; bestMid = m; }
+    }
+    if (bestCount >= 4) {
+      const cluster = bigGapMids.filter(x => Math.abs(x - bestMid) < pageWidth * 0.03);
+      gutterX = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+    }
   }
 
   // 2단 레이아웃에서는 좌단 전체를 다 훑은 뒤 우단으로 넘어가므로, 이어붙인 배열
@@ -5290,10 +5308,42 @@ function buildVirtualTextMap(container, pageNum) {
   // 이후 단계는 top을 다시 비교하지 않고 이 lineIndex로만 줄 경계를 판정한다.
   let sortedSpans;
   let lineGroups;
-  if (isTwoColumn) {
-    const leftLines  = groupSpansIntoLines(spans.filter(n => n.left < gutterX));
-    const rightLines = groupSpansIntoLines(spans.filter(n => n.left >= gutterX));
-    lineGroups = leftLines.concat(rightLines);
+  if (gutterX !== null) {
+    // 줄 단위로 "이 줄이 실제로 좌/우로 갈라져야 하는가"를 개별 판정한다.
+    //  1) 줄 폭이 좁으면(페이지 폭의 55% 미만) 한쪽 컬럼의 내용만 담고 있을
+    //     가능성이 높다 - 반대쪽 컬럼과 세로 위치가 조금 어긋나 같은 줄로 묶이지
+    //     못한 경우(제목 폰트 크기 차이 등으로 기준선이 8px 이상 어긋나는 경우)다.
+    //     이미 찾아둔 gutterX를 기준으로 스팬 단위로 좌/우를 나눈다.
+    //  2) 줄 폭이 넓어도(제목/초록처럼 페이지 폭 대부분을 차지) 그 줄 내부에
+    //     gutterX 부근의 큰 간격이 있다면 좌/우 컬럼이 한 줄로 합쳐진 것이므로
+    //     역시 분할한다.
+    //  3) 그 외(폭이 넓고 gutterX 부근에 간격도 없음)는 페이지 폭을 그대로 쓰는
+    //     단일 컬럼 줄(제목/초록 등)이므로 분할하지 않고 원래 순서 그대로 둔다.
+    lineGroups = [];
+    let leftBuf = [];
+    let rightBuf = [];
+    const flushColumns = () => {
+      if (leftBuf.length) lineGroups.push(...groupSpansIntoLines(leftBuf));
+      if (rightBuf.length) lineGroups.push(...groupSpansIntoLines(rightBuf));
+      leftBuf = [];
+      rightBuf = [];
+    };
+    for (const line of probeLines) {
+      const lineLeft = line[0].left;
+      const lineRight = line[line.length - 1].left;
+      const isNarrow = (lineRight - lineLeft) < pageWidth * 0.55;
+      const gap = lineBiggestGap(line);
+      const hasGapAtGutter = gap && Math.abs(gap.mid - gutterX) < pageWidth * 0.05;
+      if (isNarrow || hasGapAtGutter) {
+        for (const s of line) {
+          if (s.left < gutterX) leftBuf.push(s); else rightBuf.push(s);
+        }
+      } else {
+        flushColumns();
+        lineGroups.push(line);
+      }
+    }
+    flushColumns();
   } else {
     lineGroups = groupSpansIntoLines(spans);
   }
@@ -5380,7 +5430,7 @@ function buildVirtualTextMap(container, pageNum) {
     prevFontSize = fontSize;
   }
 
-  return { fullText, spans: sortedSpans, nodeRanges, isTwoColumn, pageNum };
+  return { fullText, spans: sortedSpans, nodeRanges, isTwoColumn: gutterX !== null, pageNum };
 }
 
 // 독립 수식 검출 (VirtualTextMap 기반)
