@@ -728,16 +728,6 @@ def save_mapped_conversation_id(session_id: str, conversation_id: str) -> None:
     except Exception as e:
         print(f"[save_mapped_conversation_id Error] {e}")
 
-def get_existing_conversations() -> set:
-    import glob
-    import os
-    try:
-        db_files = glob.glob("/home/ubuntu/.gemini/antigravity-cli/conversations/*.db")
-        return {os.path.basename(f)[:-3] for f in db_files}
-    except Exception:
-        return set()
-
-
 _antigravity_session_locks = {}
 
 def _get_antigravity_lock(session_id: str) -> asyncio.Lock:
@@ -764,19 +754,20 @@ async def stream_antigravity(
 
     target_conv_id = None
 
+    # 문서(session_id)당 Antigravity 대화(conversation)를 하나만 만들어 재사용한다.
+    # 이미 매핑이 있으면 그대로 쓰고, 없으면 짧은 워밍업 프롬프트("OK"만 출력)로
+    # 대화를 새로 만들고 로그에서 ID를 캡처해 매핑을 저장한다. 락은 이 짧은
+    # 워밍업 동안만 잡는다 - 실제 번역/채팅 프롬프트(수십 초 걸릴 수 있음)를
+    # 실행하는 동안까지 락을 쥐고 있으면, 같은 문서에 대한 다른 요청(예: 첫 페이지
+    # 번역 중에 사용자가 채팅으로 질문)이 그 긴 시간 내내 멈춰 있게 된다.
     if session_id:
-        # 이중 확인 잠금(Double-Checked Locking)을 적용하여 동시성 레이스를 완전 방지
-        mapped_conv_id = get_mapped_conversation_id(session_id)
-        if mapped_conv_id:
-            target_conv_id = mapped_conv_id
-        else:
+        target_conv_id = get_mapped_conversation_id(session_id)
+        if not target_conv_id:
             lock = _get_antigravity_lock(session_id)
             async with lock:
-                mapped_conv_id = get_mapped_conversation_id(session_id)
-                if mapped_conv_id:
-                    target_conv_id = mapped_conv_id
-                else:
-                    # 최초 진입 태스크가 고유한 임시 로그를 지정해 대화 세션을 생성함
+                # 락을 기다리는 동안 다른 요청이 먼저 매핑을 만들었을 수 있으므로 재확인
+                target_conv_id = get_mapped_conversation_id(session_id)
+                if not target_conv_id:
                     log_dir = os.path.join(LIBRARY_DIR, session_id)
                     os.makedirs(log_dir, exist_ok=True)
                     temp_log_path = os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log")
@@ -785,7 +776,6 @@ async def stream_antigravity(
                     if model and model.strip() and model.strip().lower() != "custom":
                         init_cmd.extend(["--model", model.strip()])
                     init_cmd.extend(["--log-file", temp_log_path])
-                    
                     init_prompt = (
                         "You are a direct-output assistant. Output ONLY 'OK'.\n\n"
                         "Initialize session."
@@ -800,7 +790,9 @@ async def stream_antigravity(
                             env=get_agy_env(),
                             cwd=get_project_root()
                         )
-                        await init_proc.wait()
+                        # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
+                        # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
+                        await init_proc.communicate()
 
                         if os.path.exists(temp_log_path):
                             with open(temp_log_path, "r", encoding="utf-8") as lf:
@@ -816,7 +808,7 @@ async def stream_antigravity(
                     except Exception as ie:
                         print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
                     finally:
-                        if temp_log_path and os.path.exists(temp_log_path):
+                        if os.path.exists(temp_log_path):
                             try:
                                 os.remove(temp_log_path)
                             except Exception:
