@@ -1179,7 +1179,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 10px;
   margin-top: auto;
 }
-.doc-open-btn {
+.doc-open-btn, .doc-restore-btn {
   flex: 1;
   padding: 10px 16px;
   border-radius: var(--radius-sm);
@@ -1192,16 +1192,20 @@ body:not(.light-theme) .pdf-page-inner canvas {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: var(--font-body);
   box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.doc-open-btn:hover {
+.doc-open-btn:hover, .doc-restore-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(124, 58, 237, 0.3);
 }
-.doc-open-btn:active {
+.doc-open-btn:active, .doc-restore-btn:active {
   transform: translateY(0);
 }
 
-.doc-delete-btn {
+.doc-delete-btn, .doc-permanent-delete-btn {
   width: 36px; height: 36px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -1214,7 +1218,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
 }
-.doc-delete-btn:hover {
+.doc-delete-btn:hover, .doc-permanent-delete-btn:hover {
   border-color: rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.12);
@@ -3894,4 +3898,75 @@ body.light-theme .sentence-memo-box {
 
 #lib-upload-btn:active {
   transform: translateY(-1px) scale(0.98);
+}
+
+/* 휴지통 비우기 우하단 플로팅 버튼 스타일 */
+#lib-empty-trash-btn {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  z-index: 999;
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 50px;
+  background: linear-gradient(135deg, #ef4444, #f43f5e);
+  color: white;
+  border: none;
+  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.5), 0 8px 10px -6px rgba(239, 68, 68, 0.5);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+#lib-empty-trash-btn:hover {
+  transform: translateY(-4px) scale(1.02);
+  background: linear-gradient(135deg, #dc2626, #e11d48);
+  box-shadow: 0 20px 30px -10px rgba(239, 68, 68, 0.7), 0 10px 15px -5px rgba(239, 68, 68, 0.5);
+}
+
+#lib-empty-trash-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* 우측 상단 플로팅 패널 내 휴지통 버튼 스타일 */
+#lib-tab-trash {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  font-size: 16px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+#lib-tab-trash:hover {
+  transform: scale(1.08);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+#lib-tab-trash.active {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+#lib-tab-trash.active:hover {
+  background: #dc2626;
+}
+
+#lib-tab-trash:active {
+  transform: scale(0.95);
 }

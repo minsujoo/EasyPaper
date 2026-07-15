@@ -431,6 +431,24 @@ export async function triggerSystemUpdateAPI() {
   return res.json()
 }
 
+export async function fetchTrashAPI() {
+  const res = await fetch(`${API_BASE}/library/trash`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('휴지통 목록 조회 실패')
+  return res.json()
+}
+
+export async function restoreLibraryDocAPI(docId) {
+  const res = await fetch(`${API_BASE}/library/${docId}/restore`, { method: 'POST' })
+  if (!res.ok) throw new Error('문서 복원 실패')
+  return res.json()
+}
+
+export async function emptyTrashAPI() {
+  const res = await fetch(`${API_BASE}/library/trash/empty`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('휴지통 비우기 실패')
+  return res.json()
+}
+
 
 
 
