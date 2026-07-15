@@ -2020,6 +2020,24 @@ async function loadLibraryCount() {
       libraryCountBadge.classList.add('hidden')
     }
   } catch {}
+
+  // 동적 휴지통 탭 노출 여부 및 배지 카운트 표시 처리
+  try {
+    const trashData = await fetchLibraryTrash(getTranslationOptions())
+    const trashDocs = trashData.documents || []
+    const trashCount = trashDocs.length
+
+    if (libTabTrash) {
+      if (trashCount > 0 || state.currentLibraryTab === 'trash') {
+        libTabTrash.classList.remove('hidden')
+        libTabTrash.innerHTML = `🗑️ 휴지통 (${trashCount})`
+      } else {
+        libTabTrash.classList.add('hidden')
+      }
+    }
+  } catch (err) {
+    console.error('휴지통 개수 조회 실패:', err)
+  }
 }
 
 // 탭 클릭 이벤트 리스너 등록
