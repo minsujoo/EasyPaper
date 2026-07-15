@@ -470,7 +470,7 @@ async def stream_chat(
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
-        async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id):
+        async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
         return
 
@@ -566,7 +566,7 @@ def _get_claude_code_session_lock(session_id: str):
     return _claude_code_session_locks[session_id]
 
 
-async def stream_claude_code(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
+async def stream_claude_code(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False) -> AsyncGenerator[str, None]:
     import asyncio
     import os
     import codecs
@@ -616,6 +616,14 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     if effort_level:
         base_cmd.extend(["--effort", effort_level])
 
+    # 이 문서를 마지막으로 쓴 provider가 claude_code가 아니면(예: antigravity로
+    # 갔다가 다시 돌아온 경우), --resume은 어차피 그 세션을 이어받지 못하므로
+    # (claude code 쪽에 해당 session_id로 만든 세션이 없다면) 새로 생성될 텐데,
+    # 이때 우리 DB 채팅 이력으로 캐치업 문맥을 붙여 대화가 이어지는 것처럼 만든다.
+    session_meta = _get_effective_session_meta(session_id)
+    provider_switched = session_meta is not None and session_meta.get("provider") != "claude_code"
+    catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
+
     # 프롬프트에 직접 출력 포맷 지시 추가 (뷰어가 markdown+LaTeX를 렌더링하므로 그대로 출력 허용)
     guided_prompt = (
         "You are a direct-output translation/QA assistant. "
@@ -623,13 +631,13 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         "You MAY use markdown and LaTeX ($...$, $$...$$) in your output since the viewer renders them. "
         "Do NOT wrap math variables in placeholder tokens — preserve them as-is or wrap in $...$. "
         "Start the output immediately.\n\n"
-        f"{prompt}"
+        f"{catchup_prefix}{prompt}"
     )
     encoded_prompt = guided_prompt.encode("utf-8")
 
     try:
         from services.usage_tracker import record_call
-        record_call("translate")
+        record_call("translate" if not is_chat else "chat")
     except Exception:
         pass
 
@@ -679,6 +687,8 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 await process.wait()
 
                 if process.returncode == 0:
+                    if session_id and provider_switched:
+                        save_ai_session_meta(session_id, provider="claude_code")
                     return
 
                 stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
@@ -701,6 +711,42 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 return
 
 
+def _ai_session_meta_path(session_id: str) -> str:
+    import os
+    from config import LIBRARY_DIR
+    return os.path.join(LIBRARY_DIR, session_id, "ai_session.json")
+
+def get_ai_session_meta(session_id: str) -> dict:
+    """이 문서(session_id)를 마지막으로 사용한 AI provider와, antigravity라면 그
+    대화(conversation) ID를 함께 반환합니다. 파일이 없으면 None."""
+    if not session_id:
+        return None
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+def save_ai_session_meta(session_id: str, provider: str, conversation_id: str = None) -> None:
+    if not session_id or not provider:
+        return
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {"provider": provider}
+        if conversation_id:
+            data["conversation_id"] = conversation_id
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"[save_ai_session_meta Error] {e}")
+
+# 하위 호환: 기존 conversation_id.txt만 남아있는 문서를 위한 폴백 판독
 def get_mapped_conversation_id(session_id: str) -> str:
     if not session_id:
         return None
@@ -715,18 +761,49 @@ def get_mapped_conversation_id(session_id: str) -> str:
             pass
     return None
 
-def save_mapped_conversation_id(session_id: str, conversation_id: str) -> None:
-    if not session_id or not conversation_id:
-        return
-    import os
-    from config import LIBRARY_DIR
-    path = os.path.join(LIBRARY_DIR, session_id, "conversation_id.txt")
+def _get_effective_session_meta(session_id: str) -> dict:
+    """ai_session.json을 우선 읽고, 없으면 이 파일이 생기기 전(예전) antigravity
+    전용 conversation_id.txt를 antigravity 메타로 간주해 폴백한다."""
+    if not session_id:
+        return None
+    meta = get_ai_session_meta(session_id)
+    if meta is not None:
+        return meta
+    legacy_id = get_mapped_conversation_id(session_id)
+    if legacy_id:
+        return {"provider": "antigravity", "conversation_id": legacy_id}
+    return None
+
+def _build_catchup_prefix(session_id: str) -> str:
+    """AI provider가 방금 바뀌어 새 세션으로 넘어갈 때, 예전 provider 세션이
+    갖고 있던 대화 맥락을 우리 DB의 채팅 이력에서 짧게 뽑아 새 세션의 첫
+    프롬프트 앞에 붙일 캐치업 문맥을 만듭니다. provider CLI끼리는 서로의 내부
+    세션 상태를 직접 읽을 수 없으므로, 우리가 이미 갖고 있는(우리 DB에 저장된)
+    대화 이력을 대신 활용하는 절충안입니다. 토큰 낭비를 줄이기 위해 최근
+    몇 턴만 포함하고, provider가 안 바뀐 평소 호출에는 전혀 쓰이지 않습니다."""
+    if not session_id:
+        return ""
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(conversation_id.strip())
-    except Exception as e:
-        print(f"[save_mapped_conversation_id Error] {e}")
+        from services.db import db_get_chat_history
+        history = db_get_chat_history(session_id)
+    except Exception:
+        return ""
+    if not history:
+        return ""
+    recent = history[-8:]
+    lines = []
+    for msg in recent:
+        role_label = "사용자" if msg.get("role") == "user" else "어시스턴트"
+        content = (msg.get("content") or "").strip()
+        if len(content) > 500:
+            content = content[:500] + "..."
+        lines.append(f"{role_label}: {content}")
+    recap = "\n".join(lines)
+    return (
+        "[이전 대화 요약 - 다른 AI 세션에서 이어짐]\n"
+        f"{recap}\n"
+        "[요약 끝, 아래는 현재 질문]\n\n"
+    )
 
 async def stream_antigravity(
     prompt: str,
@@ -751,7 +828,15 @@ async def stream_antigravity(
     # 질문"처럼 서로 다른 두 호출이 동시에 세션을 만들려고 경합할 여지 자체가
     # 없어진다. 아직 번역이 시작되지 않아 매핑이 없다면, 채팅은 그냥 대화 없이
     # (--conversation 없이) 1회성으로 응답만 하고 끝난다.
-    target_conv_id = get_mapped_conversation_id(session_id) if session_id else None
+    session_meta = _get_effective_session_meta(session_id)
+
+    # 이 문서를 마지막으로 쓴 provider가 antigravity가 아니면(예: claude code로
+    # 갔다가 다시 돌아온 경우), 그 세션은 이 provider에서 재사용할 수 없다 -
+    # 새로 만들어야 하고, 대신 우리 DB 채팅 이력으로 캐치업 문맥을 붙여준다.
+    provider_switched = session_meta is not None and session_meta.get("provider") != "antigravity"
+    target_conv_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
+
+    catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
 
     if session_id and not target_conv_id and not is_chat:
         log_dir = os.path.join(LIBRARY_DIR, session_id)
@@ -786,7 +871,7 @@ async def stream_antigravity(
                 match = re.search(r"Created conversation\s+([a-f0-9\-]{36})", log_content)
                 if match:
                     new_conv_id = match.group(1)
-                    save_mapped_conversation_id(session_id, new_conv_id)
+                    save_ai_session_meta(session_id, provider="antigravity", conversation_id=new_conv_id)
                     print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
                     target_conv_id = new_conv_id
                 else:
@@ -812,7 +897,7 @@ async def stream_antigravity(
         "Output ONLY the result — no preambles, no explanations, no 'Here is the translation', "
         "no markdown code fences around the entire output, no commentary at the start or end. "
         "Start the output immediately with the translated/answered content.\n\n"
-        f"{prompt}"
+        f"{catchup_prefix}{prompt}"
     )
     # 사용량 기록
     try:

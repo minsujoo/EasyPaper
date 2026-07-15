@@ -153,23 +153,37 @@ def delete_chat_sessions(doc_id: str) -> None:
         except Exception as e:
             print(f"[delete_chat_sessions Claude Code Error] {e}")
 
-    # 2. Antigravity 세션 삭제
-    conv_txt_path = os.path.join(LIBRARY_DIR, doc_id, "conversation_id.txt")
-    if os.path.exists(conv_txt_path):
+    # 2. Antigravity 세션 삭제 (신규 ai_session.json 우선, 예전 conversation_id.txt는 폴백)
+    conv_id = None
+    meta_path = os.path.join(LIBRARY_DIR, doc_id, "ai_session.json")
+    if os.path.exists(meta_path):
         try:
-            with open(conv_txt_path, "r", encoding="utf-8") as f:
-                conv_id = f.read().strip()
-            if conv_id:
-                # conversations/<conv_id>.db 파일 삭제
-                db_path = f"/home/ubuntu/.gemini/antigravity-cli/conversations/{conv_id}.db"
-                if os.path.exists(db_path):
-                    os.remove(db_path)
-                    print(f"[delete_chat_sessions] Deleted Antigravity conversation db: {db_path}")
-                # brain/<conv_id>/ 디렉터리 삭제
-                brain_dir = f"/home/ubuntu/.gemini/antigravity-cli/brain/{conv_id}"
-                if os.path.exists(brain_dir):
-                    shutil.rmtree(brain_dir, ignore_errors=True)
-                    print(f"[delete_chat_sessions] Deleted Antigravity brain directory: {brain_dir}")
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if meta.get("provider") == "antigravity":
+                conv_id = meta.get("conversation_id")
+        except Exception as e:
+            print(f"[delete_chat_sessions Antigravity Error] {e}")
+    if not conv_id:
+        conv_txt_path = os.path.join(LIBRARY_DIR, doc_id, "conversation_id.txt")
+        if os.path.exists(conv_txt_path):
+            try:
+                with open(conv_txt_path, "r", encoding="utf-8") as f:
+                    conv_id = f.read().strip()
+            except Exception as e:
+                print(f"[delete_chat_sessions Antigravity Error] {e}")
+    if conv_id:
+        try:
+            # conversations/<conv_id>.db 파일 삭제
+            db_path = f"/home/ubuntu/.gemini/antigravity-cli/conversations/{conv_id}.db"
+            if os.path.exists(db_path):
+                os.remove(db_path)
+                print(f"[delete_chat_sessions] Deleted Antigravity conversation db: {db_path}")
+            # brain/<conv_id>/ 디렉터리 삭제
+            brain_dir = f"/home/ubuntu/.gemini/antigravity-cli/brain/{conv_id}"
+            if os.path.exists(brain_dir):
+                shutil.rmtree(brain_dir, ignore_errors=True)
+                print(f"[delete_chat_sessions] Deleted Antigravity brain directory: {brain_dir}")
         except Exception as e:
             print(f"[delete_chat_sessions Antigravity Error] {e}")
 
