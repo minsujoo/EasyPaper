@@ -2304,8 +2304,8 @@ function createDocCard(doc) {
   let actionsHtml = ''
   if (state.currentLibraryTab === 'trash') {
     actionsHtml = `
-      <button class="doc-open-btn doc-restore-btn" data-id="${doc.id}">복원</button>
-      <button class="doc-delete-btn doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
+      <button class="doc-restore-btn" data-id="${doc.id}">복원</button>
+      <button class="doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
           <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>

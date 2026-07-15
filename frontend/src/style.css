@@ -1179,7 +1179,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 10px;
   margin-top: auto;
 }
-.doc-open-btn {
+.doc-open-btn, .doc-restore-btn {
   flex: 1;
   padding: 10px 16px;
   border-radius: var(--radius-sm);
@@ -1192,16 +1192,20 @@ body:not(.light-theme) .pdf-page-inner canvas {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: var(--font-body);
   box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.doc-open-btn:hover {
+.doc-open-btn:hover, .doc-restore-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(124, 58, 237, 0.3);
 }
-.doc-open-btn:active {
+.doc-open-btn:active, .doc-restore-btn:active {
   transform: translateY(0);
 }
 
-.doc-delete-btn {
+.doc-delete-btn, .doc-permanent-delete-btn {
   width: 36px; height: 36px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -1214,7 +1218,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
 }
-.doc-delete-btn:hover {
+.doc-delete-btn:hover, .doc-permanent-delete-btn:hover {
   border-color: rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.12);
