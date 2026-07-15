@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 from typing import AsyncGenerator
@@ -27,15 +28,64 @@ async def stream_translation(
     ignore_refs: bool = False,
     doc_title: str = "",
     prev_context: str = "",
-    session_id: str = None
+    session_id: str = None,
+    page_num: int = None
 ) -> AsyncGenerator[str, None]:
     """
     Ollama /api/chat 엔드포인트를 사용해 번역 결과를 스트리밍합니다.
     사용자의 요구에 따른 언어, 번역 스타일, 제외 요소 옵션에 맞춰 프롬프트를 동적으로 구성합니다.
     """
+    provider = get_trans_provider()
+    model = get_trans_model()
+
+    # antigravity/claude code는 문서(session_id)당 세션(대화)이 실제로 이어지므로,
+    # 매 페이지마다 문체·수식·표·참고문헌 처리 규칙 전체를 통째로 반복해서 보낼
+    # 필요가 없다 - 이미 앞선 페이지에서 같은 대화 안에 전달된 지시사항을 모델이
+    # 기억하고 있다. 다만 대화가 길어질수록 규칙이 흐려질 수 있으므로, 완전히
+    # 한 번만 보내고 끝내지는 않고 5페이지마다 한 번씩 전체 규칙을 다시 리마인드
+    # 한다. 세션 개념이 없는 provider(openai/gemini/claude API/ollama)는 매 호출이
+    # 독립적이라 이 최적화가 의미가 없으므로 항상 전체 프롬프트를 보낸다. 만약
+    # provider를 중간에 바꾸면 그 문서는 처음부터 다시 번역해야 하므로(새 세션이라
+    # 이전 페이지의 지시사항을 전혀 모름), 그 경우도 page_num이 그대로 1부터
+    # 시작되어 자연히 첫 페이지에서 전체 규칙을 다시 받게 된다.
+    REMINDER_INTERVAL = 5
+    is_session_persistent = provider in ("antigravity", "claude_code")
+    is_reminder_page = (
+        page_num is None
+        or page_num == 1
+        or (page_num - 1) % REMINDER_INTERVAL == 0
+    )
+    use_short_prompt = is_session_persistent and session_id and not is_reminder_page
+
+    if use_short_prompt:
+        context_part = ""
+        if prev_context:
+            truncated_prev = prev_context[-1000:] if len(prev_context) > 1000 else prev_context
+            context_part = f"\n[참고 문맥 정보]\n- 이전 페이지/단락의 번역 결과 (참고용):\n\"\"\"\n{truncated_prev}\n\"\"\"\n"
+
+        prompt = (
+            "앞서 안내한 문체·용어·수식·표·참고문헌 처리 규칙을 동일하게 유지하며 이어지는 다음 원문을 번역하세요.\n"
+            "서론이나 설명 없이 번역 결과만 즉시 출력하세요. 입력 텍스트의 각 문장 앞에 있는 [S0], [S1] 등 문장 식별자 "
+            "태그는 번역 결과에서도 반드시 그대로, 순서를 바꾸거나 누락 없이 유지하세요.\n"
+            f"{context_part}\n"
+            f"원문:\n{text}\n\n"
+            f"{target_lang} 번역:"
+        )
+
+        if provider == "antigravity":
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id):
+                yield token
+            return
+        elif provider == "claude_code":
+            async for token in stream_claude_code(prompt, model=model, session_id=session_id):
+                yield token
+            return
+        # 세션 지속 provider가 아니면 여기 도달하지 않지만, 안전하게 아래 전체
+        # 프롬프트 경로로 흘러가도록 둔다.
+
     # 1. 번역 목적어 설정
     lang_instruction = f"다음 영어 논문 텍스트를 자연스러운 {target_lang}로 번역하세요."
-    
+
     # 2. 번역 스타일 문구 조립
     if style == "literal":
         style_instruction = f"자연스러운 직역을 수행하고 원문의 어순을 가능한 한 유지하여 단어 대조가 쉽도록 번역하세요."
@@ -107,8 +157,6 @@ async def stream_translation(
         }
     ]
 
-    provider = get_trans_provider()
-    model = get_trans_model()
     if provider == "openai":
         async for token in stream_openai(messages, model=model, temperature=0.3):
             yield token
@@ -442,17 +490,23 @@ async def stream_chat(
             record_call("chat")
         except Exception:
             pass
+        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리(우리가 보낸
+        # 논문 원문+가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번
+        # 보냈다면 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만
+        # 붙이고 이후에는 질문만 전달한다.
+        include_full_context = not _chat_context_already_sent(session_id, "antigravity")
         formatted_prompt = []
-        formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리를 가지고 있으므로,
-        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if include_full_context:
+            formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
-        
+
         chat_prompt = "\n".join(formatted_prompt)
-        async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id):
+        async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
+        if include_full_context:
+            _mark_chat_context_sent(session_id, "antigravity")
         return
     elif provider == "claude_code":
         try:
@@ -460,17 +514,23 @@ async def stream_chat(
             record_call("chat")
         except Exception:
             pass
+        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리(논문 원문+
+        # 가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번 보냈다면
+        # 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만 붙이고
+        # 이후에는 질문만 전달한다.
+        include_full_context = not _chat_context_already_sent(session_id, "claude_code")
         formatted_prompt = []
-        formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리를 가지고 있으므로,
-        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if include_full_context:
+            formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
-        
+
         chat_prompt = "\n".join(formatted_prompt)
-        async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id):
+        async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id, is_chat=True):
             yield token
+        if include_full_context:
+            _mark_chat_context_sent(session_id, "claude_code")
         return
 
     # Fallback to Ollama:
@@ -565,7 +625,7 @@ def _get_claude_code_session_lock(session_id: str):
     return _claude_code_session_locks[session_id]
 
 
-async def stream_claude_code(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
+async def stream_claude_code(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False) -> AsyncGenerator[str, None]:
     import asyncio
     import os
     import codecs
@@ -615,6 +675,14 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     if effort_level:
         base_cmd.extend(["--effort", effort_level])
 
+    # 이 문서를 마지막으로 쓴 provider가 claude_code가 아니면(예: antigravity로
+    # 갔다가 다시 돌아온 경우), --resume은 어차피 그 세션을 이어받지 못하므로
+    # (claude code 쪽에 해당 session_id로 만든 세션이 없다면) 새로 생성될 텐데,
+    # 이때 우리 DB 채팅 이력으로 캐치업 문맥을 붙여 대화가 이어지는 것처럼 만든다.
+    session_meta = _get_effective_session_meta(session_id)
+    provider_switched = session_meta is not None and session_meta.get("provider") != "claude_code"
+    catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
+
     # 프롬프트에 직접 출력 포맷 지시 추가 (뷰어가 markdown+LaTeX를 렌더링하므로 그대로 출력 허용)
     guided_prompt = (
         "You are a direct-output translation/QA assistant. "
@@ -622,13 +690,13 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         "You MAY use markdown and LaTeX ($...$, $$...$$) in your output since the viewer renders them. "
         "Do NOT wrap math variables in placeholder tokens — preserve them as-is or wrap in $...$. "
         "Start the output immediately.\n\n"
-        f"{prompt}"
+        f"{catchup_prefix}{prompt}"
     )
     encoded_prompt = guided_prompt.encode("utf-8")
 
     try:
         from services.usage_tracker import record_call
-        record_call("translate")
+        record_call("translate" if not is_chat else "chat")
     except Exception:
         pass
 
@@ -678,6 +746,13 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 await process.wait()
 
                 if process.returncode == 0:
+                    # provider_switched였을 때만이 아니라 매번 기록해야 한다 - 그래야
+                    # antigravity를 한 번도 안 써서 ai_session.json이 아예 없던
+                    # claude_code 전용 문서도 "claude_code가 마지막으로 썼다"는
+                    # 기록이 남아, 나중에 antigravity로 바꿨을 때 그 전환을
+                    # 올바르게 감지해 캐치업 문맥을 붙일 수 있다.
+                    if session_id:
+                        save_ai_session_meta(session_id, provider="claude_code")
                     return
 
                 stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
@@ -700,6 +775,91 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 return
 
 
+def _ai_session_meta_path(session_id: str) -> str:
+    import os
+    from config import LIBRARY_DIR
+    return os.path.join(LIBRARY_DIR, session_id, "ai_session.json")
+
+def get_ai_session_meta(session_id: str) -> dict:
+    """이 문서(session_id)를 마지막으로 사용한 AI provider와, antigravity라면 그
+    대화(conversation) ID를 함께 반환합니다. 파일이 없으면 None."""
+    if not session_id:
+        return None
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+def save_ai_session_meta(session_id: str, provider: str, conversation_id: str = None) -> None:
+    if not session_id or not provider:
+        return
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+        provider_changed = existing.get("provider") != provider
+
+        data = {"provider": provider}
+        if conversation_id:
+            data["conversation_id"] = conversation_id
+        elif not provider_changed and existing.get("conversation_id"):
+            data["conversation_id"] = existing["conversation_id"]
+
+        # provider가 바뀌면 새 네이티브 세션은 컨텍스트가 비어있으므로 채팅
+        # 풀 컨텍스트(논문 원문+가이드라인)를 다시 보내야 한다는 표시로 초기화한다.
+        # provider가 안 바뀌었으면(예: 번역 호출이 매번 이 함수를 호출) 기존
+        # chat_context_sent 값을 그대로 보존해야 채팅 쪽 최적화가 유지된다.
+        data["chat_context_sent"] = False if provider_changed else existing.get("chat_context_sent", False)
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"[save_ai_session_meta Error] {e}")
+
+def _chat_context_already_sent(session_id: str, provider: str) -> bool:
+    """이 문서(session_id)의 현재 provider 네이티브 세션에 이미 채팅 풀 컨텍스트
+    (논문 원문+답변 가이드라인)를 보낸 적이 있는지 확인한다."""
+    meta = get_ai_session_meta(session_id)
+    if not meta or meta.get("provider") != provider:
+        return False
+    return bool(meta.get("chat_context_sent"))
+
+def _mark_chat_context_sent(session_id: str, provider: str) -> None:
+    """방금 이 provider 세션에 채팅 풀 컨텍스트를 보냈음을 기록한다. 기존
+    provider/conversation_id는 그대로 보존한다."""
+    if not session_id or not provider:
+        return
+    import os, json
+    path = _ai_session_meta_path(session_id)
+    try:
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+        existing["provider"] = provider
+        existing["chat_context_sent"] = True
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(existing, f)
+    except Exception as e:
+        print(f"[_mark_chat_context_sent Error] {e}")
+
+# 하위 호환: 기존 conversation_id.txt만 남아있는 문서를 위한 폴백 판독
 def get_mapped_conversation_id(session_id: str) -> str:
     if not session_id:
         return None
@@ -714,39 +874,157 @@ def get_mapped_conversation_id(session_id: str) -> str:
             pass
     return None
 
-def save_mapped_conversation_id(session_id: str, conversation_id: str) -> None:
-    if not session_id or not conversation_id:
-        return
-    import os
-    from config import LIBRARY_DIR
-    path = os.path.join(LIBRARY_DIR, session_id, "conversation_id.txt")
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(conversation_id.strip())
-    except Exception as e:
-        print(f"[save_mapped_conversation_id Error] {e}")
+def _get_effective_session_meta(session_id: str) -> dict:
+    """ai_session.json을 우선 읽고, 없으면 이 파일이 생기기 전(예전) antigravity
+    전용 conversation_id.txt를 antigravity 메타로 간주해 폴백한다."""
+    if not session_id:
+        return None
+    meta = get_ai_session_meta(session_id)
+    if meta is not None:
+        return meta
+    legacy_id = get_mapped_conversation_id(session_id)
+    if legacy_id:
+        return {"provider": "antigravity", "conversation_id": legacy_id}
+    return None
 
-def get_existing_conversations() -> set:
-    import glob
-    import os
+def _build_catchup_prefix(session_id: str) -> str:
+    """AI provider가 방금 바뀌어 새 세션으로 넘어갈 때, 예전 provider 세션이
+    갖고 있던 대화 맥락을 우리 DB의 채팅 이력에서 짧게 뽑아 새 세션의 첫
+    프롬프트 앞에 붙일 캐치업 문맥을 만듭니다. provider CLI끼리는 서로의 내부
+    세션 상태를 직접 읽을 수 없으므로, 우리가 이미 갖고 있는(우리 DB에 저장된)
+    대화 이력을 대신 활용하는 절충안입니다. 토큰 낭비를 줄이기 위해 최근
+    몇 턴만 포함하고, provider가 안 바뀐 평소 호출에는 전혀 쓰이지 않습니다."""
+    if not session_id:
+        return ""
     try:
-        db_files = glob.glob("/home/ubuntu/.gemini/antigravity-cli/conversations/*.db")
-        return {os.path.basename(f)[:-3] for f in db_files}
+        from services.db import db_get_chat_history
+        history = db_get_chat_history(session_id)
     except Exception:
-        return set()
+        return ""
+    if not history:
+        return ""
+    recent = history[-8:]
+    lines = []
+    for msg in recent:
+        role_label = "사용자" if msg.get("role") == "user" else "어시스턴트"
+        content = (msg.get("content") or "").strip()
+        if len(content) > 500:
+            content = content[:500] + "..."
+        lines.append(f"{role_label}: {content}")
+    recap = "\n".join(lines)
+    return (
+        "[이전 대화 요약 - 다른 AI 세션에서 이어짐]\n"
+        f"{recap}\n"
+        "[요약 끝, 아래는 현재 질문]\n\n"
+    )
 
+_antigravity_session_locks = {}
 
-async def stream_antigravity(prompt: str, model: str = None, session_id: str = None) -> AsyncGenerator[str, None]:
+def _get_antigravity_lock(session_id: str) -> asyncio.Lock:
+    if not session_id:
+        return None
+    if session_id not in _antigravity_session_locks:
+        _antigravity_session_locks[session_id] = asyncio.Lock()
+    return _antigravity_session_locks[session_id]
+
+async def stream_antigravity(
+    prompt: str,
+    model: str = None,
+    session_id: str = None,
+    is_chat: bool = False
+) -> AsyncGenerator[str, None]:
     import asyncio
     import os
-    
+    import re
+    from config import LIBRARY_DIR
+
     agy_path = get_agy_path()
     if not os.path.exists(agy_path):
         agy_path = "agy"
-        
-    mapped_conv_id = get_mapped_conversation_id(session_id)
-    target_conv_id = mapped_conv_id if mapped_conv_id else session_id
+
+    # 문서(session_id)당 Antigravity 대화(conversation)를 하나만 만들어 재사용한다.
+    # 번역뿐 아니라 채팅도 세션이 없으면 만들 수 있어야 한다 - "채팅은 절대 세션을
+    # 안 만든다"고 해봤더니, agy는 --conversation 없이 호출하면 그때마다 자기
+    # 내부적으로 새 임시 세션을 만들어버려서(우리가 추적만 안 할 뿐 실제로는
+    # 매번 새로 생김), 번역이 아직 세션을 못 만든 상태에서 채팅을 여러 번 쓰면
+    # 매 메시지가 새 세션을 낭비하는 문제가 실제로 있었다(실측: 채팅 3번에
+    # 새 세션 3개). 그래서 번역/채팅 둘 다 매핑이 없을 때 만들 수 있게 하되,
+    # 두 호출이 동시에 만들려는 경합만 짧게(워밍업 호출 동안만) 잠가서 막는다.
+    session_meta = _get_effective_session_meta(session_id)
+
+    # 이 문서를 마지막으로 쓴 provider가 antigravity가 아니면(예: claude code로
+    # 갔다가 다시 돌아온 경우), 그 세션은 이 provider에서 재사용할 수 없다 -
+    # 새로 만들어야 하고, 대신 우리 DB 채팅 이력으로 캐치업 문맥을 붙여준다.
+    provider_switched = session_meta is not None and session_meta.get("provider") != "antigravity"
+    target_conv_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
+
+    catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
+
+    if session_id and not target_conv_id:
+        lock = _get_antigravity_lock(session_id)
+        async with lock:
+            # 락을 기다리는 동안 다른 호출이 먼저 만들었을 수 있으므로 재확인
+            session_meta = _get_effective_session_meta(session_id)
+            provider_switched = session_meta is not None and session_meta.get("provider") != "antigravity"
+            target_conv_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
+
+            if not target_conv_id:
+                log_dir = os.path.join(LIBRARY_DIR, session_id)
+                os.makedirs(log_dir, exist_ok=True)
+                # 반드시 절대경로로 만들어야 한다 - LIBRARY_DIR("./library")은 상대경로라
+                # 우리 프로세스의 cwd(backend/) 기준으로 풀리는데, agy 서브프로세스는
+                # cwd=get_project_root()(backend의 부모 디렉터리)로 띄운다. 상대경로
+                # 그대로 --log-file에 넘기면 agy는 그 부모 디렉터리 기준으로 로그를
+                # 써버려서(예: backend/library/... 대신 library/...), 우리 코드가
+                # 확인하는 경로에는 파일이 영영 나타나지 않는다(실측: agy는 실제로
+                # 로그를 정상적으로 남기고 "Created conversation" 줄도 있었지만,
+                # 전혀 다른 경로에 있었다 - 그래서 매핑 저장이 매번 실패해 페이지/
+                # 채팅마다 새 세션이 계속 생성되고 있었다).
+                temp_log_path = os.path.abspath(os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log"))
+
+                init_cmd = [agy_path, "--dangerously-skip-permissions"]
+                if model and model.strip() and model.strip().lower() != "custom":
+                    init_cmd.extend(["--model", model.strip()])
+                init_cmd.extend(["--log-file", temp_log_path])
+                init_prompt = (
+                    "You are a direct-output assistant. Output ONLY 'OK'.\n\n"
+                    "Initialize session."
+                )
+                init_cmd.extend(["--print", init_prompt])
+
+                try:
+                    init_proc = await asyncio.create_subprocess_exec(
+                        *init_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=get_agy_env(),
+                        cwd=get_project_root()
+                    )
+                    # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
+                    # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
+                    await init_proc.communicate()
+
+                    if os.path.exists(temp_log_path):
+                        with open(temp_log_path, "r", encoding="utf-8") as lf:
+                            log_content = lf.read()
+                        match = re.search(r"Created conversation\s+([a-f0-9\-]{36})", log_content)
+                        if match:
+                            new_conv_id = match.group(1)
+                            save_ai_session_meta(session_id, provider="antigravity", conversation_id=new_conv_id)
+                            print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
+                            target_conv_id = new_conv_id
+                        else:
+                            print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
+                    else:
+                        print(f"[stream_antigravity] Log file was never created at {temp_log_path}", flush=True)
+                except Exception as ie:
+                    print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
+                finally:
+                    if os.path.exists(temp_log_path):
+                        try:
+                            os.remove(temp_log_path)
+                        except Exception:
+                            pass
 
     cmd = [agy_path, "--dangerously-skip-permissions"]
     if model and model.strip() and model.strip().lower() != "custom":
@@ -754,28 +1032,23 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
     if target_conv_id:
         cmd.extend(["--conversation", target_conv_id])
 
-    # 만약 기존에 매핑된 conversation ID가 없다면, 백그라운드에서 새로 생성되는 ID를 감지해 저장함
-    before_set = set()
-    if session_id and not mapped_conv_id:
-        before_set = get_existing_conversations()
-
     # 충분한 제약을 주어서 확실하게 완전한 출력을 유도
     guided_prompt = (
         "You are a direct-output assistant. "
         "Output ONLY the result — no preambles, no explanations, no 'Here is the translation', "
         "no markdown code fences around the entire output, no commentary at the start or end. "
         "Start the output immediately with the translated/answered content.\n\n"
-        f"{prompt}"
+        f"{catchup_prefix}{prompt}"
     )
     # 사용량 기록
     try:
         from services.usage_tracker import record_call
-        record_call("translate")
+        record_call("translate" if not is_chat else "chat")
     except Exception:
         pass
 
     cmd.extend(["--print", guided_prompt])
-    
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -784,28 +1057,10 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             env=get_agy_env(),
             cwd=get_project_root()
         )
-        
-        # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
-        # 타임아웃을 60초(120회)로 대폭 늘려 생성 지연에 강인하게 함
-        if session_id and not mapped_conv_id:
-            async def detect_and_save():
-                for _ in range(120): # 최대 60초 대기
-                    await asyncio.sleep(0.5)
-                    # 만약 아래 wait() 이후의 최종 Sync에서 매핑에 성공했다면 조기 종료
-                    if get_mapped_conversation_id(session_id):
-                        break
-                    current_set = get_existing_conversations()
-                    new_ids = current_set - before_set
-                    if new_ids:
-                        new_id = list(new_ids)[0]
-                        save_mapped_conversation_id(session_id, new_id)
-                        print(f"[stream_antigravity] Mapped session {session_id} to new Antigravity conversation {new_id}")
-                        break
-            asyncio.create_task(detect_and_save())
 
         import codecs
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        
+
         while True:
             chunk = await process.stdout.read(1024)
             if not chunk:
@@ -813,27 +1068,18 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             decoded = decoder.decode(chunk)
             if decoded:
                 yield decoded
-        
+
         final_decoded = decoder.decode(b"", final=True)
         if final_decoded:
             yield final_decoded
-            
+
         await process.wait()
 
-        # 프로세스가 종료되었으므로 혹시 백그라운드 루프가 아직 감지하지 못했을 때를 위한 동기식 최종 Sync 및 저장
-        if session_id and not get_mapped_conversation_id(session_id):
-            current_set = get_existing_conversations()
-            new_ids = current_set - before_set
-            if new_ids:
-                new_id = list(new_ids)[0]
-                save_mapped_conversation_id(session_id, new_id)
-                print(f"[stream_antigravity] [Final Sync] Mapped session {session_id} to new Antigravity conversation {new_id}")
-        
         # stderr 코드가 0이 아닌 경우 stderr 내용을 로그
         if process.returncode and process.returncode != 0:
             stderr_out = await process.stderr.read()
-            print(f"[Antigravity stderr]: {stderr_out.decode('utf-8', errors='ignore')[:500]}")
-        
+            print(f"[Antigravity stderr]: {stderr_out.decode('utf-8', errors='ignore')[:500]}", flush=True)
+
     except Exception as e:
         yield f"\n[Antigravity CLI 실행 에러: {str(e)}]"
 

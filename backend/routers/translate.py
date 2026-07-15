@@ -111,7 +111,8 @@ async def translate_page(
                     ignore_refs=ignore_refs,
                     doc_title=doc_title,
                     prev_context=prev_context,
-                    session_id=session_id
+                    session_id=session_id,
+                    page_num=page_num
                 ):
                     chunk_result.append(token)
                     data = json.dumps({"content": token, "done": False, "cached": False}, ensure_ascii=False)
