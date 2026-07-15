@@ -863,7 +863,16 @@ async def stream_antigravity(
             if not target_conv_id:
                 log_dir = os.path.join(LIBRARY_DIR, session_id)
                 os.makedirs(log_dir, exist_ok=True)
-                temp_log_path = os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log")
+                # 반드시 절대경로로 만들어야 한다 - LIBRARY_DIR("./library")은 상대경로라
+                # 우리 프로세스의 cwd(backend/) 기준으로 풀리는데, agy 서브프로세스는
+                # cwd=get_project_root()(backend의 부모 디렉터리)로 띄운다. 상대경로
+                # 그대로 --log-file에 넘기면 agy는 그 부모 디렉터리 기준으로 로그를
+                # 써버려서(예: backend/library/... 대신 library/...), 우리 코드가
+                # 확인하는 경로에는 파일이 영영 나타나지 않는다(실측: agy는 실제로
+                # 로그를 정상적으로 남기고 "Created conversation" 줄도 있었지만,
+                # 전혀 다른 경로에 있었다 - 그래서 매핑 저장이 매번 실패해 페이지/
+                # 채팅마다 새 세션이 계속 생성되고 있었다).
+                temp_log_path = os.path.abspath(os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log"))
 
                 init_cmd = [agy_path, "--dangerously-skip-permissions"]
                 if model and model.strip() and model.strip().lower() != "custom":
@@ -897,11 +906,9 @@ async def stream_antigravity(
                             print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
                             target_conv_id = new_conv_id
                         else:
-                            # 임시 진단: regex가 왜 안 맞는지 실제 로그 내용을 남긴다(원인 파악 후 제거 예정)
-                            print(f"[stream_antigravity] DEBUG no-match log_len={len(log_content)} content={log_content!r}", flush=True)
                             print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
                     else:
-                        print(f"[stream_antigravity] DEBUG log file was never created at {temp_log_path}", flush=True)
+                        print(f"[stream_antigravity] Log file was never created at {temp_log_path}", flush=True)
                 except Exception as ie:
                     print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
                 finally:
