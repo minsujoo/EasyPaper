@@ -23,6 +23,7 @@ window.fetch = async function (...args) {
 // ── 상태 ──────────────────────────────────────────
 const state = {
   currentLibraryTab: 'archive', // 'archive' (보관함) 또는 'history' (히스토리)
+  previousLibraryTab: 'archive', // 휴지통 진입 전 이전 탭 기억용
   currentDocId: null,
   currentDocMetadata: {},
   sessionId: null,
@@ -2084,8 +2085,12 @@ if (libTabHistory) {
 }
 if (libTabTrash) {
   libTabTrash.addEventListener('click', () => {
-    if (state.currentLibraryTab === 'trash') return
-    updateTabUI('trash')
+    if (state.currentLibraryTab === 'trash') {
+      updateTabUI(state.previousLibraryTab || 'archive')
+    } else {
+      state.previousLibraryTab = state.currentLibraryTab
+      updateTabUI('trash')
+    }
   })
 }
 
@@ -2299,8 +2304,8 @@ function createDocCard(doc) {
   let actionsHtml = ''
   if (state.currentLibraryTab === 'trash') {
     actionsHtml = `
-      <button class="doc-restore-btn" data-id="${doc.id}">복원</button>
-      <button class="doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
+      <button class="doc-open-btn doc-restore-btn" data-id="${doc.id}">복원</button>
+      <button class="doc-delete-btn doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
           <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
