@@ -59,4 +59,26 @@ export async function updateLibraryTranslation(docId, pageNum, payload, options 
   if (!res.ok) throw new Error('번역 수정 저장 실패')
   return res.json()
 }
+export async function fetchLibraryTrash(options = {}) {
+  const res = await fetch(`${API_BASE}/library/trash${buildQuery(options)}`)
+  if (!res.ok) throw new Error('휴지통 조회 실패')
+  return res.json()
+}
 
+export async function restoreLibraryDoc(docId) {
+  const res = await fetch(`${API_BASE}/library/${docId}/restore`, { method: 'POST' })
+  if (!res.ok) throw new Error('복원 실패')
+  return res.json()
+}
+
+export async function emptyLibraryTrash() {
+  const res = await fetch(`${API_BASE}/library/trash/empty`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('휴지통 비우기 실패')
+  return res.json()
+}
+
+export async function deleteLibraryDocPermanently(docId) {
+  const res = await fetch(`${API_BASE}/library/${docId}/permanent`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('영구 삭제 실패')
+  return res.json()
+}

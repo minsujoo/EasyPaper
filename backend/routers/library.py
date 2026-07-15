@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from services.auth import get_current_user
 from services.library import (
-    list_documents, get_document, delete_document,
+    list_documents, get_document, permanently_delete_document,
+    soft_delete_document, restore_document, empty_trash,
     get_translation, get_pdf_path, update_document_metadata
 )
 from pydantic import BaseModel
@@ -118,10 +119,44 @@ async def get_library_pdf(doc_id: str):
 
 @router.delete("/library/{doc_id}")
 async def delete_library_document(doc_id: str):
-    """라이브러리에서 문서를 삭제합니다."""
-    if not delete_document(doc_id):
+    """라이브러리 문서를 휴지통으로 이동(Soft Delete)합니다."""
+    if not soft_delete_document(doc_id):
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    return {"message": "문서가 삭제되었습니다."}
+    return {"message": "문서가 휴지통으로 이동되었습니다."}
+
+@router.get("/library/trash")
+async def get_library_trash(
+    target_lang: Optional[str] = None,
+    style: Optional[str] = None,
+    ignore_math: Optional[bool] = None,
+    ignore_table: Optional[bool] = None,
+    ignore_refs: Optional[bool] = None,
+    current_user: str = Depends(get_current_user)
+):
+    """휴지통에 보관 중인 문서 목록을 반환합니다."""
+    docs = list_documents(current_user, target_lang, style, ignore_math, ignore_table, ignore_refs, only_trash=True)
+    return {"documents": docs, "total": len(docs)}
+
+@router.post("/library/{doc_id}/restore")
+async def restore_library_document(doc_id: str):
+    """휴지통에서 문서를 복원합니다."""
+    if not restore_document(doc_id):
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    return {"message": "문서가 성공적으로 복원되었습니다."}
+
+@router.delete("/library/trash/empty")
+async def empty_library_trash(current_user: str = Depends(get_current_user)):
+    """휴지통을 완전히 비웁니다(영구 삭제)."""
+    if not empty_trash(current_user):
+        raise HTTPException(status_code=500, detail="휴지통 비우기에 실패했습니다.")
+    return {"message": "휴지통이 비워졌습니다."}
+
+@router.delete("/library/{doc_id}/permanent")
+async def delete_library_document_permanently(doc_id: str):
+    """라이브러리에서 문서를 영구히 삭제(Hard Delete)합니다."""
+    if not permanently_delete_document(doc_id):
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    return {"message": "문서가 영구적으로 삭제되었습니다."}
 
 
 @router.get("/library/{doc_id}/images")

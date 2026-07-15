@@ -69,10 +69,16 @@
         </button>
       </div>
 
-      <!-- 탭 영역 -->
-      <div class="library-tabs-container">
-        <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive">📥 보관함</button>
-        <button id="lib-tab-history" class="library-tab-btn" data-tab="history">✅ 히스토리</button>
+      <!-- 탭 영역 및 제어 도구 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <div class="library-tabs-container" style="margin-bottom: 0;">
+          <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive">📥 보관함</button>
+          <button id="lib-tab-history" class="library-tab-btn" data-tab="history">✅ 히스토리</button>
+          <button id="lib-tab-trash" class="library-tab-btn" data-tab="trash">🗑️ 휴지통</button>
+        </div>
+        <button id="lib-empty-trash-btn" class="file-btn hidden">
+          🗑️ 휴지통 비우기
+        </button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->

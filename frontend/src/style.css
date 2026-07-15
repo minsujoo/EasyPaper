@@ -3895,3 +3895,31 @@ body.light-theme .sentence-memo-box {
 #lib-upload-btn:active {
   transform: translateY(-1px) scale(0.98);
 }
+
+/* 휴지통 비우기 버튼 스타일 */
+#lib-empty-trash-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#lib-empty-trash-btn:hover {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  transform: translateY(-1px);
+}
+
+#lib-empty-trash-btn:active {
+  transform: translateY(0);
+}

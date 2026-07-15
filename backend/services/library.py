@@ -8,6 +8,8 @@ from services.db import (
     db_get_document,
     db_list_documents,
     db_delete_document,
+    db_soft_delete_document,
+    db_restore_document,
     db_save_translation,
     db_get_translation,
     db_clear_translations,
@@ -93,10 +95,11 @@ def list_documents(
     style: Optional[str] = None,
     ignore_math: Optional[bool] = None,
     ignore_table: Optional[bool] = None,
-    ignore_refs: Optional[bool] = None
+    ignore_refs: Optional[bool] = None,
+    only_trash: bool = False
 ) -> list:
     """라이브러리의 문서를 최신순으로 반환합니다 (필터링 가능)."""
-    docs = db_list_documents(username)
+    docs = db_list_documents(username, only_trash=only_trash)
     
     suffix = None
     if target_lang is not None and style is not None:
@@ -171,8 +174,8 @@ def delete_chat_sessions(doc_id: str) -> None:
             print(f"[delete_chat_sessions Antigravity Error] {e}")
 
 
-def delete_document(doc_id: str) -> bool:
-    """라이브러리에서 문서 파일 및 데이터베이스 레코드를 삭제합니다."""
+def permanently_delete_document(doc_id: str) -> bool:
+    """라이브러리에서 문서 파일 및 데이터베이스 레코드를 영구히 삭제합니다."""
     doc_dir = os.path.join(LIBRARY_DIR, doc_id)
     # 1. 채팅 세션 삭제
     delete_chat_sessions(doc_id)
@@ -181,6 +184,21 @@ def delete_document(doc_id: str) -> bool:
         shutil.rmtree(doc_dir, ignore_errors=True)
     # 3. DB 삭제
     return db_delete_document(doc_id)
+
+def soft_delete_document(doc_id: str) -> bool:
+    """라이브러리 문서를 휴지통으로 이동(Soft Delete)시킵니다."""
+    return db_soft_delete_document(doc_id)
+
+def restore_document(doc_id: str) -> bool:
+    """휴지통의 문서를 복원합니다."""
+    return db_restore_document(doc_id)
+
+def empty_trash(username: str = "admin") -> bool:
+    """휴지통에 있는 모든 문서를 영구 삭제(하드 딜리트)합니다."""
+    trashed_docs = db_list_documents(username, only_trash=True)
+    for doc in trashed_docs:
+        permanently_delete_document(doc["id"])
+    return True
 
 
 # ── 번역 저장/조회 ─────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import './style.css'
 import { marked } from 'marked'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 
 
 // ── 글로벌 API 인터셉터 (인증 만료/실패 대응) ─────────
@@ -112,6 +112,8 @@ const libraryCategoryFilters = $('library-category-filters')
 const libraryCountBadge = $('library-count-badge')
 const libTabArchive     = $('lib-tab-archive')
 const libTabHistory     = $('lib-tab-history')
+const libTabTrash       = $('lib-tab-trash')
+const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 
 // Google Drive Style Upload Popup references
@@ -1077,6 +1079,26 @@ globalLogoutBtn.addEventListener('click', async () => {
   }
 })
 
+// 휴지통 비우기 버튼 클릭 이벤트
+if (libEmptyTrashBtn) {
+  libEmptyTrashBtn.addEventListener('click', async () => {
+    const ok = await showCustomConfirm('휴지통에 있는 모든 논문을 영구 삭제할까요?\n이 작업은 복구할 수 없습니다.', {
+      title: '휴지통 비우기',
+      confirmText: '휴지통 비우기',
+      danger: true
+    })
+    if (!ok) return
+    try {
+      await emptyLibraryTrash()
+      showToast('휴지통이 비워졌습니다.', 'success')
+      await renderLibrary()
+      await loadLibraryCount()
+    } catch (err) {
+      showToast('휴지통 비우기 실패: ' + err.message, 'error')
+    }
+  })
+}
+
 // ── 비밀번호 변경 모달 이벤트 ──────────────────────────
 // ── Ollama 설정 새로고침 헬퍼 ──────────────────────────
 // ── 시스템 설정 새로고침 헬퍼 ──────────────────────────
@@ -2001,22 +2023,50 @@ async function loadLibraryCount() {
 }
 
 // 탭 클릭 이벤트 리스너 등록
-if (libTabArchive && libTabHistory) {
+function updateTabUI(activeTab) {
+  state.currentLibraryTab = activeTab
+  activeCategoryFilter = 'ALL'
+  
+  if (libTabArchive) libTabArchive.classList.toggle('active', activeTab === 'archive')
+  if (libTabHistory) libTabHistory.classList.toggle('active', activeTab === 'history')
+  if (libTabTrash) libTabTrash.classList.toggle('active', activeTab === 'trash')
+  
+  if (libEmptyTrashBtn) {
+    if (activeTab === 'trash') {
+      libEmptyTrashBtn.classList.remove('hidden')
+    } else {
+      libEmptyTrashBtn.classList.add('hidden')
+    }
+  }
+
+  // 휴지통 탭인 경우 새 논문 추가 플로팅 버튼을 숨깁니다.
+  if (libUploadBtn) {
+    if (activeTab === 'trash') {
+      libUploadBtn.classList.add('hidden')
+    } else {
+      libUploadBtn.classList.remove('hidden')
+    }
+  }
+  
+  renderLibrary()
+}
+
+if (libTabArchive) {
   libTabArchive.addEventListener('click', () => {
     if (state.currentLibraryTab === 'archive') return
-    state.currentLibraryTab = 'archive'
-    libTabArchive.classList.add('active')
-    libTabHistory.classList.remove('active')
-    activeCategoryFilter = 'ALL'
-    renderLibrary()
+    updateTabUI('archive')
   })
+}
+if (libTabHistory) {
   libTabHistory.addEventListener('click', () => {
     if (state.currentLibraryTab === 'history') return
-    state.currentLibraryTab = 'history'
-    libTabHistory.classList.add('active')
-    libTabArchive.classList.remove('active')
-    activeCategoryFilter = 'ALL'
-    renderLibrary()
+    updateTabUI('history')
+  })
+}
+if (libTabTrash) {
+  libTabTrash.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'trash') return
+    updateTabUI('trash')
   })
 }
 
@@ -2044,12 +2094,17 @@ async function renderLibrary() {
   libraryGrid.innerHTML = ''
   libraryCategoryFilters.innerHTML = ''
   try {
-    const data = await fetchLibrary(getTranslationOptions())
+    let data
+    if (state.currentLibraryTab === 'trash') {
+      data = await fetchLibraryTrash(getTranslationOptions())
+    } else {
+      data = await fetchLibrary(getTranslationOptions())
+    }
     const allDocs = data.documents || []
 
-    // 보관함 뱃지에는 안읽은 논문 개수 표시
+    // 보관함 뱃지에는 안읽은 논문 개수 표시 (휴지통이 아닐 때만 적용하거나, archive 기준 개수 표시)
     const unreadCount = allDocs.filter(doc => doc.metadata?.read !== true).length
-    if (unreadCount > 0 && libraryCountBadge) {
+    if (unreadCount > 0 && libraryCountBadge && state.currentLibraryTab !== 'trash') {
       libraryCountBadge.textContent = unreadCount
       libraryCountBadge.classList.remove('hidden')
     } else if (libraryCountBadge) {
@@ -2058,6 +2113,7 @@ async function renderLibrary() {
 
     // 현재 선택된 탭에 따라 논문 목록 필터링
     const docs = allDocs.filter(doc => {
+      if (state.currentLibraryTab === 'trash') return true
       const isRead = doc.metadata?.read === true
       return state.currentLibraryTab === 'history' ? isRead : !isRead
     })
@@ -2200,7 +2256,7 @@ function createDocCard(doc) {
     dateHtml = `<span>✅ 완독: ${readDateStr}</span>`
   }
 
-  const checkBtnHtml = `
+  const checkBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
     <button class="doc-card-check-btn ${isRead ? 'checked' : ''}" data-id="${doc.id}" title="${isRead ? '읽지 않음으로 표시' : '읽음으로 표시'}">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="20 6 9 17 4 12"></polyline>
@@ -2221,6 +2277,32 @@ function createDocCard(doc) {
     `
   }
 
+  let actionsHtml = ''
+  if (state.currentLibraryTab === 'trash') {
+    actionsHtml = `
+      <button class="doc-restore-btn" data-id="${doc.id}">복원</button>
+      <button class="doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </button>
+    `
+  } else {
+    actionsHtml = `
+      <button class="doc-open-btn" data-id="${doc.id}">열기</button>
+      <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
+      </button>
+      <button class="doc-delete-btn" data-id="${doc.id}" title="삭제">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </button>
+    `
+  }
+
   const card = document.createElement('div')
   card.className = 'doc-card'
   card.innerHTML = `
@@ -2233,55 +2315,100 @@ function createDocCard(doc) {
     </div>
     ${progressHtml}
     <div class="doc-card-actions">
-      <button class="doc-open-btn" data-id="${doc.id}">열기</button>
-      <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
-      </button>
-      <button class="doc-delete-btn" data-id="${doc.id}" title="삭제">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
-          <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-        </svg>
-      </button>
+      ${actionsHtml}
     </div>`
 
-  card.querySelector('.doc-card-check-btn').addEventListener('click', async (e) => {
-    e.stopPropagation()
-    const currentReadState = doc.metadata?.read === true
-    const nextReadState = !currentReadState
-    const payload = { read: nextReadState }
-    if (nextReadState) {
-      payload.read_at = new Date().toISOString()
-    } else {
-      payload.read_at = null
-    }
-    
-    try {
-      await updateLibraryDocMetadata(doc.id, payload)
-      showToast(nextReadState ? '읽은 논문으로 표시되었습니다.' : '보관함으로 이동되었습니다.', 'success')
-      await renderLibrary()
-      await loadLibraryCount()
-    } catch (err) {
-      showToast('상태 변경 실패: ' + err.message, 'error')
-    }
-  })
+  const checkBtn = card.querySelector('.doc-card-check-btn')
+  if (checkBtn) {
+    checkBtn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      const currentReadState = doc.metadata?.read === true
+      const nextReadState = !currentReadState
+      const payload = { read: nextReadState }
+      if (nextReadState) {
+        payload.read_at = new Date().toISOString()
+      } else {
+        payload.read_at = null
+      }
+      
+      try {
+        await updateLibraryDocMetadata(doc.id, payload)
+        showToast(nextReadState ? '읽은 논문으로 표시되었습니다.' : '보관함으로 이동되었습니다.', 'success')
+        await renderLibrary()
+        await loadLibraryCount()
+      } catch (err) {
+        showToast('상태 변경 실패: ' + err.message, 'error')
+      }
+    })
+  }
 
-  card.querySelector('.doc-open-btn').addEventListener('click', (e) => { e.stopPropagation(); openFromLibrary(doc) })
-  card.querySelector('.doc-delete-btn').addEventListener('click', async (e) => {
-    e.stopPropagation()
-    const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
-    const ok = await showCustomConfirm(`"${displayTitle}"을 삭제할까요?`, { title: '논문 삭제', confirmText: '삭제', danger: true })
-    if (!ok) return
-    try { await deleteLibraryDoc(doc.id); showToast('삭제되었습니다', 'success'); await renderLibrary() }
-    catch { showToast('삭제 실패', 'error') }
-  })
+  const openBtn = card.querySelector('.doc-open-btn')
+  if (openBtn) {
+    openBtn.addEventListener('click', (e) => { e.stopPropagation(); openFromLibrary(doc) })
+  }
+
+  const deleteBtn = card.querySelector('.doc-delete-btn')
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+      const ok = await showCustomConfirm(`"${displayTitle}"을 삭제할까요? (휴지통으로 이동합니다)`, { title: '논문 삭제', confirmText: '삭제', danger: true })
+      if (!ok) return
+      try {
+        await deleteLibraryDoc(doc.id)
+        showToast('휴지통으로 이동되었습니다.', 'success')
+        await renderLibrary()
+        await loadLibraryCount()
+      } catch {
+        showToast('삭제 실패', 'error')
+      }
+    })
+  }
+
+  const restoreBtn = card.querySelector('.doc-restore-btn')
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      try {
+        await restoreLibraryDoc(doc.id)
+        showToast('논문이 복원되었습니다.', 'success')
+        await renderLibrary()
+        await loadLibraryCount()
+      } catch (err) {
+        showToast('복원 실패: ' + err.message, 'error')
+      }
+    })
+  }
+
+  const permDeleteBtn = card.querySelector('.doc-permanent-delete-btn')
+  if (permDeleteBtn) {
+    permDeleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+      const ok = await showCustomConfirm(`"${displayTitle}"을 영구적으로 삭제할까요?\n이 작업은 되돌릴 수 없으며, 모든 번역 데이터 및 채팅 기록이 지워집니다.`, {
+        title: '논문 영구 삭제',
+        confirmText: '영구 삭제',
+        danger: true
+      })
+      if (!ok) return
+      try {
+        await deleteLibraryDocPermanently(doc.id)
+        showToast('영구 삭제되었습니다.', 'success')
+        await renderLibrary()
+      } catch (err) {
+        showToast('삭제 실패: ' + err.message, 'error')
+      }
+    })
+  }
   
-  card.querySelector('.doc-edit-btn').addEventListener('click', (e) => {
-    e.stopPropagation()
-    const titleEl = card.querySelector('.doc-card-title')
-    const oldTitle = displayTitle
-    
-    const input = document.createElement('input')
+  const editBtn = card.querySelector('.doc-edit-btn')
+  if (editBtn) {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const titleEl = card.querySelector('.doc-card-title')
+      const oldTitle = displayTitle
+      
+      const input = document.createElement('input')
     input.type = 'text'
     input.value = oldTitle
     input.style.width = '100%'
@@ -2337,7 +2464,14 @@ function createDocCard(doc) {
       }, 100)
     })
   })
-  card.addEventListener('click', () => openFromLibrary(doc))
+}
+  card.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'trash') {
+      showToast('휴지통에 있는 논문입니다. 복원 후 열 수 있습니다.', 'warning')
+      return
+    }
+    openFromLibrary(doc)
+  })
   return card
 }
 

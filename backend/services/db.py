@@ -67,6 +67,12 @@ def init_db():
         )
         """)
         
+        # documents 테이블 동적 스키마 마이그레이션 (is_deleted 컬럼 추가)
+        try:
+            cursor.execute("ALTER TABLE documents ADD COLUMN is_deleted INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+            
         conn.commit()
         
     # 기본 관리자 계정 초기 생성
@@ -153,7 +159,7 @@ def db_get_document(doc_id: str) -> Optional[dict]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, filename, pdf_path, total_pages, metadata, created_at FROM documents WHERE id = ?",
+            "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE id = ?",
             (doc_id,)
         )
         row = cursor.fetchone()
@@ -163,17 +169,19 @@ def db_get_document(doc_id: str) -> Optional[dict]:
             return doc
         return None
 
-def db_list_documents(username: Optional[str] = None) -> list:
+def db_list_documents(username: Optional[str] = None, only_trash: bool = False) -> list:
+    is_deleted_val = 1 if only_trash else 0
     with get_db() as conn:
         cursor = conn.cursor()
         if username:
             cursor.execute(
-                "SELECT id, username, filename, pdf_path, total_pages, metadata, created_at FROM documents WHERE username = ? ORDER BY created_at DESC",
-                (username,)
+                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE username = ? AND is_deleted = ? ORDER BY created_at DESC",
+                (username, is_deleted_val)
             )
         else:
             cursor.execute(
-                "SELECT id, username, filename, pdf_path, total_pages, metadata, created_at FROM documents ORDER BY created_at DESC"
+                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE is_deleted = ? ORDER BY created_at DESC",
+                (is_deleted_val,)
             )
         rows = cursor.fetchall()
         docs = []
@@ -190,6 +198,26 @@ def db_delete_document(doc_id: str) -> bool:
         if not cursor.fetchone():
             return False
         cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        conn.commit()
+        return True
+
+def db_soft_delete_document(doc_id: str) -> bool:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM documents WHERE id = ?", (doc_id,))
+        if not cursor.fetchone():
+            return False
+        cursor.execute("UPDATE documents SET is_deleted = 1 WHERE id = ?", (doc_id,))
+        conn.commit()
+        return True
+
+def db_restore_document(doc_id: str) -> bool:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM documents WHERE id = ?", (doc_id,))
+        if not cursor.fetchone():
+            return False
+        cursor.execute("UPDATE documents SET is_deleted = 0 WHERE id = ?", (doc_id,))
         conn.commit()
         return True
 
