@@ -13,7 +13,8 @@ from config import (
     get_agy_path,
     get_agy_env,
     get_claude_code_path,
-    get_translation_prompt_template
+    get_translation_prompt_template,
+    get_project_root
 )
 
 
@@ -443,12 +444,11 @@ async def stream_chat(
             pass
         formatted_prompt = []
         formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        formatted_prompt.append("Conversation history:")
-        for msg in history_messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            role_label = "User" if role == "user" else "Assistant"
-            formatted_prompt.append(f"[{role_label}]: {content}")
+        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리를 가지고 있으므로,
+        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if history_messages:
+            latest_msg = history_messages[-1]
+            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id):
@@ -462,12 +462,11 @@ async def stream_chat(
             pass
         formatted_prompt = []
         formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        formatted_prompt.append("Conversation history:")
-        for msg in history_messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            role_label = "User" if role == "user" else "Assistant"
-            formatted_prompt.append(f"[{role_label}]: {content}")
+        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리를 가지고 있으므로,
+        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if history_messages:
+            latest_msg = history_messages[-1]
+            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id):
@@ -582,7 +581,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     env = get_agy_env()
     if session_id:
         import shutil
-        cache_dir = "/home/ubuntu/programming/projects/EasyPaper/cache"
+        cache_dir = os.path.join(get_project_root(), "cache")
         home_dir = os.path.join(cache_dir, f"claude_home_{session_id}")
         claude_dir = os.path.join(home_dir, ".claude")
         os.makedirs(claude_dir, exist_ok=True)
@@ -651,7 +650,8 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    env=env
+                    env=env,
+                    cwd=get_project_root()
                 )
 
                 process.stdin.write(encoded_prompt)
@@ -781,14 +781,19 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=get_agy_env()
+            env=get_agy_env(),
+            cwd=get_project_root()
         )
         
         # 새 대화 ID를 비동기적으로 감지하여 매핑 테이블에 저장하는 백그라운드 태스크 기동
+        # 타임아웃을 60초(120회)로 대폭 늘려 생성 지연에 강인하게 함
         if session_id and not mapped_conv_id:
             async def detect_and_save():
-                for _ in range(20): # 최대 10초 대기
+                for _ in range(120): # 최대 60초 대기
                     await asyncio.sleep(0.5)
+                    # 만약 아래 wait() 이후의 최종 Sync에서 매핑에 성공했다면 조기 종료
+                    if get_mapped_conversation_id(session_id):
+                        break
                     current_set = get_existing_conversations()
                     new_ids = current_set - before_set
                     if new_ids:
@@ -814,6 +819,15 @@ async def stream_antigravity(prompt: str, model: str = None, session_id: str = N
             yield final_decoded
             
         await process.wait()
+
+        # 프로세스가 종료되었으므로 혹시 백그라운드 루프가 아직 감지하지 못했을 때를 위한 동기식 최종 Sync 및 저장
+        if session_id and not get_mapped_conversation_id(session_id):
+            current_set = get_existing_conversations()
+            new_ids = current_set - before_set
+            if new_ids:
+                new_id = list(new_ids)[0]
+                save_mapped_conversation_id(session_id, new_id)
+                print(f"[stream_antigravity] [Final Sync] Mapped session {session_id} to new Antigravity conversation {new_id}")
         
         # stderr 코드가 0이 아닌 경우 stderr 내용을 로그
         if process.returncode and process.returncode != 0:
