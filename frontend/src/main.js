@@ -562,7 +562,7 @@ function formatTranslationHtml(text) {
     if (!item) return _
     if (window.katex) {
       try {
-        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'html' })
+        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'htmlAndMathml' })
         if (item.display) {
           return `<div class="katex-display-wrap" data-formula="${encodeURIComponent(item.formula)}" data-display="true">${r}</div>`
         } else {
@@ -587,7 +587,7 @@ function applyKatexToElement(el) {
     try {
       const formula = decodeURIComponent(code.dataset.formula || '')
       const display = code.dataset.display === 'true'
-      const r = window.katex.renderToString(formula, { displayMode: display, throwOnError: false, output: 'html' })
+      const r = window.katex.renderToString(formula, { displayMode: display, throwOnError: false, output: 'htmlAndMathml' })
       const wrapper = display
         ? Object.assign(document.createElement('div'), { className: 'katex-display-wrap', innerHTML: r })
         : Object.assign(document.createElement('span'), { className: 'katex-inline-wrap', innerHTML: r })
@@ -4146,7 +4146,7 @@ function formatChatHtml(text) {
     if (!item) return _
     if (window.katex) {
       try {
-        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'html' })
+        const r = window.katex.renderToString(item.formula, { displayMode: item.display, throwOnError: false, output: 'htmlAndMathml' })
         if (item.display) {
           return `<div class="katex-display-wrap" data-formula="${encodeURIComponent(item.formula)}" data-display="true">${r}</div>`
         } else {
@@ -4704,8 +4704,29 @@ if (viewerScrollContainer) {
 
 window.addEventListener('resize', hideSelectionMenu);
 
+// 문장 중간에 섞여 있는 짧은 인라인 수식 조각인지 휴리스틱으로 판단.
+// findDisplayEquationsFromVTM은 줄 전체가 수식인 "독립 수식 줄"만 찾아내므로,
+// "The extracted representation Fenc(Φmodal(...)) will..." 처럼 영문 산문 문장
+// 한가운데에 끼어 있는 짧은 수식 조각은 isEquation으로 표시되지 않는다. 선택된
+// 조각 자체가 그리스 문자/수학 기호 위주이고 영단어가 거의 없으면 수식으로 간주한다.
+function looksLikeEquationFragment(text) {
+  const t = text.trim();
+  if (!t || t.length >= 100) return false;
+  // 앞뒤가 모두 글자인 하이픈(영어 복합어 하이픈, 예: "state-of-the-art")은
+  // 수학 기호로 치지 않는다 - findDisplayEquationsFromVTM과 동일한 이유.
+  const hasMathSymbol = /[=<>+−⋅Ͱ-Ͽ∀-⋿*/×÷_\^\\]/.test(t)
+    || /(?<![a-zA-Z])-(?![a-zA-Z])/.test(t);
+  if (!hasMathSymbol) return false;
+  const words = t.split(/\s+/);
+  const engWordCount = words.filter(w => {
+    const c = w.replace(/[^a-zA-Z]/g, '');
+    return c.length >= 3 && !w.startsWith('\\');
+  }).length;
+  return engWordCount <= 2;
+}
+
 // 유니코드 수식 텍스트를 LaTeX 문법으로 변환하는 휴리스틱 헬퍼 함수
-function convertRawTextToLatex(text) {
+function convertRawTextToLatex(text, inline = false) {
   let clean = text.trim();
   
   // 그리스 문자 및 수학 기호 매핑
@@ -4748,7 +4769,7 @@ function convertRawTextToLatex(text) {
   // 아래첨자 자동 교정 (예: p\theta -> p_\theta)
   clean = clean.replace(/([a-zA-Z])(\\theta|\\phi|\\mu|\\sigma|\\alpha|\\beta|\\lambda)/g, '$1_$2');
   
-  return `$$ ${clean} $$`;
+  return inline ? `$ ${clean} $` : `$$ ${clean} $$`;
 }
 
 // ── LaTeX 스마트 클립보드 인터셉터 ────────────────────────────────────────
@@ -4756,15 +4777,28 @@ function convertRawTextToLatex(text) {
 // 수식 부분은 LaTeX($...$ / $$...$$)로 변환하여 클립보드에 쓰는 방식.
 // 기존 .pdf-sentence DOM 분할에 의존하지 않습니다.
 
-// 범위와 텍스트 노드 교차 감지 (하위 호환용 유틸리티)
-function rangeIntersectsNode(range, node) {
-  if (range.intersectsNode) return range.intersectsNode(node);
-  const nr = document.createRange();
+// 선택 영역과 텍스트 노드가 화면상 기하학적으로 겹치는지 감지.
+// range.intersectsNode()는 DOM 트리 순서를 기준으로 판단하는데, 수식은 첨자·분수·
+// 적분 기호 등이 PDF 콘텐츠 스트림 순서상 시각적 순서와 다르게 기록되는 경우가 흔해서
+// DOM 순서 기반 판정은 선택 범위 밖의 노드까지 끌어들이거나(과다 포함) 반대로
+// 선택 범위 안의 노드를 누락시킬 수 있다. 대신 실제 렌더링된 사각형끼리의 겹침으로 판단한다.
+// 단순 "겹침"(rectsOverlap)은 줄간격이 촘촘한 학술 논문에서 바로 아래/위 줄의
+// 사각형과 경계선이 살짝 스치기만 해도 참으로 판정되어 인접 줄의 텍스트까지
+// 끌려 들어온다. 대신 노드 사각형의 중심점이 선택 사각형 "안"에 실제로 들어있는지로
+// 판단하면 애매하게 스치는 인접 줄은 배제되고 실제로 선택된 줄만 남는다.
+function rectContainsPoint(r, x, y) {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+function getNodeClientRect(node) {
   try {
-    nr.selectNode(node);
-    return range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-           range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
-  } catch (e) { return false; }
+    const r = document.createRange();
+    r.selectNode(node);
+    const rects = r.getClientRects();
+    return rects.length > 0 ? rects[0] : r.getBoundingClientRect();
+  } catch (e) {
+    return null;
+  }
 }
 
 document.addEventListener('copy', (e) => {
@@ -4792,10 +4826,29 @@ document.addEventListener('copy', (e) => {
     // VirtualTextMap 없이는 기본 텍스트 복사로 폴백 (브라우저 기본 동작 허용)
     if (!vtm || !sentenceRanges) return;
 
-    // 1. 선택된 텍스트의 charStart/charEnd 계산 (nodeRanges 기반)
+    // 1. 선택된 텍스트의 charStart/charEnd 계산 (nodeRanges 기반, 화면 좌표 겹침으로 판정)
+    let selRects = Array.from(range.getClientRects()).filter(r => r.width > 0 || r.height > 0);
+    if (selRects.length === 0) {
+      const bounding = range.getBoundingClientRect();
+      if (bounding.width > 0 || bounding.height > 0) selRects = [bounding];
+    }
+    if (selRects.length === 0) return;
+
     let selCharStart = Infinity, selCharEnd = 0;
     for (const nr of vtm.nodeRanges) {
-      if (!rangeIntersectsNode(range, nr.node)) continue;
+      // 선택의 시작/끝 컨테이너는 브라우저가 이미 정확한 오프셋을 알려주므로 항상 포함한다.
+      // PDF.js는 일반 본문을 한 줄 전체를 하나의 텍스트 노드로 렌더링하는 경우가 많아,
+      // 그 줄의 일부만 드래그해도 노드 자체의 중심점은 선택 영역 바깥에 있을 수 있기
+      // 때문에(노드 전체 폭 > 실제 선택 폭), 기하학적 필터를 시작/끝 노드에는 적용하지 않는다.
+      const isBoundaryNode = nr.node === range.startContainer || nr.node === range.endContainer;
+      if (!isBoundaryNode) {
+        const nodeRect = getNodeClientRect(nr.node);
+        if (!nodeRect || (nodeRect.width === 0 && nodeRect.height === 0)) continue;
+        const cx = (nodeRect.left + nodeRect.right) / 2;
+        const cy = (nodeRect.top + nodeRect.bottom) / 2;
+        if (!selRects.some(r => rectContainsPoint(r, cx, cy))) continue;
+      }
+
       const nodeStart = nr.node === range.startContainer ? range.startOffset : 0;
       const nodeEnd   = nr.node === range.endContainer   ? range.endOffset   : nr.node.length;
       const absStart  = nr.start + nodeStart;
@@ -4812,12 +4865,26 @@ document.addEventListener('copy', (e) => {
     if (overlappingSentences.length === 0) return;
 
     // 3. 각 sentenceRange에 대해 선택된 텍스트 조각을 추출하고 수식 변환 적용
-    const parts = [];
-    for (const r of overlappingSentences) {
-      const partStart = Math.max(r.charStart, selCharStart);
-      const partEnd   = Math.min(r.charEnd,   selCharEnd);
-      if (partStart >= partEnd) continue;
+    // alignSentencesToText의 정렬 결과가 드물게 서로 겹치는 범위를 만들어낼 수 있는데
+    // (예: 전역 검색 폴백이 이미 다른 문장이 차지한 구간보다 앞쪽에서 매칭되는 경우),
+    // 그대로 두면 겹치는 부분의 텍스트가 두 번 복사된다. 겹치는 후보 중에서는 더
+    // 넓은(구체적인) 범위를 우선 채택한다 - 폭이 1~2자뿐인 잔여 조각이 먼저 선택되어
+    // 실제로 맞는 넓은 범위를 밀어내는 것을 방지하기 위함이다. 채택된 범위만 다시
+    // 위치 순으로 정렬해 읽는 순서대로 이어붙인다.
+    const candidates = overlappingSentences
+      .map(r => ({ r, partStart: Math.max(r.charStart, selCharStart), partEnd: Math.min(r.charEnd, selCharEnd) }))
+      .filter(c => c.partStart < c.partEnd)
+      .sort((a, b) => (b.partEnd - b.partStart) - (a.partEnd - a.partStart));
 
+    const kept = [];
+    for (const c of candidates) {
+      if (kept.some(k => c.partStart < k.partEnd && c.partEnd > k.partStart)) continue;
+      kept.push(c);
+    }
+    kept.sort((a, b) => a.partStart - b.partStart);
+
+    const parts = [];
+    for (const { r, partStart, partEnd } of kept) {
       let text = vtm.fullText.substring(partStart, partEnd);
 
       if (r.isEquation) {
@@ -4835,6 +4902,9 @@ document.addEventListener('copy', (e) => {
           if (!latex.startsWith('$')) latex = `$ ${latex.trim()} $`;
           parts.push(' ' + latex + ' ');
         }
+      } else if (looksLikeEquationFragment(text)) {
+        // 산문 문장 중간에 섞인 짧은 인라인 수식 조각 (독립 수식 줄 감지에는 걸리지 않음)
+        parts.push(' ' + convertRawTextToLatex(text, true) + ' ');
       } else {
         // 일반 텍스트: 그대로 사용
         parts.push(text);
@@ -5017,7 +5087,6 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
     if (idx !== -1) {
       const cleanStart = idx;
       const cleanEnd = Math.min(cleanText.length, idx + cleanSent.length);
-      
       const rawStart = cleanToRaw[cleanStart] ?? (cleanToRaw[cleanToRaw.length - 1] ?? 0);
       const lastCleanIdx = cleanEnd - 1;
       const rawEnd = (cleanToRaw[lastCleanIdx] !== undefined)
@@ -5047,7 +5116,19 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
   }
 
   // 매칭 실패(길이 0)인 문장들의 범위를 주변 매칭 성공 문장들 사이의 간격으로 분할 보간(Gap Partitioning)
-  // 수식 등의 기호만 있는 문장들이 누락 없이 서로 겹치지 않고 PDF 텍스트 레이어에 균등 분할 마킹되도록 지원
+  // 수식 등의 기호만 있는 문장들이 누락 없이 서로 겹치지 않고 PDF 텍스트 레이어에 균등 분할 마킹되도록 지원.
+  //
+  // 실패한 문장들 사이의 간격을 "개수로 균등 분할"하면 위험하다 - 그림 캡션처럼 원문
+  // 추출 텍스트와 번역 문장 목록이 잘 안 맞는 구간에서 매칭이 연쇄적으로 실패하면,
+  // prevEnd와 nextStart 사이의 간격이 그림이 차지하는 공백이나 전혀 무관한 다른
+  // 단락까지 포함할 정도로 커질 수 있다(실측: 캡션 문장 하나가 수백 자 떨어진 다른
+  // 컬럼의 무관한 문단까지 하이라이트로 끌어옴). 그 큰 간격을 실패한 문장 "개수"로만
+  // 나누면 문장의 실제 길이와 무관하게 넓은 범위가 배정되므로, 대신 (1) 각 문장
+  // 원문(sText) 길이 비율로 나누고, (2) 간격이 실패한 문장들의 원문 길이 합보다
+  // 비정상적으로 크면(그림 등으로 인한 진짜 공백일 가능성) 간격 전체를 억지로 채우지
+  // 않고 prevEnd부터 필요한 만큼만 촘촘히 배정한 뒤 나머지는 어느 문장에도 배정하지
+  // 않고 비워 둔다.
+  const GAP_SAFETY_MULTIPLIER = 2.5;
   let walkIdx = 0;
   while (walkIdx < sentenceRanges.length) {
     if (sentenceRanges[walkIdx].start === sentenceRanges[walkIdx].end) {
@@ -5056,7 +5137,7 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
       while (k_end + 1 < sentenceRanges.length && sentenceRanges[k_end + 1].start === sentenceRanges[k_end + 1].end) {
         k_end++;
       }
-      
+
       let prevEnd = 0;
       for (let i = k_start - 1; i >= 0; i--) {
         if (sentenceRanges[i].end > sentenceRanges[i].start) {
@@ -5064,7 +5145,7 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
           break;
         }
       }
-      
+
       let nextStart = fullText.length;
       for (let i = k_end + 1; i < sentenceRanges.length; i++) {
         if (sentenceRanges[i].end > sentenceRanges[i].start) {
@@ -5072,22 +5153,33 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
           break;
         }
       }
-      
+
       if (prevEnd < nextStart) {
-        const count = k_end - k_start + 1;
-        const chunkSize = (nextStart - prevEnd) / count;
+        const gapSize = nextStart - prevEnd;
+        const lens = [];
+        let totalLen = 0;
         for (let i = k_start; i <= k_end; i++) {
-          sentenceRanges[i].start = Math.round(prevEnd + (i - k_start) * chunkSize);
-          sentenceRanges[i].end = Math.round(prevEnd + (i - k_start + 1) * chunkSize);
+          const len = Math.max(1, (sentenceRanges[i].text || '').length);
+          lens.push(len);
+          totalLen += len;
+        }
+        const usedGap = Math.min(gapSize, totalLen * GAP_SAFETY_MULTIPLIER);
+        let cursor = prevEnd;
+        for (let idx = 0; idx < lens.length; idx++) {
+          const i = k_start + idx;
+          const share = Math.round((lens[idx] / totalLen) * usedGap);
+          sentenceRanges[i].start = cursor;
+          sentenceRanges[i].end = Math.min(nextStart, cursor + share);
+          cursor = sentenceRanges[i].end;
         }
       }
-      
+
       walkIdx = k_end + 1;
     } else {
       walkIdx++;
     }
   }
-  
+
   return sentenceRanges;
 }
 
@@ -5103,18 +5195,32 @@ function buildVirtualTextMap(container, pageNum) {
   const allElements = Array.from(container.children).filter(el => el.nodeType === 1);
   if (allElements.length === 0) return null;
 
-  const pageWidth = parseFloat(container.style.width) || 600;
+  // left/top을 el.style.left/top 문자열(px, %, calc() 등 PDF.js 버전·문서마다 다를 수
+  // 있음)로 역산하는 대신, 브라우저가 실제로 계산한 렌더링 좌표(getBoundingClientRect)를
+  // 컨테이너 기준 상대좌표로 직접 사용한다. 이전에 퍼센트 단위를 컨테이너 크기 기준으로
+  // 환산하는 방식을 썼었는데, 일부 문서에서는 그 환산값이 실제 렌더링 위치와 수십~백
+  // px씩 어긋났다(원인 불명 - 아마도 PDF.js가 퍼센트의 기준으로 삼는 상자와 textLayer의
+  // clientWidth/Height가 문서에 따라 정확히 일치하지 않는 경우가 있는 듯하다). 실제
+  // 렌더링 좌표를 직접 읽으면 이런 불일치가 원천적으로 발생하지 않는다.
+  const containerRect = container.getBoundingClientRect();
+  const pageWidth  = container.clientWidth  || containerRect.width  || 600;
 
   // 줄 번호 필터링 + 노드 메타데이터 수집
   const spans = [];
   allElements.forEach(el => {
     const text = el.textContent.trim();
-    const leftMatch = el.style.left?.match(/([\d.-]+)px/);
-    const topMatch  = el.style.top?.match(/([\d.-]+)px/);
+    // 텍스트가 없는(공백뿐이거나 빈) 요소는 건너뛴다. PDF.js가 줄마다 끼워 넣는
+    // 빈 마커/공백 전용 스팬은 어차피 fullText에 아무 글자도 보태지 않는데,
+    // getBoundingClientRect()가 0,0 같은 퇴화된 좌표를 반환하는 경우가 있어
+    // 그대로 두면 줄 안의 최대 간격(gap) 계산이 이 가짜 좌표에 낚여 엉뚱한
+    // 위치를 거터로 오판하게 만든다(실측: 실제 텍스트는 left=88부터 시작하는데
+    // 빈 스팬이 left=0에 끼어들어 "0~88" 사이를 간격으로 오인).
+    if (!text) return;
+    const rect = el.getBoundingClientRect();
+    const leftVal   = rect.left - containerRect.left;
+    const topVal    = rect.top  - containerRect.top;
     const fsMatch   = el.style.fontSize?.match(/([\d.]+)/);
-    const leftVal   = leftMatch ? parseFloat(leftMatch[1]) : 0;
-    const topVal    = topMatch  ? parseFloat(topMatch[1])  : 0;
-    const fsVal     = fsMatch   ? parseFloat(fsMatch[1])   : 10;
+    const fsVal     = fsMatch   ? parseFloat(fsMatch[1])   : (rect.height || 10);
     const ratio     = leftVal / pageWidth;
 
     // 줄 번호: 3~4자리 숫자, 좌측 마진 8% 이내
@@ -5131,24 +5237,51 @@ function buildVirtualTextMap(container, pageNum) {
 
   if (spans.length === 0) return null;
 
-  // 2단 레이아웃 감지
-  const mid = pageWidth / 2;
-  const leftCount  = spans.filter(n => n.left < mid * 1.05).length;
-  const rightCount = spans.filter(n => n.left > mid * 0.95).length;
-  const isTwoColumn = spans.length > 5
-    && (leftCount  / spans.length > 0.3)
-    && (rightCount / spans.length > 0.3);
-
-  let sortedSpans;
-  if (isTwoColumn) {
-    const leftNs  = spans.filter(n => n.left < mid).sort((a, b) => a.top - b.top || a.left - b.left);
-    const rightNs = spans.filter(n => n.left >= mid).sort((a, b) => a.top - b.top || a.left - b.left);
-    sortedSpans = leftNs.concat(rightNs);
-  } else {
-    sortedSpans = [...spans].sort((a, b) =>
-      Math.abs(a.top - b.top) < 4 ? a.left - b.left : a.top - b.top
-    );
+  // spans는 pdf.js가 만든 DOM 순서(=PDF 콘텐츠 스트림 순서) 그대로 담겨 있다. 2단
+  // 논문이라도 LaTeX 등 조판 엔진은 왼쪽 컬럼 전체를 위에서 아래로 다 쓴 뒤에
+  // 오른쪽 컬럼을 쓰므로, 이 순서 자체가 이미 올바른 읽기 순서다(실측 확인: 페이지
+  // 앞쪽 수십 개 스팬이 전부 왼쪽 컬럼이고 top이 정확히 오름차순으로 이어지며,
+  // 오른쪽 컬럼 내용은 전혀 섞여 있지 않았다). 예전에는 이 순서를 무시하고 top
+  // 좌표만으로 전체를 다시 정렬한 뒤 거터를 추정해 좌/우로 재조립하는 로직을
+  // 썼는데, 그 재정렬 자체가 왼쪽 컬럼 맨 아래 줄과 오른쪽 컬럼 맨 위 줄처럼 top이
+  // 우연히 비슷한 두 스팬을 섞어버리는 원인이었다(수식·헤딩이 섞인 페이지에서
+  // 특히 잦고, 기하학적 방법만으로는 "우연히 가까움"과 "진짜 같은 줄"을 구분할
+  // 수 없었다). 따라서 원래 순서를 그대로 신뢰하고, "같은 시각적 줄"인지만 그
+  // 순서를 따라가며 판정한다.
+  //
+  // 세로 구간이 겹치는 동안 줄을 이어붙이는 구간 병합(interval merging)은 그대로
+  // 쓰되, 순서를 따라갈 때 위험한 지점이 하나 있다: 왼쪽 컬럼의 마지막 줄에서
+  // 오른쪽 컬럼의 첫 줄로 넘어갈 때 top이 페이지 하단에서 상단으로 "역행"한다.
+  // 이 역행한 top이 마침 직전 줄의 늘어난 세로 구간(envelope) 안에 들어가면 두
+  // 컬럼이 하나의 줄로 잘못 합쳐진다. 그래서 세로 구간이 겹치는지 뿐 아니라, 그
+  // 줄이 시작된 top에서 위로 크게 벗어나지 않는지도 함께 확인한다 - 첨자는
+  // 기준선보다 위/아래로 살짝만(~6~8px) 벗어나지만, 컬럼 전환은 수백 px씩
+  // 역행하므로 이 둘은 확실히 구분된다.
+  const LINE_ENVELOPE_REACH = 8;
+  const lineGroups = [];
+  let currentLine = [];
+  let lineTop = null;
+  let envelopeBottom = -Infinity;
+  for (const s of spans) {
+    const sBottom = s.top + LINE_ENVELOPE_REACH;
+    const withinLine = currentLine.length > 0
+      && s.top < envelopeBottom
+      && s.top > lineTop - LINE_ENVELOPE_REACH;
+    if (currentLine.length === 0 || withinLine) {
+      if (currentLine.length === 0) lineTop = s.top;
+      currentLine.push(s);
+      envelopeBottom = Math.max(envelopeBottom, sBottom);
+    } else {
+      lineGroups.push(currentLine);
+      currentLine = [s];
+      lineTop = s.top;
+      envelopeBottom = sBottom;
+    }
   }
+  if (currentLine.length > 0) lineGroups.push(currentLine);
+
+  lineGroups.forEach((line, idx) => line.forEach(s => { s.lineIndex = idx; }));
+  const sortedSpans = lineGroups.flat();
 
   // 줄간격 중앙값 및 폰트 크기 중앙값 계산
   const gaps = [];
@@ -5230,7 +5363,7 @@ function buildVirtualTextMap(container, pageNum) {
     prevFontSize = fontSize;
   }
 
-  return { fullText, spans: sortedSpans, nodeRanges, isTwoColumn, pageNum };
+  return { fullText, spans: sortedSpans, nodeRanges, pageNum };
 }
 
 // 독립 수식 검출 (VirtualTextMap 기반)
@@ -5240,19 +5373,21 @@ function findDisplayEquationsFromVTM(vtm) {
   const lines = [];
   let currentLine = [];
 
+  // top 값으로 줄 경계를 다시 판정하지 않는다: 2단 레이아웃에서는 좌단을 다 훑은 뒤
+  // 우단으로 넘어가면서 top이 페이지 상단 값으로 되돌아가는데, 그 지점에서 직전 줄의
+  // 늘어난 세로 구간(envelope) 안에 다음 컬럼의 첫 줄이 우연히 걸려버리면 두 컬럼
+  //전체가 하나의 "줄"로 잘못 합쳐진다(실측: 문단 여러 개가 통째로 합쳐짐). 대신
+  // buildVirtualTextMap이 이미 정확히 판정해 둔 lineIndex가 바뀔 때만 줄을 나눈다.
+  let currentLineIndex = null;
   for (const spanInfo of spans) {
     if (spanInfo.charStart === undefined || spanInfo.charEnd === undefined) continue;
-    if (currentLine.length === 0) {
+    if (currentLine.length === 0 || spanInfo.lineIndex === currentLineIndex) {
       currentLine.push(spanInfo);
     } else {
-      const prev = currentLine[currentLine.length - 1];
-      if (Math.abs(spanInfo.top - prev.top) < 5) {
-        currentLine.push(spanInfo);
-      } else {
-        lines.push(currentLine);
-        currentLine = [spanInfo];
-      }
+      lines.push(currentLine);
+      currentLine = [spanInfo];
     }
+    currentLineIndex = spanInfo.lineIndex;
   }
   if (currentLine.length > 0) lines.push(currentLine);
 
@@ -5261,7 +5396,13 @@ function findDisplayEquationsFromVTM(vtm) {
     if (!lineText) continue;
 
     const hasEqNum = /[\(\[][\d\w\.]+[\]\)]\s*$/.test(lineText);
-    const hasMathSymbol = /[=<>+\u2212\u22c5\u0370-\u03ff\u2200-\u22ff\-*/\u00d7\u00f7_\^\\]/.test(lineText);
+    // \uc77c\ubc18 ASCII \ud558\uc774\ud508(-)\uc740 \uc218\ud559 \uae30\ud638 \ud310\uc815\uc5d0\uc11c \ube7c\uace0, \uae00\uc790\ub85c \ub458\ub7ec\uc2f8\uc774\uc9c0 \uc54a\uc740
+    // \uacbd\uc6b0\uc5d0\ub9cc(\uc608: "a - b", "x-1") \ubcc4\ub3c4\ub85c \uac80\uc0ac\ud55c\ub2e4. "state-of-the-art"\ucc98\ub7fc
+    // \uc55e\ub4a4\uac00 \ubaa8\ub450 \uae00\uc790\uc778 \ud558\uc774\ud508\uc740 \uc601\uc5b4 \ubcf5\ud569\uc5b4 \ud558\uc774\ud508\uc77c \ubfd0\uc778\ub370, \uc774\ub97c \uc218\uc2dd \uae30\ud638\ub85c
+    // \uc624\ud310\ud558\uba74 \uc774\ub7f0 \ub2e8\uc5b4\uac00 \ud3ec\ud568\ub41c \uc9e7\uc740 \uc904(\ud2b9\ud788 \uc904\ubc14\uafc8\uc73c\ub85c \ub2e8\uc5b4 \uc218\uac00 \uc801\uc5b4\uc9c0\ub294
+    // \ub9c8\uc9c0\ub9c9 \uc904)\uc774 \uc218\uc2dd\uc73c\ub85c \uc798\ubabb \ubd84\ub958\ub418\uc5b4 \ubb38\uc7a5 \ubc94\uc704\uac00 \uc911\uac04\uc5d0 \uc798\ub824\ub098\uac04\ub2e4(\uc2e4\uce21).
+    const hasMathSymbol = /[=<>+\u2212\u22c5\u0370-\u03ff\u2200-\u22ff*/\u00d7\u00f7_\^\\]/.test(lineText)
+      || /(?<![a-zA-Z])-(?![a-zA-Z])/.test(lineText);
     const words = lineText.split(/\s+/);
     const engWordCount = words.filter(w => {
       const c = w.replace(/[^a-zA-Z]/g, '');
@@ -5392,18 +5533,38 @@ function segmentPdfElements(container, pageNum) {
     const displayEqs = findDisplayEquationsFromVTM(vtm);
     sentenceRanges.forEach((r, idx) => { r.sentenceIdx = idx; r.charStart = r.start; r.charEnd = r.end; });
 
+    // displayEqs(기하학적으로 검출된 수식 줄)와 sentenceRanges(번역 문장 정렬 결과)는
+    // 서로 완전히 다른 방식으로 계산된 범위라 경계가 정확히 일치하는 경우가 드물고,
+    // 대부분 부분적으로만 겹친다. "완전히 포함" 관계만 처리하면 실제로는 수식인
+    // 구간의 상당수가 그냥 지나쳐져 isEquation이 설정되지 않으므로, 겹치는 부분이
+    // 조금이라도 있으면 그 교집합만 수식으로 잘라내는 일반화된 겹침 처리로 바꾼다.
     let currentRanges = [...sentenceRanges];
     for (const eq of displayEqs) {
       const nextRanges = [];
       for (const sent of currentRanges) {
-        if (sent.charStart < eq.start && sent.charEnd > eq.end) {
-          nextRanges.push({ ...sent, charEnd: eq.start, end: eq.start, text: fullText.substring(sent.charStart, eq.start) });
-          nextRanges.push({ start: eq.start, end: eq.end, charStart: eq.start, charEnd: eq.end, sentenceIdx: 10000 + eq.start, originalSentenceIdx: sent.sentenceIdx, text: eq.text, isEquation: true });
-          nextRanges.push({ ...sent, charStart: eq.end, start: eq.end, text: fullText.substring(eq.end, sent.charEnd) });
-        } else if (sent.charStart >= eq.start && sent.charEnd <= eq.end) {
-          nextRanges.push({ ...sent, sentenceIdx: 10000 + eq.start, originalSentenceIdx: sent.sentenceIdx, isEquation: true });
-        } else {
+        // 이미 앞선 eq에서 수식으로 잘려나온 조각은 다시 잘라내지 않는다.
+        // 그렇지 않으면 두 수식 줄의 정렬 경계가 서로 살짝 겹칠 때 아주 짧은(1~2자)
+        // 잔여 조각이 다음 eq와 또 겹쳐 잘못된(이전) 수식의 latexData를 물려받는다.
+        if (sent.isEquation) {
           nextRanges.push(sent);
+          continue;
+        }
+        const overlapStart = Math.max(sent.charStart, eq.start);
+        const overlapEnd   = Math.min(sent.charEnd, eq.end);
+        if (overlapStart >= overlapEnd) {
+          nextRanges.push(sent);
+          continue;
+        }
+        if (sent.charStart < overlapStart) {
+          nextRanges.push({ ...sent, charEnd: overlapStart, end: overlapStart, text: fullText.substring(sent.charStart, overlapStart) });
+        }
+        nextRanges.push({
+          start: overlapStart, end: overlapEnd, charStart: overlapStart, charEnd: overlapEnd,
+          sentenceIdx: 10000 + overlapStart, originalSentenceIdx: sent.sentenceIdx,
+          text: fullText.substring(overlapStart, overlapEnd), isEquation: true
+        });
+        if (sent.charEnd > overlapEnd) {
+          nextRanges.push({ ...sent, charStart: overlapEnd, start: overlapEnd, text: fullText.substring(overlapEnd, sent.charEnd) });
         }
       }
       currentRanges = nextRanges.filter(r => r.charStart < r.charEnd);
@@ -5430,7 +5591,6 @@ function segmentPdfElements(container, pageNum) {
     if (!state.pdfPageSentences)  state.pdfPageSentences  = {};
     state.virtualTextMaps[pageNum]  = vtm;
     state.pdfPageSentences[pageNum] = sentenceRanges;
-
     container.dataset.segmented = 'true';
 
     // 6. 오버레이 레이어 생성 (pageWrapper 기준)
@@ -5791,12 +5951,23 @@ let activeHighlightPage = null;
 let activeHighlightSentenceIdx = null;
 
 // VirtualTextMap에서 특정 문자 위치에 해당하는 sentenceRange를 이진 탐색
+// alignSentencesToText는 아주 드물게 서로 겹치는 두 문장 범위를 만들어낼 수 있다
+// (전역/프리픽스 폴백 검색이 이미 다른 문장이 차지한 구간보다 앞에서 매칭되는 경우).
+// 겹치는 두 범위 중 더 넓은 쪽이 먼저 반환되면, 실제로는 무관한 옆 문장까지 포함한
+// 범위가 호버/드웰선택에 그대로 쓰여서 화면상 서로 떨어진 두 위치가 함께 강조되거나
+// 선택되는 것처럼 보인다. charIdx를 포함하는 후보가 여럿이면 그 중 가장 좁은(가장
+// 구체적인) 범위를 골라, 옆 문장의 여분 영역을 끌고 오지 않도록 한다.
 function findSentenceAtChar(charIdx, sentenceRanges) {
   if (!sentenceRanges || sentenceRanges.length === 0) return null;
+  let best = null;
   for (const r of sentenceRanges) {
-    if (charIdx >= r.charStart && charIdx < r.charEnd) return r;
+    if (charIdx >= r.charStart && charIdx < r.charEnd) {
+      if (!best || (r.charEnd - r.charStart) < (best.charEnd - best.charStart)) {
+        best = r;
+      }
+    }
   }
-  return null;
+  return best;
 }
 
 // 마우스 위치로부터 대략적인 charIdx를 추정 (caretRangeFromPoint 또는 비율 계산 폴백)
