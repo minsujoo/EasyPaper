@@ -687,7 +687,12 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 await process.wait()
 
                 if process.returncode == 0:
-                    if session_id and provider_switched:
+                    # provider_switched였을 때만이 아니라 매번 기록해야 한다 - 그래야
+                    # antigravity를 한 번도 안 써서 ai_session.json이 아예 없던
+                    # claude_code 전용 문서도 "claude_code가 마지막으로 썼다"는
+                    # 기록이 남아, 나중에 antigravity로 바꿨을 때 그 전환을
+                    # 올바르게 감지해 캐치업 문맥을 붙일 수 있다.
+                    if session_id:
                         save_ai_session_meta(session_id, provider="claude_code")
                     return
 
