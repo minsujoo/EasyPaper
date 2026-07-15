@@ -3897,11 +3897,12 @@ body.light-theme .sentence-memo-box {
 }
 
 /* 휴지통 비우기 버튼 스타일 */
+/* 휴지통 비우기 버튼 스타일 리파인 */
 #lib-empty-trash-btn {
-  background: rgba(239, 68, 68, 0.12);
+  background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  padding: 8px 18px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 8px 20px;
   font-size: 13px;
   font-weight: 600;
   border-radius: 20px;
@@ -3916,39 +3917,54 @@ body.light-theme .sentence-memo-box {
   background: #ef4444;
   color: white;
   border-color: #ef4444;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
+  transform: translateY(-2px);
 }
 
 #lib-empty-trash-btn:active {
   transform: translateY(0);
 }
 
-/* 독립된 휴지통 탭 버튼 스타일 */
+/* 좌하단 휴지통 플로팅 버튼 */
 #lib-tab-trash {
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  padding: 8px 18px;
-  font-size: 13px;
+  position: fixed;
+  bottom: 40px;
+  left: 40px;
+  z-index: 999;
+  padding: 14px 24px;
+  font-size: 14px;
   font-weight: 600;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 50px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  cursor: pointer;
 }
 
 #lib-tab-trash:hover {
+  transform: translateY(-4px) scale(1.02);
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
   border-color: rgba(239, 68, 68, 0.3);
+  box-shadow: 0 20px 30px -10px rgba(239, 68, 68, 0.2), 0 10px 15px -5px rgba(239, 68, 68, 0.1);
 }
 
 #lib-tab-trash.active {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.4);
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+  background: linear-gradient(135deg, #ef4444, #f43f5e);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 8px 10px -6px rgba(239, 68, 68, 0.4);
+}
+
+#lib-tab-trash.active:hover {
+  background: linear-gradient(135deg, #dc2626, #e11d48);
+}
+
+#lib-tab-trash:active {
+  transform: translateY(-1px) scale(0.98);
 }
