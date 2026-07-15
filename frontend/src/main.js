@@ -2030,7 +2030,8 @@ async function loadLibraryCount() {
     if (libTabTrash) {
       if (trashCount > 0 || state.currentLibraryTab === 'trash') {
         libTabTrash.classList.remove('hidden')
-        libTabTrash.innerHTML = `🗑️ 휴지통 (${trashCount})`
+        libTabTrash.title = `휴지통 (${trashCount}개 문서)`
+        libTabTrash.innerHTML = '🗑️'
       } else {
         libTabTrash.classList.add('hidden')
       }

@@ -3925,46 +3925,42 @@ body.light-theme .sentence-memo-box {
   transform: translateY(0);
 }
 
-/* 좌하단 휴지통 플로팅 버튼 */
+/* 우측 상단 플로팅 패널 내 휴지통 버튼 스타일 */
 #lib-tab-trash {
-  position: fixed;
-  bottom: 40px;
-  left: 40px;
-  z-index: 999;
-  padding: 14px 24px;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 50px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
   background: var(--bg-surface);
-  color: var(--text-secondary);
   border: 1px solid var(--border-strong);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-secondary);
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  font-size: 16px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
 }
 
 #lib-tab-trash:hover {
-  transform: translateY(-4px) scale(1.02);
+  transform: scale(1.08);
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
   border-color: rgba(239, 68, 68, 0.3);
-  box-shadow: 0 20px 30px -10px rgba(239, 68, 68, 0.2), 0 10px 15px -5px rgba(239, 68, 68, 0.1);
 }
 
 #lib-tab-trash.active {
-  background: linear-gradient(135deg, #ef4444, #f43f5e);
+  background: #ef4444;
   color: white;
-  border-color: transparent;
-  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 8px 10px -6px rgba(239, 68, 68, 0.4);
+  border-color: #ef4444;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 }
 
 #lib-tab-trash.active:hover {
-  background: linear-gradient(135deg, #dc2626, #e11d48);
+  background: #dc2626;
 }
 
 #lib-tab-trash:active {
-  transform: translateY(-1px) scale(0.98);
+  transform: scale(0.95);
 }
