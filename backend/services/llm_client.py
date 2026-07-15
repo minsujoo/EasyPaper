@@ -897,7 +897,11 @@ async def stream_antigravity(
                             print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
                             target_conv_id = new_conv_id
                         else:
+                            # 임시 진단: regex가 왜 안 맞는지 실제 로그 내용을 남긴다(원인 파악 후 제거 예정)
+                            print(f"[stream_antigravity] DEBUG no-match log_len={len(log_content)} content={log_content!r}", flush=True)
                             print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
+                    else:
+                        print(f"[stream_antigravity] DEBUG log file was never created at {temp_log_path}", flush=True)
                 except Exception as ie:
                     print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
                 finally:
