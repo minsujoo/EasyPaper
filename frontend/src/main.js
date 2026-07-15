@@ -5963,12 +5963,23 @@ let activeHighlightPage = null;
 let activeHighlightSentenceIdx = null;
 
 // VirtualTextMap에서 특정 문자 위치에 해당하는 sentenceRange를 이진 탐색
+// alignSentencesToText는 아주 드물게 서로 겹치는 두 문장 범위를 만들어낼 수 있다
+// (전역/프리픽스 폴백 검색이 이미 다른 문장이 차지한 구간보다 앞에서 매칭되는 경우).
+// 겹치는 두 범위 중 더 넓은 쪽이 먼저 반환되면, 실제로는 무관한 옆 문장까지 포함한
+// 범위가 호버/드웰선택에 그대로 쓰여서 화면상 서로 떨어진 두 위치가 함께 강조되거나
+// 선택되는 것처럼 보인다. charIdx를 포함하는 후보가 여럿이면 그 중 가장 좁은(가장
+// 구체적인) 범위를 골라, 옆 문장의 여분 영역을 끌고 오지 않도록 한다.
 function findSentenceAtChar(charIdx, sentenceRanges) {
   if (!sentenceRanges || sentenceRanges.length === 0) return null;
+  let best = null;
   for (const r of sentenceRanges) {
-    if (charIdx >= r.charStart && charIdx < r.charEnd) return r;
+    if (charIdx >= r.charStart && charIdx < r.charEnd) {
+      if (!best || (r.charEnd - r.charStart) < (best.charEnd - best.charStart)) {
+        best = r;
+      }
+    }
   }
-  return null;
+  return best;
 }
 
 // 마우스 위치로부터 대략적인 charIdx를 추정 (caretRangeFromPoint 또는 비율 계산 폴백)
