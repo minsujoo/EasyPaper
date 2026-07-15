@@ -5116,7 +5116,19 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
   }
 
   // 매칭 실패(길이 0)인 문장들의 범위를 주변 매칭 성공 문장들 사이의 간격으로 분할 보간(Gap Partitioning)
-  // 수식 등의 기호만 있는 문장들이 누락 없이 서로 겹치지 않고 PDF 텍스트 레이어에 균등 분할 마킹되도록 지원
+  // 수식 등의 기호만 있는 문장들이 누락 없이 서로 겹치지 않고 PDF 텍스트 레이어에 균등 분할 마킹되도록 지원.
+  //
+  // 실패한 문장들 사이의 간격을 "개수로 균등 분할"하면 위험하다 - 그림 캡션처럼 원문
+  // 추출 텍스트와 번역 문장 목록이 잘 안 맞는 구간에서 매칭이 연쇄적으로 실패하면,
+  // prevEnd와 nextStart 사이의 간격이 그림이 차지하는 공백이나 전혀 무관한 다른
+  // 단락까지 포함할 정도로 커질 수 있다(실측: 캡션 문장 하나가 수백 자 떨어진 다른
+  // 컬럼의 무관한 문단까지 하이라이트로 끌어옴). 그 큰 간격을 실패한 문장 "개수"로만
+  // 나누면 문장의 실제 길이와 무관하게 넓은 범위가 배정되므로, 대신 (1) 각 문장
+  // 원문(sText) 길이 비율로 나누고, (2) 간격이 실패한 문장들의 원문 길이 합보다
+  // 비정상적으로 크면(그림 등으로 인한 진짜 공백일 가능성) 간격 전체를 억지로 채우지
+  // 않고 prevEnd부터 필요한 만큼만 촘촘히 배정한 뒤 나머지는 어느 문장에도 배정하지
+  // 않고 비워 둔다.
+  const GAP_SAFETY_MULTIPLIER = 2.5;
   let walkIdx = 0;
   while (walkIdx < sentenceRanges.length) {
     if (sentenceRanges[walkIdx].start === sentenceRanges[walkIdx].end) {
@@ -5125,7 +5137,7 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
       while (k_end + 1 < sentenceRanges.length && sentenceRanges[k_end + 1].start === sentenceRanges[k_end + 1].end) {
         k_end++;
       }
-      
+
       let prevEnd = 0;
       for (let i = k_start - 1; i >= 0; i--) {
         if (sentenceRanges[i].end > sentenceRanges[i].start) {
@@ -5133,7 +5145,7 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
           break;
         }
       }
-      
+
       let nextStart = fullText.length;
       for (let i = k_end + 1; i < sentenceRanges.length; i++) {
         if (sentenceRanges[i].end > sentenceRanges[i].start) {
@@ -5141,22 +5153,33 @@ function alignSentencesToText(fullText, sentencesList, pageNum = '?') {
           break;
         }
       }
-      
+
       if (prevEnd < nextStart) {
-        const count = k_end - k_start + 1;
-        const chunkSize = (nextStart - prevEnd) / count;
+        const gapSize = nextStart - prevEnd;
+        const lens = [];
+        let totalLen = 0;
         for (let i = k_start; i <= k_end; i++) {
-          sentenceRanges[i].start = Math.round(prevEnd + (i - k_start) * chunkSize);
-          sentenceRanges[i].end = Math.round(prevEnd + (i - k_start + 1) * chunkSize);
+          const len = Math.max(1, (sentenceRanges[i].text || '').length);
+          lens.push(len);
+          totalLen += len;
+        }
+        const usedGap = Math.min(gapSize, totalLen * GAP_SAFETY_MULTIPLIER);
+        let cursor = prevEnd;
+        for (let idx = 0; idx < lens.length; idx++) {
+          const i = k_start + idx;
+          const share = Math.round((lens[idx] / totalLen) * usedGap);
+          sentenceRanges[i].start = cursor;
+          sentenceRanges[i].end = Math.min(nextStart, cursor + share);
+          cursor = sentenceRanges[i].end;
         }
       }
-      
+
       walkIdx = k_end + 1;
     } else {
       walkIdx++;
     }
   }
-  
+
   return sentenceRanges;
 }
 
