@@ -443,12 +443,11 @@ async def stream_chat(
             pass
         formatted_prompt = []
         formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        formatted_prompt.append("Conversation history:")
-        for msg in history_messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            role_label = "User" if role == "user" else "Assistant"
-            formatted_prompt.append(f"[{role_label}]: {content}")
+        # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리를 가지고 있으므로,
+        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if history_messages:
+            latest_msg = history_messages[-1]
+            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id):
@@ -462,12 +461,11 @@ async def stream_chat(
             pass
         formatted_prompt = []
         formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
-        formatted_prompt.append("Conversation history:")
-        for msg in history_messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            role_label = "User" if role == "user" else "Assistant"
-            formatted_prompt.append(f"[{role_label}]: {content}")
+        # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리를 가지고 있으므로,
+        # 프롬프트에 중복해서 이전 대화 이력을 문자열로 덧붙이지 않고 최신 질문만 전달합니다.
+        if history_messages:
+            latest_msg = history_messages[-1]
+            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
         
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id):
