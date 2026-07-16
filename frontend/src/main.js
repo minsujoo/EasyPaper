@@ -58,7 +58,10 @@ const state = {
   cliAvailability: { antigravity: true, claude_code: true },
   // PDF 원문 위에 마우스를 올려두면(드래그 없이) 700ms 뒤 자동으로 문장을 선택하고
   // 선택 메뉴(툴팁)를 띄우는 기능을 끌지 여부. true면 드래그로 직접 선택할 때만 뜬다.
-  disableHoverTooltip: localStorage.getItem('easypaper_disable_hover_tooltip') === 'true'
+  disableHoverTooltip: localStorage.getItem('easypaper_disable_hover_tooltip') === 'true',
+  // 마지막으로 읽던 페이지를 자동 저장하고, 문서를 다시 열 때 그 위치로 이동하는
+  // 책갈피 기능을 끌지 여부. true면 항상 1페이지부터 시작한다.
+  disableBookmark: localStorage.getItem('easypaper_disable_bookmark') === 'true'
 }
 
 // ── DOM 참조 ──────────────────────────────────────
@@ -91,6 +94,7 @@ const settingIgnoreTable  = $('setting-ignore-table')
 const settingIgnoreRefs   = $('setting-ignore-refs')
 const settingDefaultZoom  = $('setting-default-zoom')
 const settingDisableHoverTooltip = $('setting-disable-hover-tooltip')
+const settingDisableBookmark = $('setting-disable-bookmark')
 const clearCacheBtn       = $('clear-cache-btn')
 
 const systemSettingsForm  = $('system-settings-form')
@@ -683,6 +687,18 @@ function updatePageDisplay(pageNum) {
   if (pageNum === state.currentPage) return
   state.currentPage = pageNum
   pageInput.value = pageNum
+  scheduleSaveLastReadPage(pageNum)
+}
+
+// ── 마지막으로 읽던 위치(책갈피) 자동 저장 ─────────
+// 스크롤 중 페이지가 바뀔 때마다 API를 호출하지 않도록 디바운스한다.
+let saveLastReadPageTimer = null
+function scheduleSaveLastReadPage(pageNum) {
+  if (!state.currentDocId || state.disableBookmark) return
+  if (saveLastReadPageTimer) clearTimeout(saveLastReadPageTimer)
+  saveLastReadPageTimer = setTimeout(() => {
+    updateLibraryDocMetadata(state.currentDocId, { last_page: pageNum }).catch(() => {})
+  }, 1500)
 }
 
 function updateProgressMini() {
@@ -1695,6 +1711,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
   settingDefaultZoom.value = localStorage.getItem('easypaper_default_zoom') || '1.5'
   settingDisableHoverTooltip.checked = state.disableHoverTooltip
+  settingDisableBookmark.checked = state.disableBookmark
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
   await refreshSystemSettings()
@@ -1854,6 +1871,11 @@ generalSettingsForm.addEventListener('submit', async (e) => {
 settingDisableHoverTooltip.addEventListener('change', () => {
   state.disableHoverTooltip = settingDisableHoverTooltip.checked
   localStorage.setItem('easypaper_disable_hover_tooltip', state.disableHoverTooltip)
+})
+
+settingDisableBookmark.addEventListener('change', () => {
+  state.disableBookmark = settingDisableBookmark.checked
+  localStorage.setItem('easypaper_disable_bookmark', state.disableBookmark)
 })
 
 // 시스템 설정 폼 제출
@@ -2595,10 +2617,21 @@ async function openFromLibrary(doc, shouldPushState = true) {
   docTitle.title        = doc.filename
   pageTotal.textContent = `/ ${doc.total_pages}`
   pageInput.max   = doc.total_pages
-  pageInput.value = 1
+
+  // 책갈피: 설정에서 끄지 않았고 마지막으로 읽던 위치가 저장되어 있으면 그 페이지로,
+  // 아니면 1페이지로
+  const savedLastPage = state.disableBookmark ? null : doc.metadata?.last_page
+  const restorePage = (Number.isInteger(savedLastPage) && savedLastPage >= 1 && savedLastPage <= doc.total_pages)
+    ? savedLastPage
+    : 1
+  pageInput.value = restorePage
+  state.currentPage = restorePage
 
   showViewer()
   await initScrollViewer()
+  if (restorePage > 1) {
+    scrollToPage(viewerScrollContainer, restorePage, { instant: true })
+  }
   hideOutlineSidebar()
   await loadPDFOutline()
 }
