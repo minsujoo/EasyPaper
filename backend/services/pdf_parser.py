@@ -24,8 +24,21 @@ def _extract_page(page: fitz.Page, page_num: int) -> Dict[str, Any]:
     """단일 페이지에서 텍스트를 추출합니다."""
     page_width = page.rect.width
 
-    # 텍스트 블록 추출 (위치 정보 포함)
-    blocks = page.get_text("blocks", sort=True)
+    # "dict" 모드로 추출해야 줄/글자 단위 상세 정보(볼드 여부, 줄별 x좌표)에
+    # 접근할 수 있다 - "blocks" 모드는 블록의 좌표+텍스트만 주고 스타일 정보를
+    # 전부 버린다. 블록 분할/정렬 결과는 "blocks" 모드와 동일함을 확인했으므로
+    # (같은 sort=True 옵션, 같은 bbox), 기존 2단 레이아웃 감지/정렬 함수는
+    # bbox 튜플 형태만 맞춰주면 그대로 재사용할 수 있다.
+    raw = page.get_text("dict", sort=True)
+    blocks = []
+    for b in raw["blocks"]:
+        if "lines" not in b or not b["lines"]:
+            continue
+        text, is_indented = _build_block_text_and_indent(b)
+        if not text.strip():
+            continue
+        x0, y0, x1, y1 = b["bbox"]
+        blocks.append((x0, y0, x1, y1, text, is_indented))
 
     # 2단 레이아웃 감지
     is_two_column = _detect_two_column(blocks, page_width)
@@ -44,6 +57,65 @@ def _extract_page(page: fitz.Page, page_num: int) -> Dict[str, Any]:
         "is_two_column": is_two_column,
         "word_count": len(text_content.split()),
     }
+
+
+# PyMuPDF span flags 비트 4 = 볼드. 폰트 이름에 "bold"가 없어도(예: 서브셋 폰트의
+# "-Medi", "-Semi" 같은 표기) 이 비트로 정확히 판별되는 경우가 많아 우선 사용하고,
+# 폰트 이름 검사는 보조 수단으로만 병행한다.
+_BOLD_FLAG = 1 << 4
+
+# 문단 첫 줄이 본문 줄들보다 이만큼(포인트) 이상 오른쪽에서 시작하면 원문에
+# 첫 줄 들여쓰기가 적용된 문단으로 판단한다. 실측 결과 일반적인 학술 논문의
+# 들여쓰기는 약 12pt였으므로, 폰트 렌더링 오차를 감안해 여유 있게 8pt로 설정.
+_INDENT_THRESHOLD = 8.0
+
+# 들여쓰기된 문단의 원문 텍스트 맨 앞에 붙이는 표시(유니코드 사용자 영역 문자라
+# 실제 논문 본문과 충돌할 일이 없다). chunker.tag_source_text()가 이 표시를 읽고
+# 제거한 뒤 해당 문단 첫 문장의 [S{n}] 태그에 들여쓰기 정보를 실어 보낸다.
+_INDENT_SENTINEL = ""
+
+
+def _is_bold_span(span: dict) -> bool:
+    return bool(span.get("flags", 0) & _BOLD_FLAG) or "bold" in span.get("font", "").lower()
+
+
+def _build_block_text_and_indent(block: dict) -> tuple[str, bool]:
+    """dict 모드 블록 하나에서 줄 단위로 텍스트를 조립합니다.
+    볼드로 표시된 글자 구간은 번역 후에도 살아남도록 마크다운(**...**)으로 감싸고,
+    이 블록이 원문에서 첫 줄 들여쓰기가 적용된 문단인지 함께 판별합니다."""
+    line_texts = []
+    line_x0s = []
+    for line in block["lines"]:
+        spans = line.get("spans", [])
+        if not spans:
+            continue
+        parts = []
+        for span in spans:
+            t = span.get("text", "")
+            if not t:
+                continue
+            if _is_bold_span(span) and t.strip():
+                # 앞뒤 공백은 마크다운 표시 밖으로 빼서 "** text **"처럼 어색해지지 않게 함
+                lead = t[:len(t) - len(t.lstrip())]
+                trail = t[len(t.rstrip()):]
+                core = t.strip()
+                parts.append(f"{lead}**{core}**{trail}")
+            else:
+                parts.append(t)
+        line_text = "".join(parts)
+        if line_text.strip():
+            line_texts.append(line_text)
+            line_x0s.append(line["bbox"][0])
+
+    text = "\n".join(line_texts)
+
+    is_indented = False
+    if len(line_x0s) >= 2:
+        body_x0 = min(line_x0s[1:])
+        if line_x0s[0] - body_x0 >= _INDENT_THRESHOLD:
+            is_indented = True
+
+    return text, is_indented
 
 
 # 블록 폭이 페이지 폭의 이 비율 이상이면 "전체 폭" 블록(제목/헤더/푸터/전체 폭 표 등)으로 간주.
@@ -130,12 +202,18 @@ def _build_text(blocks: list) -> str:
         text = block[4].strip()
         if not text or len(text) < 3:
             continue
-        # 하이픈으로 끊긴 단어 복원
-        text = re.sub(r'-\n(\w)', r'\1', text)
+        is_indented = block[5] if len(block) > 5 else False
+        # 하이픈으로 끊긴 단어 복원 (줄 끝/시작이 볼드 마커(**)로 감싸져 있어도 병합됨 -
+        # 볼드 단어가 하이픈으로 줄바꿈되면 "**Perfor-**\n**mance**"처럼 되는데, 이 경우
+        # 이음매의 마커만 제거해도 각 줄이 자기 완결적으로 감싸져 있었으므로 최종적으로
+        # "**Performance**"로 올바르게 합쳐진다)
+        text = re.sub(r'-\*{0,2}\n\*{0,2}(\w)', r'\1', text)
         # 단일 줄바꿈은 공백으로 (단락 내)
         text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
         text = re.sub(r'\s+', ' ', text).strip()
         if text:
+            if is_indented:
+                text = _INDENT_SENTINEL + text
             paragraphs.append(text)
 
     raw = "\n\n".join(paragraphs)

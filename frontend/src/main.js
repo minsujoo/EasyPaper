@@ -510,12 +510,17 @@ function replaceBoldOutsideCode(text) {
   return processedBlocks.join('')
 }
 
+// PDF 원문에서 첫 줄 들여쓰기가 감지된 문단의 맨 앞에 backend(pdf_parser.py의
+// _INDENT_SENTINEL)가 붙여두는 표시 - 같은 문자를 여기서도 그대로 사용해야
+// chunker.py가 [S{n}:I] 태그 자리에 남겨준 표시를 인식할 수 있다.
+const INDENT_MARK = String.fromCharCode(0xE000)
+
 // ── 번역 텍스트 포맷팅 (LaTeX & HTML 처리) ─────────
 function formatTranslationHtml(text) {
   if (!text) return ''
 
-  // 문장 정렬용 태그([S0], [S1] 등)가 번역창에 출력되지 않도록 제거
-  let t = text.replace(/\[[sS]\d+\]/g, '')
+  // 문장 정렬용 태그([S0], [S1], [S0:I] 등)가 번역창에 출력되지 않도록 제거
+  let t = text.replace(/\[[sS]\d+(?::[A-Za-z]+)?\]/g, '')
 
   const mathBlocks = []
 
@@ -540,19 +545,31 @@ function formatTranslationHtml(text) {
     return `::MATH_FLT_PLACEHOLDER_${id}::`
   })
 
-  // 4.5. 이스케이프된 볼드체 복원 및 공백 트리밍
+  // 4.5. 이스케이프된 볼드체 복원 및 공백 트리밍 (** 마커의 HTML 변환은 아래
+  // escapeHtml 이후 6번 단계에서 수행한다 - 여기서 <strong>으로 먼저 바꿔버리면
+  // 5번의 escapeHtml이 그 태그까지 다시 이스케이프해서 화면에 "&lt;strong&gt;"처럼
+  // 그대로 노출되는 문제가 있었다)
   t = t.replace(/\\+\*\*/g, '**')
   t = t.replace(/\*\*\s*([^*]+?)\s*\*\*/g, '**$1**')
-  t = replaceBoldOutsideCode(t)
 
-  // 5. 마크다운 헤더 & 이스케이프 처리
+  // 5. 마크다운 헤더 & 이스케이프 처리 (+ 원문 들여쓰기 표시가 붙은 줄은 인라인
+  // 들여쓰기 스타일 적용 후 표시 문자 자체는 제거)
   const lines = t.split('\n')
   const htmlParts = lines.map(line => {
-    const tr = line.trim()
-    if (tr.startsWith('### ')) return `<h4 class="md-h4">${escapeHtml(tr.slice(4))}</h4>`
-    if (tr.startsWith('## '))  return `<h3 class="md-h3">${escapeHtml(tr.slice(3))}</h3>`
-    if (tr.startsWith('# '))   return `<h2 class="md-h2">${escapeHtml(tr.slice(2))}</h2>`
-    return escapeHtml(line)
+    let workingLine = line
+    let isIndented = false
+    const leadingWs = workingLine.match(/^\s*/)[0]
+    if (workingLine.slice(leadingWs.length).startsWith(INDENT_MARK)) {
+      isIndented = true
+      workingLine = leadingWs + workingLine.slice(leadingWs.length + INDENT_MARK.length).replace(/^\s+/, '')
+    }
+    const tr = workingLine.trim()
+    let rendered
+    if (tr.startsWith('### ')) rendered = `<h4 class="md-h4">${escapeHtml(tr.slice(4))}</h4>`
+    else if (tr.startsWith('## '))  rendered = `<h3 class="md-h3">${escapeHtml(tr.slice(3))}</h3>`
+    else if (tr.startsWith('# '))   rendered = `<h2 class="md-h2">${escapeHtml(tr.slice(2))}</h2>`
+    else rendered = escapeHtml(workingLine)
+    return isIndented ? `<span class="trans-indent">${rendered}</span>` : rendered
   })
   let html = htmlParts.join('\n')
     .replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>')

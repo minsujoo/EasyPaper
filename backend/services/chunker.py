@@ -1,6 +1,8 @@
 import re
 from typing import List
 
+from services.pdf_parser import _INDENT_SENTINEL
+
 # 청크 크기: 너무 작으면 문장/수식이 잘림. 3000자로 설정.
 MAX_CHUNK_CHARS = 3000
 
@@ -215,23 +217,30 @@ def align_sentences(src_text: str, tgt_text: str) -> List[dict]:
 def tag_source_text(text: str) -> tuple[str, List[str]]:
     """
     텍스트의 각 문장 시작 부분에 [S0], [S1], ... 문장 식별자 태그를 삽입합니다.
+    원문 문단이 PDF에서 첫 줄 들여쓰기가 적용된 문단이었다면(pdf_parser가 문단
+    맨 앞에 붙여둔 표시로 판별), 그 문단 첫 문장의 태그에 ":I" 접미사를 붙여
+    번역 결과에서도 이 태그 하나만 잘 보존되면 들여쓰기 여부를 복원할 수 있게 한다.
     """
     if not text.strip():
         return "", []
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     tagged_paras = []
     src_sentences = []
-    
+
     idx = 0
     for para in paras:
+        is_indented = para.startswith(_INDENT_SENTINEL)
+        if is_indented:
+            para = para[len(_INDENT_SENTINEL):].strip()
         sents = split_into_sentences(para)
         tagged_sents = []
-        for s in sents:
+        for i, s in enumerate(sents):
             src_sentences.append(s)
-            tagged_sents.append(f"[S{idx}] {s}")
+            suffix = ":I" if (is_indented and i == 0) else ""
+            tagged_sents.append(f"[S{idx}{suffix}] {s}")
             idx += 1
         tagged_paras.append(" ".join(tagged_sents))
-        
+
     tagged_text = "\n\n".join(tagged_paras)
     return tagged_text, src_sentences
 
@@ -245,35 +254,46 @@ def parse_tagged_translation(tagged_translation: str, src_sentences: List[str]) 
     if N == 0:
         return tagged_translation, []
         
-    # [S0], [S1] ... 태그 찾기 (대소문자 구분 없음)
-    tag_pattern = re.compile(r'\[[sS](\d+)\]')
+    # [S0], [S1] ... 태그 찾기 (대소문자 구분 없음). ":I"처럼 콜론 뒤에 붙는
+    # 접미사는 pdf_parser가 감지한 원문 들여쓰기 등의 레이아웃 메타데이터를 실어
+    # 나르기 위한 것으로, tag_source_text()가 문단 첫 문장 태그에만 붙인다.
+    tag_pattern = re.compile(r'\[[sS](\d+)(?::([A-Za-z]+))?\]')
     matches = list(tag_pattern.finditer(tagged_translation))
-    
-    # 태그가 하나도 없는 경우 폴백 (기존 매칭 알고리즘 활용)
+
+    # 태그가 하나도 없는 경우 폴백 (기존 매칭 알고리즘 활용) - 이 경우 레이아웃
+    # 메타데이터도 함께 유실되지만, 애초에 문장 정렬 자체가 안 되는 상황이라 감수한다.
     if not matches:
-        cleaned = re.sub(r'\[[sS]\d+\]', '', tagged_translation).strip()
+        cleaned = re.sub(r'\[[sS]\d+(?::[A-Za-z]+)?\]', '', tagged_translation).strip()
         tgt_sents = split_into_sentences(cleaned)
         aligned = align_paragraph(src_sentences, tgt_sents)
         return cleaned, aligned
-        
+
     # 태그별 텍스트 범위 파싱 (같은 인덱스 태그가 여러 번 나오면 이어붙임 - LLM이
     # 실수로 같은 태그를 중복 출력해도 내용을 잃지 않도록 함)
     tag_to_text: dict = {}
+    indented_idx: set = set()
     for i in range(len(matches)):
         start = matches[i].end()
         end = matches[i+1].start() if i + 1 < len(matches) else len(tagged_translation)
         idx = int(matches[i].group(1))
+        flags = matches[i].group(2) or ""
+        if "I" in flags:
+            indented_idx.add(idx)
         content = tagged_translation[start:end].strip()
         if idx in tag_to_text:
             tag_to_text[idx] = (tag_to_text[idx] + " " + content).strip()
         else:
             tag_to_text[idx] = content
 
-    # 깨끗한 번역본 구성 (원문 태그 완전 제거)
+    # 깨끗한 번역본 구성 (원문 태그 제거). 들여쓰기 표시(:I)가 붙은 태그는 완전히
+    # 지우지 않고 프론트엔드가 해당 문단에 들여쓰기 스타일을 적용할 수 있도록
+    # pdf_parser와 동일한 표시 문자를 그 자리에 남겨둔다.
     cleaned_translation = tagged_translation
     for m in reversed(matches):
         start, end = m.span()
-        cleaned_translation = cleaned_translation[:start] + cleaned_translation[end:]
+        idx = int(m.group(1))
+        replacement = _INDENT_SENTINEL if idx in indented_idx else ""
+        cleaned_translation = cleaned_translation[:start] + replacement + cleaned_translation[end:]
 
     cleaned_translation = re.sub(r' +', ' ', cleaned_translation).strip()
     cleaned_translation = re.sub(r'\n\n+', '\n\n', cleaned_translation)
