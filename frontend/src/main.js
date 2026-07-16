@@ -581,13 +581,20 @@ function loadPageInsight(pageNum, kind, force) {
 // "키워드/단어" 응답을 "- **용어**: 뜻풀이" 줄 단위로 파싱해서 용어(term)와
 // 뜻풀이(def)를 분리한다. 형식에 맞지 않는 줄(예: "해당 없음" 안내 문구)은
 // 안내 텍스트로 그대로 표시한다.
+// LLM이 프롬프트 지시를 무시하고 뜻풀이 끝에 "(GRE 수준 단어)", "(전문용어)" 같은
+// 분류용 괄호 주석을 덧붙이는 경우가 있어(이미 캐시된 이전 응답 포함), 표시 전에
+// 방어적으로 제거한다. 실제 뜻풀이 내용에 있는 일반 괄호 설명은 건드리지 않도록
+// 알려진 분류 키워드가 포함된 "끝에 붙은" 괄호만 제거한다.
+const INSIGHT_LABEL_SUFFIX_RE = /\s*[（(](?:GRE\s*수준|고급\s*수준|전문\s*용어|고유\s*명사)[^)）]*[)）]\s*$/i
+
 function parseKeywordItems(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const items = []
   for (const line of lines) {
     const m = line.match(/^[-*]?\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$/)
     if (m) {
-      items.push({ term: m[1].trim(), def: m[2].trim() })
+      const def = m[2].trim().replace(INSIGHT_LABEL_SUFFIX_RE, '')
+      items.push({ term: m[1].trim(), def })
     } else {
       items.push({ term: null, def: line.replace(/^[-*]\s*/, '') })
     }
