@@ -55,7 +55,10 @@ const state = {
   isSelectionDragging: false,   // 마우스 드래그 선택 중인지 여부
   pdfPageSentences: {},        // pageNum → sentenceRanges 보관용
   pdfPageElements: {},         // pageNum → elRanges 보관용
-  cliAvailability: { antigravity: true, claude_code: true }
+  cliAvailability: { antigravity: true, claude_code: true },
+  // PDF 원문 위에 마우스를 올려두면(드래그 없이) 700ms 뒤 자동으로 문장을 선택하고
+  // 선택 메뉴(툴팁)를 띄우는 기능을 끌지 여부. true면 드래그로 직접 선택할 때만 뜬다.
+  disableHoverTooltip: localStorage.getItem('easypaper_disable_hover_tooltip') === 'true'
 }
 
 // ── DOM 참조 ──────────────────────────────────────
@@ -87,6 +90,7 @@ const settingIgnoreMath   = $('setting-ignore-math')
 const settingIgnoreTable  = $('setting-ignore-table')
 const settingIgnoreRefs   = $('setting-ignore-refs')
 const settingDefaultZoom  = $('setting-default-zoom')
+const settingDisableHoverTooltip = $('setting-disable-hover-tooltip')
 const clearCacheBtn       = $('clear-cache-btn')
 
 const systemSettingsForm  = $('system-settings-form')
@@ -1690,6 +1694,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingIgnoreTable.checked = localStorage.getItem('easypaper_ignore_table') !== 'false'
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
   settingDefaultZoom.value = localStorage.getItem('easypaper_default_zoom') || '1.5'
+  settingDisableHoverTooltip.checked = state.disableHoverTooltip
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
   await refreshSystemSettings()
@@ -1842,6 +1847,13 @@ generalSettingsForm.addEventListener('submit', async (e) => {
       }
     }
   }
+})
+
+// 뷰어 편의 설정: 번역 관련 설정이 아니므로 폼 제출(및 재번역 제안)과 무관하게
+// 체크 즉시 저장하고 바로 적용한다.
+settingDisableHoverTooltip.addEventListener('change', () => {
+  state.disableHoverTooltip = settingDisableHoverTooltip.checked
+  localStorage.setItem('easypaper_disable_hover_tooltip', state.disableHoverTooltip)
 })
 
 // 시스템 설정 폼 제출
@@ -6359,8 +6371,8 @@ if (viewerScrollContainer) {
 
     applyHoverHighlight(pageNum, sentenceRange);
 
-    // 700ms 드웰 선택 (수식 제외)
-    if (!annSpan && !state.hoverSelectionDisabled) {
+    // 700ms 드웰 선택 (수식 제외, 뷰어 설정에서 꺼져있지 않은 경우에만)
+    if (!annSpan && !state.hoverSelectionDisabled && !state.disableHoverTooltip) {
       if (!sentenceRange.isEquation) {
         startDwellSelection(pageNum, sentenceRange);
       }
