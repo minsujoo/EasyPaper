@@ -66,7 +66,22 @@ def init_db():
             FOREIGN KEY (doc_id) REFERENCES documents (id) ON DELETE CASCADE
         )
         """)
-        
+
+        # 5. page_insights 테이블 (페이지별 키워드/단어 설명, 요약 캐시)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS page_insights (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT NOT NULL,
+            page_num INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            suffix TEXT NOT NULL,
+            content TEXT NOT NULL,
+            saved_at TEXT NOT NULL,
+            FOREIGN KEY (doc_id) REFERENCES documents (id) ON DELETE CASCADE,
+            UNIQUE(doc_id, page_num, kind, suffix)
+        )
+        """)
+
         # documents 테이블 동적 스키마 마이그레이션 (is_deleted 컬럼 추가)
         try:
             cursor.execute("ALTER TABLE documents ADD COLUMN is_deleted INTEGER DEFAULT 0")
@@ -305,6 +320,38 @@ def db_clear_chat_history(doc_id: str) -> None:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM chats WHERE doc_id = ?", (doc_id,))
         conn.commit()
+
+# ── 페이지 인사이트 (키워드/단어, 요약) ─────────────────────────────────────────
+
+def db_save_page_insight(doc_id: str, page_num: int, kind: str, content: str, suffix: str = "") -> None:
+    saved_at = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO page_insights (doc_id, page_num, kind, suffix, content, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (doc_id, page_num, kind, suffix, content, saved_at)
+        )
+        conn.commit()
+
+def db_get_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = "") -> Optional[str]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT content FROM page_insights WHERE doc_id = ? AND page_num = ? AND kind = ? AND suffix = ?",
+            (doc_id, page_num, kind, suffix)
+        )
+        row = cursor.fetchone()
+        return row["content"] if row else None
+
+def db_clear_page_insights(doc_id: str) -> None:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM page_insights WHERE doc_id = ?", (doc_id,))
+        conn.commit()
+
 
 def db_clear_translations(doc_id: str) -> None:
     with get_db() as conn:

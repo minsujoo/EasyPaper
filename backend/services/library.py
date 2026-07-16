@@ -13,6 +13,9 @@ from services.db import (
     db_save_translation,
     db_get_translation,
     db_clear_translations,
+    db_save_page_insight,
+    db_get_page_insight,
+    db_clear_page_insights,
     db_update_document_metadata,
     get_db
 )
@@ -251,6 +254,23 @@ def get_translation_full(doc_id: str, page_num: int, suffix: str = "", fallback:
 def clear_translations(doc_id: str) -> None:
     """데이터베이스에서 모든 번역 데이터를 지웁니다."""
     db_clear_translations(doc_id)
+
+
+# ── 페이지 인사이트 (키워드/단어, 요약) ─────────────────────────────────────────
+
+def save_page_insight(doc_id: str, page_num: int, kind: str, content: str, suffix: str = "") -> None:
+    """키워드/단어 설명 또는 요약 결과를 데이터베이스에 저장합니다."""
+    db_save_page_insight(doc_id, page_num, kind, content, suffix)
+
+
+def get_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = "") -> Optional[str]:
+    """데이터베이스에서 키워드/단어 설명 또는 요약 결과를 가져옵니다."""
+    return db_get_page_insight(doc_id, page_num, kind, suffix)
+
+
+def clear_page_insights(doc_id: str) -> None:
+    """데이터베이스에서 모든 페이지 인사이트(키워드/요약) 데이터를 지웁니다."""
+    db_clear_page_insights(doc_id)
 
 
 def get_pdf_path(doc_id: str) -> Optional[str]:
