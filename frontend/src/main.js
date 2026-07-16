@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
+import { icon } from './icons.js'
 
 
 // ── 글로벌 API 인터셉터 (인증 만료/실패 대응) ─────────
@@ -457,7 +458,7 @@ function createTransBlock(pageNum) {
   
   block.innerHTML = `
     <div class="trans-page-label">
-      <span>📄 ${pageNum}페이지</span>
+      <span>${icon('fileText', 13, 'style="vertical-align:-2px;margin-right:3px"')}${pageNum}페이지</span>
       <span class="trans-page-status" id="trans-status-${pageNum}">대기 중</span>
     </div>
     <div class="trans-page-content" id="trans-content-${pageNum}">
@@ -1106,7 +1107,7 @@ if (libEmptyTrashBtn) {
 // ── Provider + Model 통합 선택 드롭다운 ─────────────────
 const PROVIDER_CONFIG = [
   {
-    id: 'antigravity', label: 'Antigravity', icon: '⚡',
+    id: 'antigravity', label: 'Antigravity', icon: icon('zap', 13),
     models: [
       // Gemini 3.5 Flash
       { value: 'Gemini 3.5 Flash (Low)',    label: 'Flash · Low',    group: 'Gemini 3.5 Flash' },
@@ -1123,7 +1124,7 @@ const PROVIDER_CONFIG = [
     ]
   },
   {
-    id: 'claude_code', label: 'Claude Code', icon: '🤖',
+    id: 'claude_code', label: 'Claude Code', icon: icon('terminal', 13),
     models: [
       // Sonnet
       { value: 'sonnet|low',    label: 'Sonnet · Low',    group: 'Sonnet 5' },
@@ -1152,7 +1153,7 @@ const PROVIDER_CONFIG = [
     ]
   },
   {
-    id: 'ollama', label: 'Ollama (로컬)', icon: '🦙',
+    id: 'ollama', label: 'Ollama (로컬)', icon: icon('hardDrive', 13),
     models: [
       { value: 'gemma4:e4b', label: 'gemma4 e4b' },
       { value: 'qwen3.5:9b', label: 'qwen3.5 9b' },
@@ -1174,7 +1175,7 @@ const PROVIDER_CONFIG = [
     ]
   },
   {
-    id: 'claude', label: 'Anthropic Claude', icon: '🧠',
+    id: 'claude', label: 'Anthropic Claude', icon: icon('cpu', 13),
     models: [
       { value: 'claude-opus-4.8', label: 'Claude Opus 4.8' },
       { value: 'claude-opus-4.7', label: 'Claude Opus 4.7' },
@@ -1183,7 +1184,7 @@ const PROVIDER_CONFIG = [
     ]
   },
   {
-    id: 'gemini', label: 'Google Gemini', icon: '💎',
+    id: 'gemini', label: 'Google Gemini', icon: icon('star', 13),
     models: [
       { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
       { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' }
@@ -1421,7 +1422,7 @@ class ProviderModelPicker {
 
   _updateBtn() {
     const prov = PROVIDER_CONFIG.find(p => p.id === this._provider)
-    const icon = prov ? prov.icon : '?'
+    const provIcon = prov ? prov.icon : '?'
     const provShort = prov ? (prov.label === 'Google Gemini' ? 'Gemini' : prov.label === 'Anthropic Claude' ? 'Claude' : prov.label.split(' ')[0]) : this._provider
     let modelLabel = this._model || '(선택 안 됨)'
     if (prov) {
@@ -1430,7 +1431,7 @@ class ProviderModelPicker {
         modelLabel = found.label.replace(' (설치됨)', '').replace(' (미설치 - 클릭 시 다운로드)', '')
       }
     }
-    this._btn.querySelector('.picker-icon').textContent = icon
+    this._btn.querySelector('.picker-icon').innerHTML = provIcon
     this._btn.querySelector('.picker-label').textContent = `${provShort} · ${modelLabel}`
     this._btn.title = `${prov ? prov.label : this._provider} / ${modelLabel}`
   }
@@ -1922,7 +1923,7 @@ if (systemUpdateBtn) {
     }
     
     systemUpdateBtn.disabled = true
-    systemUpdateBtn.textContent = '🔄 업데이트 진행 중...'
+    systemUpdateBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '업데이트 진행 중...'
     systemUpdateStatus.style.color = 'var(--text-secondary)'
     systemUpdateStatus.textContent = 'GitHub 코드 가져오는 중...'
     
@@ -1939,14 +1940,14 @@ if (systemUpdateBtn) {
         }, 5000)
       } else {
         systemUpdateBtn.disabled = false
-        systemUpdateBtn.textContent = '🚀 최신 업데이트 실행'
+        systemUpdateBtn.innerHTML = icon('download', 13, 'style="vertical-align:-2px;margin-right:4px"') + '최신 업데이트 실행'
         systemUpdateStatus.style.color = '#ef4444' // 빨간색
         systemUpdateStatus.textContent = res.message
         showToast(res.message, 'error')
       }
     } catch (err) {
       systemUpdateBtn.disabled = false
-      systemUpdateBtn.textContent = '🚀 최신 업데이트 실행'
+      systemUpdateBtn.innerHTML = icon('download', 13, 'style="vertical-align:-2px;margin-right:4px"') + '최신 업데이트 실행'
       systemUpdateStatus.style.color = '#ef4444'
       systemUpdateStatus.textContent = '서버 재시작 대기 중...'
       showToast('서버 재기동을 감지했습니다. 잠시 후 새로고침합니다.', 'info')
@@ -2032,7 +2033,7 @@ async function loadLibraryCount() {
       if (trashCount > 0 || state.currentLibraryTab === 'trash') {
         libTabTrash.classList.remove('hidden')
         libTabTrash.title = `휴지통 (${trashCount}개 문서)`
-        libTabTrash.innerHTML = '🗑️'
+        libTabTrash.innerHTML = icon('trash2', 14)
       } else {
         libTabTrash.classList.add('hidden')
       }
@@ -2158,12 +2159,12 @@ async function renderLibrary() {
       libraryStatsContainer.innerHTML = `
         <div class="library-stats-widget">
           <div class="library-stats-item">
-            <span class="library-stats-label">📅 이번 달 읽은 논문</span>
+            <span class="library-stats-label">${icon('calendar', 13, 'style="vertical-align:-2px;margin-right:3px"')}이번 달 읽은 논문</span>
             <span class="library-stats-value">${thisMonthCount}<span>편</span></span>
           </div>
           <div style="width: 1px; height: 28px; background: var(--border-strong);"></div>
           <div class="library-stats-item">
-            <span class="library-stats-label">🏆 누적 완독 논문</span>
+            <span class="library-stats-label">${icon('award', 13, 'style="vertical-align:-2px;margin-right:3px"')}누적 완독 논문</span>
             <span class="library-stats-value">${readDocs.length}<span>편</span></span>
           </div>
         </div>
@@ -2192,7 +2193,7 @@ async function renderLibrary() {
       const allBtn = document.createElement('button')
       allBtn.className = `category-filter-btn ${activeCategoryFilter === 'ALL' ? 'active' : ''}`
       allBtn.dataset.category = 'ALL'
-      allBtn.innerHTML = `📚 전체 (${docs.length})`
+      allBtn.innerHTML = `${icon('book', 13, 'style="vertical-align:-2px;margin-right:3px"')}전체 (${docs.length})`
       allBtn.addEventListener('click', () => {
         activeCategoryFilter = 'ALL'
         filterLibraryCards(docs)
@@ -2204,7 +2205,7 @@ async function renderLibrary() {
         const btn = document.createElement('button')
         btn.className = `category-filter-btn ${activeCategoryFilter === cat ? 'active' : ''}`
         btn.dataset.category = cat
-        btn.innerHTML = `🏷️ ${escapeHtml(cat)} (${count})`
+        btn.innerHTML = `${icon('tag', 13, 'style="vertical-align:-2px;margin-right:3px"')}${escapeHtml(cat)} (${count})`
         btn.addEventListener('click', () => {
           activeCategoryFilter = cat
           filterLibraryCards(docs)
@@ -2245,11 +2246,11 @@ function createEmptyState(isHistory = false) {
   const el = document.createElement('div')
   el.className = 'lib-empty'
   if (isHistory) {
-    el.innerHTML = `<div style="font-size:48px;margin-bottom:16px">📖</div>
+    el.innerHTML = `<div style="margin-bottom:16px;color:var(--text-muted)">${icon('bookOpen', 48)}</div>
       <p>읽은 논문이 없습니다</p>
       <p style="font-size:13px;color:var(--text-muted);margin-top:8px">보관함에서 논문의 체크 아이콘을 눌러 읽음 처리해 보세요</p>`
   } else {
-    el.innerHTML = `<div style="font-size:48px;margin-bottom:16px">📚</div>
+    el.innerHTML = `<div style="margin-bottom:16px;color:var(--text-muted)">${icon('book', 48)}</div>
       <p>보관함에 저장된 논문이 없습니다</p>
       <p style="font-size:13px;color:var(--text-muted);margin-top:8px">새 논문을 추가하거나 PDF를 업로드해 보세요</p>`
   }
@@ -2274,10 +2275,10 @@ function createDocCard(doc) {
   const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
   const isRead = doc.metadata?.read === true
 
-  let dateHtml = `<span>📅 등록: ${date}</span>`
+  let dateHtml = `<span>${icon('calendar', 12, 'style="vertical-align:-2px;margin-right:2px"')}등록: ${date}</span>`
   if (isRead && doc.metadata?.read_at) {
     const readDateStr = new Date(doc.metadata.read_at).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' })
-    dateHtml = `<span>✅ 완독: ${readDateStr}</span>`
+    dateHtml = `<span>${icon('checkCircle', 12, 'style="vertical-align:-2px;margin-right:2px"')}완독: ${readDateStr}</span>`
   }
 
   const checkBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
@@ -2331,11 +2332,11 @@ function createDocCard(doc) {
   card.className = 'doc-card'
   card.innerHTML = `
     ${checkBtnHtml}
-    <div class="doc-card-icon">📄</div>
+    <div class="doc-card-icon">${icon('fileText', 28)}</div>
     <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
     ${tagsHtml}
     <div class="doc-card-meta">
-      ${dateHtml}<span>📑 ${total}페이지</span>
+      ${dateHtml}<span>${icon('layers', 12, 'style="vertical-align:-2px;margin-right:2px"')}${total}페이지</span>
     </div>
     ${progressHtml}
     <div class="doc-card-actions">
@@ -2543,7 +2544,7 @@ async function openFromLibrary(doc, shouldPushState = true) {
 
   // 채팅 내역 초기화 및 복원
   state.chatHistory = []
-  chatMessages.innerHTML = '<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>💡 질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>'
+  chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
   
   try {
     const res = await getChatHistoryAPI(doc.id)
@@ -3280,7 +3281,7 @@ function renderPageMemos(pageNum) {
     memoEl.innerHTML = `
       <div class="floating-memo-header">
         <div class="floating-memo-title" title="${sentenceText}">
-          <span>📝 ${shortTitle}</span>
+          <span>${icon('edit3', 12, 'style="vertical-align:-2px;margin-right:2px"')}${shortTitle}</span>
         </div>
         <div class="floating-memo-color-picker">
           <span class="color-dot default ${!memo.color || memo.color === 'default' ? 'selected' : ''}" data-color="default" title="기본"></span>
@@ -4245,7 +4246,7 @@ function toggleChatSidebar() {
 }
 
 function resetChatUI() {
-  chatMessages.innerHTML = '<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>💡 질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>'
+  chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
   chatInput.value = ''
   chatInput.style.height = 'auto'
 }
@@ -4347,7 +4348,7 @@ function formatUserChatHtml(content) {
     if (markerIdx !== -1) {
       const pageInfo = content.substring(1, markerIdx)
       const questionText = content.substring(markerIdx + marker.length)
-      return `<div class="message-quote"><span class="quote-symbol">❝</span><span class="quote-body" style="font-size: 11px; opacity: 0.85;">📷 ${escapeHtml(pageInfo)}</span></div><div class="message-text">${escapeHtml(questionText)}</div>`
+      return `<div class="message-quote"><span class="quote-symbol">❝</span><span class="quote-body" style="font-size: 11px; opacity: 0.85;">${icon('image', 12, 'style="vertical-align:-2px;margin-right:2px"')}${escapeHtml(pageInfo)}</span></div><div class="message-text">${escapeHtml(questionText)}</div>`
     }
   }
   
@@ -4447,7 +4448,7 @@ function regenerateResponse(assistantMsgEl) {
       removeTypingIndicator();
       state.chatActiveStream = null;
       if (firstToken) {
-        appendChatMessage('assistant', `⚠️ 답변 중 오류가 발생했습니다: ${err.message}`, false);
+        appendChatMessage('assistant', `<span class="chat-error-text">${icon('alertTriangle', 13, 'style="vertical-align:-2px;margin-right:3px"')}답변 중 오류가 발생했습니다: ${escapeHtml(err.message)}</span>`, true);
       } else if (replyBubble) {
         replyBubble.innerHTML += `<br><br><span style="color: var(--error);">[오류: ${err.message}]</span>`;
       }
@@ -4459,7 +4460,7 @@ function regenerateResponse(assistantMsgEl) {
 }
 
 function appendActionButtons(msgEl, role, content) {
-  if (!content || content.startsWith('⚠️')) return
+  if (!content || content.includes('chat-error-text')) return
   
   const existingActions = msgEl.querySelector('.message-actions')
   if (existingActions) existingActions.remove()
@@ -4473,7 +4474,7 @@ function appendActionButtons(msgEl, role, content) {
   
   const copyBtn = document.createElement('button')
   copyBtn.className = 'msg-action-btn'
-  copyBtn.innerHTML = '📋 복사'
+  copyBtn.innerHTML = `${icon('clipboard', 12, 'style="vertical-align:-2px;margin-right:3px"')}복사`
   copyBtn.style.background = 'none'
   copyBtn.style.border = 'none'
   copyBtn.style.color = 'var(--text-muted)'
@@ -4508,7 +4509,7 @@ function appendActionButtons(msgEl, role, content) {
   if (role === 'assistant') {
     const regenBtn = document.createElement('button')
     regenBtn.className = 'msg-action-btn'
-    regenBtn.innerHTML = '🔄 다시 받기'
+    regenBtn.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:3px"')}다시 받기`
     regenBtn.style.background = 'none'
     regenBtn.style.border = 'none'
     regenBtn.style.color = 'var(--text-muted)'
@@ -4671,11 +4672,11 @@ async function sendChatMessage() {
       state.chatActiveStream = null
       
       if (firstToken) {
-        appendChatMessage('assistant', `⚠️ 답변 중 오류가 발생했습니다: ${err.message}`, false)
+        appendChatMessage('assistant', `<span class="chat-error-text">${icon('alertTriangle', 13, 'style="vertical-align:-2px;margin-right:3px"')}답변 중 오류가 발생했습니다: ${escapeHtml(err.message)}</span>`, true)
       } else if (replyBubble) {
         replyBubble.innerHTML += `<br><br><span style="color: var(--error);">[오류: ${err.message}]</span>`
       }
-      
+
       chatInput.disabled = false
       updateChatSendBtnIcon(false)
       chatInput.focus()
@@ -6805,7 +6806,7 @@ async function loadPDFOutline() {
       // 목차 메타데이터가 존재하지 않는 경우를 대비한 전체 페이지 리스트 폴백(Fallback) 렌더링
       const infoMsg = document.createElement('div')
       infoMsg.style.cssText = 'font-size:11px; color:var(--text-muted); padding:4px 10px 12px; border-bottom:1px dashed var(--border); margin-bottom:8px; line-height:1.4;'
-      infoMsg.textContent = '💡 본 PDF에 목차(TOC) 정보가 존재하지 않아, 전체 페이지 리스트를 대신 제공합니다.'
+      infoMsg.innerHTML = `${icon('info', 12, 'style="vertical-align:-2px;margin-right:3px"')}본 PDF에 목차(TOC) 정보가 존재하지 않아, 전체 페이지 리스트를 대신 제공합니다.`
       outlineContent.appendChild(infoMsg)
       
       for (let p = 1; p <= state.totalPages; p++) {

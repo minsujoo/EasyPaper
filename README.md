@@ -1,4 +1,4 @@
-# ⚗️ EasyPaper
+# EasyPaper
 
 EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으로 대화할 수 있는 통합 웹 서비스입니다. 
 논문을 업로드하면 원문 옆에 AI 번역본이 함께 표시되며, 궁금한 내용을 바로 질문할 수 있습니다. 
@@ -7,7 +7,7 @@ EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으�
 
 ---
 
-## ⚡ 빠른 시작
+## 빠른 시작
 
 명령어 세 줄로 바로 실행이 가능합니다.
 
@@ -33,7 +33,7 @@ cd EasyPaper
 
 ---
 
-## 🚀 주요 기능
+## 주요 기능
 
 1. **내 라이브러리** — 라이브러리 화면에 PDF를 드래그 앤 드롭하여 바로 업로드할 수 있으며, 업로드 완료 즉시 백그라운드 번역이 시작됩니다.
 2. **AI 카테고리 자동 태깅** — 업로드 후 AI가 논문 초록과 본문을 분석하여 카테고리 태그(예: `VLM`, `VLA`, `GAN`, `CNN`,`Optimizer` 등)를 자동으로 부여합니다.
@@ -45,7 +45,7 @@ cd EasyPaper
 
 ---
 
-## 🛠️ 필수 요구사항
+## 필수 요구사항
 
 - **Python 3.8+**
 - **Node.js 16+** & **npm**
@@ -53,7 +53,7 @@ cd EasyPaper
 
 ---
 
-## ⚙️ 수동 설치 방법
+## 수동 설치 방법
 
 스크립트를 사용하지 않고 직접 환경을 구축하려는 경우:
 
@@ -73,25 +73,25 @@ python main.py
 ```bash
 cd frontend
 npm install
-npm run build  # 프로덕션 빌드 — 백엔드가 정적 파일로 서빙
+npm run build # 프로덕션 빌드 — 백엔드가 정적 파일로 서빙
 # 또는
-npm run dev    # 개발 서버 시작 (http://localhost:5173)
+npm run dev # 개발 서버 시작 (http://localhost:5173)
 ```
 
 ---
 
-## 🔐 초기 로그인 계정
+## 초기 로그인 계정
 
 | 항목 | 값 |
 |------|-----|
 | 아이디 | `admin` |
 | 비밀번호 | `admin` |
 
-로그인 후 화면 우측 상단의 ⚙️ 설정 아이콘을 눌러 언제든지 아이디와 비밀번호를 변경할 수 있습니다. 변경된 정보는 해시 처리되어 `backend/.env`에 안전하게 저장됩니다.
+로그인 후 화면 우측 상단의 설정 아이콘을 눌러 언제든지 아이디와 비밀번호를 변경할 수 있습니다. 변경된 정보는 해시 처리되어 `backend/.env`에 안전하게 저장됩니다.
 
 ---
 
-## ☁️ 상시 구동 — systemd 서비스 등록 (선택 사항)
+## 상시 구동 — systemd 서비스 등록 (선택 사항)
 
 Linux 서버에서 EasyPaper를 백그라운드 데몬으로 상시 실행하려면 제공된 `easypaper.service` 파일을 활용하세요.
 
@@ -112,7 +112,7 @@ sudo journalctl -u easypaper -f
 
 ---
 
-## ⚡ Antigravity CLI (`agy`) 연동 가이드
+## Antigravity CLI (`agy`) 연동 가이드
 
 EasyPaper 백엔드에는 Google Antigravity CLI(`agy`)를 서브프로세스로 호출하여 번역, 논문 태깅, 채팅을 처리하는 전용 `antigravity` LLM Provider 엔진이 포함되어 있습니다.
 
@@ -157,7 +157,7 @@ Linux 서버에서 `easypaper.service` 데몬을 통해 실행할 경우, system
 
 ---
 
-## 🤖 Claude Code CLI (`claude`) 연동 가이드
+## Claude Code CLI (`claude`) 연동 가이드
 
 EasyPaper는 Anthropic의 Claude Code CLI(`claude`)를 서브프로세스로 연동하여 실시간 논문 번역 및 AI 어시스턴트(채팅), 그리고 자동 카테고리 태깅 엔진으로 사용할 수 있는 `claude_code` LLM Provider를 지원합니다.
 
@@ -187,5 +187,5 @@ EasyPaper는 논문 번역 및 채팅 요청을 백그라운드에서 실시간�
 
 ### 4. 동적 드롭다운 표시
 EasyPaper는 기동 시 로컬 환경에 `claude` 실행 파일이 유효하게 설치되어 있고 실행 가능한지 백엔드에서 자체 진단합니다.
-- 설치가 확인되면 라이브러리 및 뷰어 화면의 모델 선택 드롭다운에 **`🤖 Claude Code`** 공급자 그룹과 관련 모델(`Sonnet`, `Fable`, `Opus`, `Haiku`)이 자동으로 활성화되어 나타납니다.
+- 설치가 확인되면 라이브러리 및 뷰어 화면의 모델 선택 드롭다운에 **`Claude Code`** 공급자 그룹과 관련 모델(`Sonnet`, `Fable`, `Opus`, `Haiku`)이 자동으로 활성화되어 나타납니다.
 - 설치되어 있지 않다면 드롭다운 목록에 노출되지 않아 잘못된 선택으로 인한 오류를 예방합니다.
