@@ -256,31 +256,93 @@ def parse_tagged_translation(tagged_translation: str, src_sentences: List[str]) 
         aligned = align_paragraph(src_sentences, tgt_sents)
         return cleaned, aligned
         
-    # 태그별 텍스트 범위 파싱
-    tag_to_text = {}
+    # 태그별 텍스트 범위 파싱 (같은 인덱스 태그가 여러 번 나오면 이어붙임 - LLM이
+    # 실수로 같은 태그를 중복 출력해도 내용을 잃지 않도록 함)
+    tag_to_text: dict = {}
     for i in range(len(matches)):
         start = matches[i].end()
         end = matches[i+1].start() if i + 1 < len(matches) else len(tagged_translation)
         idx = int(matches[i].group(1))
         content = tagged_translation[start:end].strip()
-        tag_to_text[idx] = content
-        
+        if idx in tag_to_text:
+            tag_to_text[idx] = (tag_to_text[idx] + " " + content).strip()
+        else:
+            tag_to_text[idx] = content
+
     # 깨끗한 번역본 구성 (원문 태그 완전 제거)
     cleaned_translation = tagged_translation
     for m in reversed(matches):
         start, end = m.span()
         cleaned_translation = cleaned_translation[:start] + cleaned_translation[end:]
-        
+
     cleaned_translation = re.sub(r' +', ' ', cleaned_translation).strip()
     cleaned_translation = re.sub(r'\n\n+', '\n\n', cleaned_translation)
-    
-    # 원문 문장 리스트 기준으로 1대1 쌍을 구성 (누락된 태그는 비워두거나 인접 문장 텍스트로 보완)
-    aligned_sentences = []
-    for idx in range(N):
-        trans_content = tag_to_text.get(idx, "")
-        aligned_sentences.append({
-            "src": src_sentences[idx],
-            "trans": trans_content
-        })
-        
+
+    # 원문 문장 리스트(0..N-1) 기준으로 1대1 쌍을 구성한다. LLM이 두 개 이상의 원문
+    # 문장을 하나의 태그 아래로 합쳐버리면 그 사이 인덱스들은 태그 자체가 통째로
+    # 빠지는데, 이때 그냥 비워두면 PDF에서는 문장 하나가 통째로 선택되는데 번역
+    # 패널에는 아무것도(혹은 엉뚱한 옆 문장 일부만) 매칭되는 문제가 생긴다.
+    # 대신 이런 "구멍" 구간은 바로 다음(없으면 바로 이전) 태그가 담당하던 텍스트를
+    # 문장 단위로 다시 쪼갠 뒤, 그 태그의 원래 문장까지 포함해 비례 배분(기존
+    # align_paragraph의 N:M 근사 매칭)해서 채운다 - 완전히 정확하진 않아도 빈 값이나
+    # 일부만 매칭된 값보다는 훨씬 낫다.
+    aligned_sentences: list = [None] * N
+    idx = 0
+    while idx < N:
+        if aligned_sentences[idx] is not None:
+            idx += 1
+            continue
+        if idx in tag_to_text:
+            aligned_sentences[idx] = {"src": src_sentences[idx], "trans": tag_to_text[idx]}
+            idx += 1
+            continue
+
+        gap_start = idx
+        gap_end = idx
+        while gap_end < N and gap_end not in tag_to_text:
+            gap_end += 1
+
+        # 구멍의 내용이 실제로 "이전" 태그에 붙어있는지 "다음" 태그에 붙어있는지는
+        # 텍스트만으로 확정할 수 없다 (LLM이 새 태그 없이 이어 쓰면 이전 태그에,
+        # 뒤늦게 밀린 태그를 함께 쏟아내면 다음 태그에 남는다). 양쪽 후보를 모두
+        # 문장 단위로 쪼개보고, 그 문장 개수가 이 구간에 필요한 문장 수와 가장 가깝게
+        # 맞아떨어지는 쪽을 채택한다 - 후보 문장 수가 정확히 일치하면 문장별로
+        # 정밀 배분되고, 아니면 비례 배분(그래도 안 맞으면 통째로 공유)으로 채운다.
+        candidates = []
+        for cand_idx in (gap_start - 1, gap_end):
+            if cand_idx < 0 or cand_idx >= N or cand_idx not in tag_to_text:
+                continue
+            cand_text = tag_to_text[cand_idx]
+            group_indices = sorted(set(range(gap_start, gap_end)) | {cand_idx})
+            tgt_sents = split_into_sentences(cand_text)
+            candidates.append({
+                "donor_idx": cand_idx,
+                "donor_text": cand_text,
+                "group_indices": group_indices,
+                "tgt_sents": tgt_sents,
+                "score": abs(len(tgt_sents) - len(group_indices)),
+            })
+
+        if candidates:
+            best = min(candidates, key=lambda c: c["score"])
+            group_indices = best["group_indices"]
+            group_src = [src_sentences[i] for i in group_indices]
+            paired = align_paragraph(group_src, best["tgt_sents"]) if best["tgt_sents"] else []
+            if len(paired) == len(group_indices):
+                for gi, pair in zip(group_indices, paired):
+                    aligned_sentences[gi] = {"src": src_sentences[gi], "trans": pair["trans"]}
+            else:
+                # 비례 배분 실패 시 전체 번역 텍스트를 구간 전체에 동일하게 공유
+                for gi in group_indices:
+                    aligned_sentences[gi] = {"src": src_sentences[gi], "trans": best["donor_text"]}
+            # 실제로 채워진 범위(선택된 후보의 group_indices)를 기준으로 다음 위치를 정한다 -
+            # 채택된 후보가 "이전" 태그였다면 gap_end 자체는 아직 안 채워졌으므로 그대로 두고,
+            # "다음" 태그였다면 gap_end까지 채워졌으므로 그 다음으로 건너뛴다.
+            idx = max(group_indices) + 1
+        else:
+            # 앞뒤 어디에도 기댈 태그가 없는 극단적인 경우
+            for gi in range(gap_start, gap_end):
+                aligned_sentences[gi] = {"src": src_sentences[gi], "trans": ""}
+            idx = gap_end
+
     return cleaned_translation, aligned_sentences
