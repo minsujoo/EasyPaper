@@ -547,7 +547,7 @@ function loadPageInsight(pageNum, kind, force) {
 
   const cacheKey = `${pageNum}_${kind}`
   if (!force && state.pageInsightCache[cacheKey] !== undefined) {
-    contentEl.innerHTML = formatTranslationHtml(state.pageInsightCache[cacheKey])
+    renderInsightContent(contentEl, kind, state.pageInsightCache[cacheKey])
     return
   }
 
@@ -560,12 +560,54 @@ function loadPageInsight(pageNum, kind, force) {
     (token) => { buffer += token },
     () => {
       state.pageInsightCache[cacheKey] = buffer
-      contentEl.innerHTML = formatTranslationHtml(buffer)
+      renderInsightContent(contentEl, kind, buffer)
     },
     (err) => {
       contentEl.innerHTML = `<div class="trans-error">생성 실패: ${escapeHtml(err.message)}</div>`
     }
   )
+}
+
+// "키워드/단어" 응답을 "- **용어**: 뜻풀이" 줄 단위로 파싱해서 용어(term)와
+// 뜻풀이(def)를 분리한다. 형식에 맞지 않는 줄(예: "해당 없음" 안내 문구)은
+// 안내 텍스트로 그대로 표시한다.
+function parseKeywordItems(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const items = []
+  for (const line of lines) {
+    const m = line.match(/^[-*]?\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$/)
+    if (m) {
+      items.push({ term: m[1].trim(), def: m[2].trim() })
+    } else {
+      items.push({ term: null, def: line.replace(/^[-*]\s*/, '') })
+    }
+  }
+  return items
+}
+
+function renderInsightContent(contentEl, kind, text) {
+  if (!text || !text.trim()) {
+    contentEl.innerHTML = `<div class="trans-page-placeholder">내용이 없습니다.</div>`
+    return
+  }
+
+  if (kind === 'keywords') {
+    const items = parseKeywordItems(text)
+    contentEl.innerHTML = `<div class="insight-keyword-list">${items.map(it => {
+      if (!it.term) {
+        return `<div class="insight-keyword-empty">${escapeHtml(it.def)}</div>`
+      }
+      return `
+        <div class="insight-keyword-item">
+          <span class="insight-keyword-term">${escapeHtml(it.term)}</span>
+          <span class="insight-keyword-def">${formatTranslationHtml(it.def)}</span>
+        </div>`
+    }).join('')}</div>`
+  } else {
+    contentEl.innerHTML = `<div class="insight-summary-box">${formatTranslationHtml(text)}</div>`
+  }
+
+  applyKatexToElement(contentEl)
 }
 
 // ── 페이지 번역 ───────────────────────────────────
