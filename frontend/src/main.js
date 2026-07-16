@@ -806,22 +806,53 @@ function previewZoom(newZoom) {
   return newZoom
 }
 
+// 제스처 도중에는 무거운 재렌더링(reRenderAll) 대신, 마지막으로 실제 렌더링된
+// 배율(lastCommittedZoom) 대비 현재 미리보기 배율의 비율만큼 각 페이지에
+// CSS transform(scale)을 걸어 그 자리에서 바로 확대/축소되는 것처럼 보이게
+// 한다 - 캔버스를 다시 그리지 않아 비용이 거의 없고 즉각적이다. 제스처가
+// 멈추면(디바운스) 실제로 새 배율로 재렌더링하고 transform은 원복한다.
+let lastCommittedZoom = state.zoom
+
+function applyZoomPreviewTransform(previewValue) {
+  const ratio = previewValue / lastCommittedZoom
+  viewerScrollContainer.querySelectorAll('.pdf-page-wrapper').forEach(w => {
+    w.style.transformOrigin = 'center top'
+    w.style.transform = ratio === 1 ? '' : `scale(${ratio})`
+    // 확대된 페이지가 스크롤 방향으로 인접한 카드 위로 살짝 겹쳐도 잘리거나
+    // 아래에 깔리지 않도록 그 순간만 앞으로 끌어올린다
+    w.style.zIndex = ratio === 1 ? '' : '5'
+  })
+}
+
+function clearZoomPreviewTransform() {
+  viewerScrollContainer.querySelectorAll('.pdf-page-wrapper').forEach(w => {
+    w.style.transform = ''
+    w.style.zIndex = ''
+  })
+}
+
 async function setZoom(newZoom) {
   newZoom = previewZoom(newZoom)
-  if (!state.sessionId) return
+  lastCommittedZoom = newZoom
+  if (!state.sessionId) { clearZoomPreviewTransform(); return }
   await reRenderAll(viewerScrollContainer, newZoom, {
     onPageVisible: (pageNum) => updatePageDisplay(pageNum)
   })
+  // 재렌더링이 끝나 새 배율의 캔버스로 이미 교체된 뒤에 transform을 지워야
+  // "확대된 미리보기 → 원래 크기로 순간 복귀 → 새 크기로 점프"하는 깜빡임이 없다.
+  clearZoomPreviewTransform()
 }
 
 zoomInBtn.addEventListener('click',  () => setZoom(state.zoom + 0.2))
 zoomOutBtn.addEventListener('click', () => setZoom(state.zoom - 0.2))
 
-// 제스처 중에는 previewZoom으로 라벨만 계속 갱신하다가, 제스처가 잠시 멈추면
-// (디바운스) 그 시점의 최종 값으로 실제 재렌더링을 한 번만 실행한다.
+// 제스처 중에는 previewZoom(라벨) + CSS transform(시각적 미리보기)으로 즉시
+// 반응하다가, 제스처가 잠시 멈추면(디바운스) 그 시점의 최종 값으로 실제
+// 재렌더링을 한 번만 실행한다.
 let zoomGestureTimer = null
 function requestZoomFromGesture(newZoom) {
-  previewZoom(newZoom)
+  newZoom = previewZoom(newZoom)
+  applyZoomPreviewTransform(newZoom)
   if (zoomGestureTimer) clearTimeout(zoomGestureTimer)
   zoomGestureTimer = setTimeout(() => setZoom(state.zoom), 200)
 }
