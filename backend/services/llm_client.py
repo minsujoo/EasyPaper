@@ -600,6 +600,95 @@ async def stream_chat(
 
 
 
+async def stream_page_insight(
+    kind: str,
+    text: str,
+    target_lang: str,
+    doc_title: str = "",
+    session_id: str = None
+) -> AsyncGenerator[str, None]:
+    """
+    페이지 원문에서 키워드/전문용어 설명(kind='keywords') 또는 요약(kind='summary')을
+    생성합니다. 어시스턴트(Chat) 프로바이더/모델 설정을 그대로 재사용한다 - 번역보다는
+    "분석/설명" 작업에 가깝고, antigravity/claude_code처럼 세션이 지속되는 provider라면
+    이미 채팅에서 쓰고 있는 문서당 공유 세션을 그대로 활용해 별도 세션을 만들지 않는다.
+    단, 대화창에 노출되는 채팅 기록(chats 테이블)에는 남기지 않고 사용량 통계도
+    "insight"로 별도 기록한다.
+    """
+    if kind == "keywords":
+        instruction = (
+            f"다음은 학술 논문 '{doc_title}'의 한 페이지 원문입니다. 이 텍스트에서 "
+            f"고급 어휘(GRE 수준 이상의 영단어) 또는 이 분야의 전문용어·고유명사를 "
+            f"중요도 순으로 최대 10개까지 골라주세요. 각 항목은 \"- **원어 용어**: {target_lang} 뜻풀이\" "
+            f"형식의 마크다운 목록으로만 출력하고, 서론이나 부연 설명은 절대 추가하지 마세요. "
+            f"본문에 그런 용어가 거의 없다면 목록 개수를 줄이거나, 정말 하나도 없으면 "
+            f"\"이 페이지에는 특별히 짚을 전문용어/고급 어휘가 없습니다.\"라고만 답하세요."
+        )
+    else:  # "summary"
+        instruction = (
+            f"다음은 학술 논문 '{doc_title}'의 한 페이지 원문입니다. 이 페이지의 핵심 내용을 "
+            f"{target_lang}로 3~5문장 이내로 간결하게 요약해주세요. 서론이나 부연 설명 없이 "
+            f"요약 내용만 즉시 출력하세요."
+        )
+
+    prompt = f"{instruction}\n\n원문:\n{text}"
+
+    provider = get_chat_provider()
+    model = get_chat_model()
+
+    if provider == "antigravity":
+        async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="insight"):
+            yield token
+        return
+    elif provider == "claude_code":
+        async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="insight"):
+            yield token
+        return
+
+    messages = [{"role": "user", "content": prompt}]
+    if provider == "openai":
+        async for token in stream_openai(messages, model=model, temperature=0.3):
+            yield token
+        return
+    elif provider == "gemini":
+        async for token in stream_gemini(messages, model=model, temperature=0.3):
+            yield token
+        return
+    elif provider == "claude":
+        async for token in stream_claude(messages, model=model, temperature=0.3):
+            yield token
+        return
+
+    # Ollama 폴백
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream("POST", f"{get_ollama_host()}/api/chat", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        token = data.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+                        if data.get("done", False):
+                            break
+                    except json.JSONDecodeError:
+                        continue
+    except httpx.ConnectError:
+        raise RuntimeError(f"Ollama 서버에 연결할 수 없습니다. ({get_ollama_host()})")
+    except httpx.TimeoutException:
+        raise RuntimeError("답변 생성 시간이 초과되었습니다.")
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(f"Ollama HTTP 오류: {e.response.status_code}")
+
+
 async def check_ollama_health() -> dict:
     """Ollama 서버 상태를 확인합니다."""
     try:
@@ -634,7 +723,7 @@ def _get_claude_code_session_lock(session_id: str):
     return _claude_code_session_locks[session_id]
 
 
-async def stream_claude_code(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False) -> AsyncGenerator[str, None]:
+async def stream_claude_code(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False, usage_label: str = None) -> AsyncGenerator[str, None]:
     import asyncio
     import os
     import codecs
@@ -705,7 +794,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
 
     try:
         from services.usage_tracker import record_call
-        record_call("translate" if not is_chat else "chat")
+        record_call(usage_label or ("translate" if not is_chat else "chat"))
     except Exception:
         pass
 
@@ -940,7 +1029,8 @@ async def stream_antigravity(
     prompt: str,
     model: str = None,
     session_id: str = None,
-    is_chat: bool = False
+    is_chat: bool = False,
+    usage_label: str = None
 ) -> AsyncGenerator[str, None]:
     import asyncio
     import os
@@ -1052,7 +1142,7 @@ async def stream_antigravity(
     # 사용량 기록
     try:
         from services.usage_tracker import record_call
-        record_call("translate" if not is_chat else "chat")
+        record_call(usage_label or ("translate" if not is_chat else "chat"))
     except Exception:
         pass
 

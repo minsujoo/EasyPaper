@@ -126,6 +126,77 @@ export function streamTranslation(sessionId, pageNum, onToken, onDone, onError) 
 }
 
 /**
+ * SSE 스트리밍으로 페이지 키워드/단어 설명(kind='keywords') 또는 요약(kind='summary')을 수신합니다.
+ * @param {string} sessionId
+ * @param {number} pageNum
+ * @param {string} kind - 'keywords' | 'summary'
+ * @param {string} targetLang
+ * @param {boolean} force - true면 캐시를 무시하고 새로 생성
+ * @param {function} onToken
+ * @param {function} onDone
+ * @param {function} onError
+ * @returns {function} abort
+ */
+export function streamPageInsightAPI(sessionId, pageNum, kind, targetLang, force, onToken, onDone, onError) {
+  const controller = new AbortController()
+  const query = `?kind=${encodeURIComponent(kind)}&target_lang=${encodeURIComponent(targetLang)}&force=${force ? 'true' : 'false'}`
+
+  fetch(`${API_BASE}/insight/${sessionId}/${pageNum}${query}`, {
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json()
+        onError(new Error(err.detail || '생성 실패'))
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr) continue
+
+          try {
+            const data = JSON.parse(jsonStr)
+            if (data.error) {
+              onError(new Error(data.error))
+              return
+            }
+            if (data.content) {
+              onToken(data.content, data.cached || false)
+            }
+            if (data.done) {
+              onDone(data.cached || false)
+              return
+            }
+          } catch (e) {
+            console.warn('SSE 파싱 오류:', e)
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err)
+      }
+    })
+
+  return () => controller.abort()
+}
+
+/**
  * 백그라운드 번역 잡 상태를 조회합니다.
  */
 export async function getJobStatus(sessionId) {

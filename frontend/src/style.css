@@ -868,6 +868,57 @@ body:not(.light-theme) .pdf-page-inner canvas {
   text-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
 }
 
+/* 번역 / 키워드·단어 / 요약 탭 바 */
+.trans-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 20px;
+  background: var(--bg-trans-label);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.trans-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.trans-tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.trans-tab-btn.active { color: var(--accent-mid); background: var(--bg-hover); }
+
+.trans-tab-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+.trans-tab-refresh-btn:hover { color: var(--accent-mid); background: var(--bg-hover); }
+
+/* 설정에서 키워드/요약 탭을 껐을 때는 번역 탭바 자체를 숨긴다 */
+.trans-tabs.insights-off .insight-tab-btn { display: none; }
+
+.trans-insight-content {
+  padding: 28px;
+  min-height: 140px;
+  overflow-y: auto;
+  flex: 1;
+  box-sizing: border-box;
+}
+
 .trans-page-content {
   padding: 28px;
   min-height: 140px;
@@ -2906,7 +2957,9 @@ body.light-theme .message-quote-img {
 }
 
 .collapse-translation .trans-page-block .trans-page-label,
-.collapse-translation .trans-page-block .trans-page-content {
+.collapse-translation .trans-page-block .trans-tabs,
+.collapse-translation .trans-page-block .trans-page-content,
+.collapse-translation .trans-page-block .trans-insight-content {
   display: none !important;
 }
 

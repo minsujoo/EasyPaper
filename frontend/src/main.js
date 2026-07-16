@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 import { icon } from './icons.js'
@@ -61,7 +61,12 @@ const state = {
   disableHoverTooltip: localStorage.getItem('easypaper_disable_hover_tooltip') === 'true',
   // 마지막으로 읽던 페이지를 자동 저장하고, 문서를 다시 열 때 그 위치로 이동하는
   // 책갈피 기능을 끌지 여부. true면 항상 1페이지부터 시작한다.
-  disableBookmark: localStorage.getItem('easypaper_disable_bookmark') === 'true'
+  disableBookmark: localStorage.getItem('easypaper_disable_bookmark') === 'true',
+  // 번역 패널의 "키워드/단어", "요약" 탭을 끌지 여부(기본값 켜짐 - 다른 편의
+  // 설정과 달리 토큰을 추가로 소모하는 기능이라 설정에서 끌 수 있게 함).
+  disableInsights: localStorage.getItem('easypaper_disable_insights') === 'true',
+  // pageNum_kind(예: "3_keywords") → 생성된 텍스트. 탭 재방문 시 재요청 방지용 캐시.
+  pageInsightCache: {}
 }
 
 // ── DOM 참조 ──────────────────────────────────────
@@ -95,6 +100,7 @@ const settingIgnoreRefs   = $('setting-ignore-refs')
 const settingDefaultZoom  = $('setting-default-zoom')
 const settingDisableHoverTooltip = $('setting-disable-hover-tooltip')
 const settingDisableBookmark = $('setting-disable-bookmark')
+const settingDisableInsights = $('setting-disable-insights')
 const clearCacheBtn       = $('clear-cache-btn')
 
 const systemSettingsForm  = $('system-settings-form')
@@ -469,12 +475,97 @@ function createTransBlock(pageNum) {
       <span>${icon('fileText', 13, 'style="vertical-align:-2px;margin-right:3px"')}${pageNum}페이지</span>
       <span class="trans-page-status" id="trans-status-${pageNum}">대기 중</span>
     </div>
+    <div class="trans-tabs${state.disableInsights ? ' insights-off' : ''}" id="trans-tabs-${pageNum}">
+      <button class="trans-tab-btn active" data-tab="translation">번역</button>
+      <button class="trans-tab-btn insight-tab-btn" data-tab="keywords">키워드·단어</button>
+      <button class="trans-tab-btn insight-tab-btn" data-tab="summary">요약</button>
+      <button class="trans-tab-refresh-btn insight-tab-btn hidden" title="다시 생성">${icon('refreshCw', 12)}</button>
+    </div>
     <div class="trans-page-content" id="trans-content-${pageNum}">
       <div class="trans-page-placeholder">스크롤하면 자동으로 번역됩니다</div>
     </div>
+    <div class="trans-insight-content hidden" id="keywords-content-${pageNum}"></div>
+    <div class="trans-insight-content hidden" id="summary-content-${pageNum}"></div>
     <div class="trans-resizer-handle"></div>
     <button class="trans-collapse-btn" title="${btnTitle}">${chevron}</button>`
+
+  block.querySelectorAll('.trans-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTransTab(pageNum, btn.dataset.tab))
+  })
+  block.querySelector('.trans-tab-refresh-btn').addEventListener('click', (e) => {
+    const tab = e.currentTarget.dataset.tab
+    if (tab) loadPageInsight(pageNum, tab, true)
+  })
   return block
+}
+
+// ── 번역 패널 탭 (번역 / 키워드·단어 / 요약) ─────────
+function switchTransTab(pageNum, tab) {
+  const block = $(`trans-block-${pageNum}`)
+  if (!block) return
+  block.querySelectorAll('.trans-tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab))
+
+  const transContent = $(`trans-content-${pageNum}`)
+  const keywordsContent = $(`keywords-content-${pageNum}`)
+  const summaryContent = $(`summary-content-${pageNum}`)
+  if (transContent) transContent.classList.toggle('hidden', tab !== 'translation')
+  if (keywordsContent) keywordsContent.classList.toggle('hidden', tab !== 'keywords')
+  if (summaryContent) summaryContent.classList.toggle('hidden', tab !== 'summary')
+
+  const refreshBtn = block.querySelector('.trans-tab-refresh-btn')
+  if (refreshBtn) {
+    if (tab === 'translation') {
+      refreshBtn.classList.add('hidden')
+    } else {
+      refreshBtn.classList.remove('hidden')
+      refreshBtn.dataset.tab = tab
+    }
+  }
+
+  if (tab === 'keywords' || tab === 'summary') {
+    loadPageInsight(pageNum, tab, false)
+  }
+}
+
+// 설정에서 키워드/요약 탭을 켜고 끌 때, 이미 열려있는 뷰어의 탭 바에도 즉시 반영
+function applyInsightsTabVisibility() {
+  document.querySelectorAll('.trans-tabs').forEach(tabsEl => {
+    tabsEl.classList.toggle('insights-off', state.disableInsights)
+    if (state.disableInsights) {
+      const pageNum = tabsEl.id.replace('trans-tabs-', '')
+      const activeBtn = tabsEl.querySelector('.trans-tab-btn.active')
+      if (activeBtn && activeBtn.dataset.tab !== 'translation') {
+        switchTransTab(pageNum, 'translation')
+      }
+    }
+  })
+}
+
+function loadPageInsight(pageNum, kind, force) {
+  const contentEl = $(`${kind}-content-${pageNum}`)
+  if (!contentEl || !state.sessionId) return
+
+  const cacheKey = `${pageNum}_${kind}`
+  if (!force && state.pageInsightCache[cacheKey] !== undefined) {
+    contentEl.innerHTML = formatTranslationHtml(state.pageInsightCache[cacheKey])
+    return
+  }
+
+  contentEl.innerHTML = `<div class="trans-waiting"><div class="trans-wait-spinner"></div><span>${kind === 'keywords' ? '키워드' : '요약'} 생성 중...</span></div>`
+
+  let buffer = ''
+  const targetLang = getTranslationOptions().targetLang
+  streamPageInsightAPI(
+    state.sessionId, pageNum, kind, targetLang, force,
+    (token) => { buffer += token },
+    () => {
+      state.pageInsightCache[cacheKey] = buffer
+      contentEl.innerHTML = formatTranslationHtml(buffer)
+    },
+    (err) => {
+      contentEl.innerHTML = `<div class="trans-error">생성 실패: ${escapeHtml(err.message)}</div>`
+    }
+  )
 }
 
 // ── 페이지 번역 ───────────────────────────────────
@@ -1799,6 +1890,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingDefaultZoom.value = localStorage.getItem('easypaper_default_zoom') || '1.5'
   settingDisableHoverTooltip.checked = state.disableHoverTooltip
   settingDisableBookmark.checked = state.disableBookmark
+  settingDisableInsights.checked = state.disableInsights
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
   await refreshSystemSettings()
@@ -1963,6 +2055,12 @@ settingDisableHoverTooltip.addEventListener('change', () => {
 settingDisableBookmark.addEventListener('change', () => {
   state.disableBookmark = settingDisableBookmark.checked
   localStorage.setItem('easypaper_disable_bookmark', state.disableBookmark)
+})
+
+settingDisableInsights.addEventListener('change', () => {
+  state.disableInsights = settingDisableInsights.checked
+  localStorage.setItem('easypaper_disable_insights', state.disableInsights)
+  applyInsightsTabVisibility()
 })
 
 // 시스템 설정 폼 제출
@@ -2677,6 +2775,7 @@ async function openFromLibrary(doc, shouldPushState = true) {
   state.translationCache = {}
   state.translationSentences = {}
   state.translatingPages = new Set()
+  state.pageInsightCache = {}
   // 번역이 완료된 페이지 번호만 기록하고 번역본 로드는 lazy-load에 위임
   state.translatedPages  = new Set(doc.translated_pages || [])
 
