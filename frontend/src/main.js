@@ -796,10 +796,18 @@ pageInput.addEventListener('blur', (e) => {
 })
 
 // ── 줌 ────────────────────────────────────────────
-async function setZoom(newZoom) {
+// 클램핑 + 라벨 갱신만 즉시 수행하는 가벼운 버전. 핀치/휠 제스처처럼 짧은 시간에
+// 값이 계속 바뀌는 상황에서, 매번 무거운 캔버스 재렌더링(reRenderAll)을 부르지
+// 않고도 숫자 표시는 실시간으로 따라오게 하기 위해 분리했다.
+function previewZoom(newZoom) {
   newZoom = Math.max(0.5, Math.min(3.0, newZoom))
   state.zoom = newZoom
   zoomLabel.textContent = `${Math.round(newZoom / 1.5 * 100)}%`
+  return newZoom
+}
+
+async function setZoom(newZoom) {
+  newZoom = previewZoom(newZoom)
   if (!state.sessionId) return
   await reRenderAll(viewerScrollContainer, newZoom, {
     onPageVisible: (pageNum) => updatePageDisplay(pageNum)
@@ -808,6 +816,54 @@ async function setZoom(newZoom) {
 
 zoomInBtn.addEventListener('click',  () => setZoom(state.zoom + 0.2))
 zoomOutBtn.addEventListener('click', () => setZoom(state.zoom - 0.2))
+
+// 제스처 중에는 previewZoom으로 라벨만 계속 갱신하다가, 제스처가 잠시 멈추면
+// (디바운스) 그 시점의 최종 값으로 실제 재렌더링을 한 번만 실행한다.
+let zoomGestureTimer = null
+function requestZoomFromGesture(newZoom) {
+  previewZoom(newZoom)
+  if (zoomGestureTimer) clearTimeout(zoomGestureTimer)
+  zoomGestureTimer = setTimeout(() => setZoom(state.zoom), 200)
+}
+
+// 트랙패드 핀치: 브라우저가 Ctrl+wheel 이벤트로 합성해서 보낸다(맥/윈도우 공통).
+// 기본 동작(브라우저 페이지 전체 확대)을 막고 대신 뷰어 줌으로 처리한다.
+viewerScrollContainer.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  // 지수 스케일링 사용 - 매끄러운 트랙패드 핀치(작은 deltaY가 연속으로 여러 번)와
+  // 마우스 휠 한 칸(±100 안팎의 큰 deltaY가 단발성으로) 양쪽 모두에서 한 번에
+  // 과도하게 확대/축소되지 않도록 함
+  requestZoomFromGesture(state.zoom * Math.exp(-e.deltaY * 0.002))
+}, { passive: false })
+
+// 터치스크린 핀치: 두 손가락 사이 거리 변화 비율만큼 확대/축소
+let pinchStartDist = null
+let pinchStartZoom = null
+function getTouchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX
+  const dy = touches[0].clientY - touches[1].clientY
+  return Math.hypot(dx, dy)
+}
+viewerScrollContainer.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    pinchStartDist = getTouchDistance(e.touches)
+    pinchStartZoom = state.zoom
+  }
+}, { passive: true })
+viewerScrollContainer.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2 && pinchStartDist) {
+    e.preventDefault()
+    const scale = getTouchDistance(e.touches) / pinchStartDist
+    requestZoomFromGesture(pinchStartZoom * scale)
+  }
+}, { passive: false })
+viewerScrollContainer.addEventListener('touchend', (e) => {
+  if (e.touches.length < 2) {
+    pinchStartDist = null
+    pinchStartZoom = null
+  }
+})
 
 // ── 내보내기 ──────────────────────────────────────
 exportBtn.addEventListener('click', async () => {
