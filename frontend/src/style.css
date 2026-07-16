@@ -162,7 +162,7 @@ html, body {
   letter-spacing: -0.04em;
   font-family: 'Outfit', var(--font-body);
 }
-.logo-icon { font-size: 32px; filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.5)); }
+.logo-icon { display: inline-flex; color: var(--text-primary); filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.5)); }
 .logo-text {
   background: linear-gradient(135deg, #ffffff, #d1d5db);
   -webkit-background-clip: text;
