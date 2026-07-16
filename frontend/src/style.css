@@ -943,6 +943,15 @@ body:not(.light-theme) .pdf-page-inner canvas {
   font-weight: 700;
   color: var(--accent-mid);
   letter-spacing: -0.01em;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(124, 58, 237, 0.35);
+  text-underline-offset: 3px;
+  width: fit-content;
+}
+.insight-keyword-term:hover {
+  color: var(--accent-to, var(--accent-mid));
+  text-decoration-color: var(--accent-mid);
 }
 
 .insight-keyword-def {

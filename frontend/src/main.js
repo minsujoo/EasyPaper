@@ -496,6 +496,16 @@ function createTransBlock(pageNum) {
     const tab = e.currentTarget.dataset.tab
     if (tab) loadPageInsight(pageNum, tab, true)
   })
+  // 키워드/단어 탭에서 용어 클릭 시 PDF 원문 해당 위치로 스크롤 + 하이라이트
+  // (콘텐츠는 renderInsightContent가 반복적으로 innerHTML을 교체하므로, 개별
+  // 용어 엘리먼트가 아니라 컨테이너에 위임 방식으로 한 번만 등록한다)
+  const keywordsContentEl = block.querySelector(`#keywords-content-${pageNum}`)
+  if (keywordsContentEl) {
+    keywordsContentEl.addEventListener('click', (e) => {
+      const termEl = e.target.closest('.insight-keyword-term')
+      if (termEl) locateTermInPdf(pageNum, termEl.textContent)
+    })
+  }
   return block
 }
 
@@ -599,7 +609,7 @@ function renderInsightContent(contentEl, kind, text) {
       }
       return `
         <div class="insight-keyword-item">
-          <span class="insight-keyword-term">${escapeHtml(it.term)}</span>
+          <span class="insight-keyword-term" title="클릭하면 원문에서 위치를 찾아줍니다">${escapeHtml(it.term)}</span>
           <span class="insight-keyword-def">${formatTranslationHtml(it.def)}</span>
         </div>`
     }).join('')}</div>`
@@ -5946,6 +5956,33 @@ function getOrCreateOverlay(pageWrapper) {
     inner.appendChild(overlay);
   }
   return overlay;
+}
+
+// 키워드/단어 탭에서 용어를 클릭하면 PDF 원문에서 그 단어를 찾아 스크롤 + 펄스
+// 하이라이트(citation 클릭 시 사용하는 것과 동일한 패턴 재사용)
+function locateTermInPdf(pageNum, term) {
+  const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
+  const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
+  if (!vtm || !pw) {
+    showToast('원문 위치를 찾을 수 없습니다.', 'warning')
+    return
+  }
+
+  const idx = vtm.fullText.toLowerCase().indexOf(term.trim().toLowerCase())
+  if (idx === -1) {
+    showToast('원문에서 해당 단어를 찾지 못했습니다.', 'warning')
+    return
+  }
+
+  const textLayer = pw.querySelector('.textLayer')
+  if (!textLayer) return
+  const rects = getSentenceRects({ charStart: idx, charEnd: idx + term.trim().length }, vtm, textLayer)
+  if (rects.length === 0) return
+
+  pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const overlay = getOrCreateOverlay(pw)
+  renderSentenceOverlay(overlay, rects, 'sentence-pulse-box')
+  setTimeout(() => clearOverlayBoxes(overlay, 'sentence-pulse-box'), 900)
 }
 
 // 메인 진입점: buildVirtualTextMap → alignSentencesToText → state 저장 → 메모 오버레이 렌더링
