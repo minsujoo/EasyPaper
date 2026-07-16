@@ -683,6 +683,18 @@ function updatePageDisplay(pageNum) {
   if (pageNum === state.currentPage) return
   state.currentPage = pageNum
   pageInput.value = pageNum
+  scheduleSaveLastReadPage(pageNum)
+}
+
+// ── 마지막으로 읽던 위치(책갈피) 자동 저장 ─────────
+// 스크롤 중 페이지가 바뀔 때마다 API를 호출하지 않도록 디바운스한다.
+let saveLastReadPageTimer = null
+function scheduleSaveLastReadPage(pageNum) {
+  if (!state.currentDocId) return
+  if (saveLastReadPageTimer) clearTimeout(saveLastReadPageTimer)
+  saveLastReadPageTimer = setTimeout(() => {
+    updateLibraryDocMetadata(state.currentDocId, { last_page: pageNum }).catch(() => {})
+  }, 1500)
 }
 
 function updateProgressMini() {
@@ -2595,10 +2607,20 @@ async function openFromLibrary(doc, shouldPushState = true) {
   docTitle.title        = doc.filename
   pageTotal.textContent = `/ ${doc.total_pages}`
   pageInput.max   = doc.total_pages
-  pageInput.value = 1
+
+  // 책갈피: 마지막으로 읽던 위치가 저장되어 있으면 그 페이지로, 없으면 1페이지로
+  const savedLastPage = doc.metadata?.last_page
+  const restorePage = (Number.isInteger(savedLastPage) && savedLastPage >= 1 && savedLastPage <= doc.total_pages)
+    ? savedLastPage
+    : 1
+  pageInput.value = restorePage
+  state.currentPage = restorePage
 
   showViewer()
   await initScrollViewer()
+  if (restorePage > 1) {
+    scrollToPage(viewerScrollContainer, restorePage, { instant: true })
+  }
   hideOutlineSidebar()
   await loadPDFOutline()
 }

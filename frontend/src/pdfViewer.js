@@ -234,9 +234,9 @@ async function _renderPage(wrapper, pageNum) {
 }
 
 /** 특정 페이지 wrapper로 스크롤 */
-export function scrollToPage(container, pageNum) {
+export function scrollToPage(container, pageNum, { instant = false } = {}) {
   const el = container.querySelector(`[data-page="${pageNum}"]`)
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  if (el) el.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'start' })
 }
 
 /** 줌 변경 후 전체 재렌더링 */
