@@ -5960,6 +5960,11 @@ function getOrCreateOverlay(pageWrapper) {
 
 // 키워드/단어 탭에서 용어를 클릭하면 PDF 원문에서 그 단어를 찾아 스크롤 + 펄스
 // 하이라이트(citation 클릭 시 사용하는 것과 동일한 패턴 재사용)
+// 문자열에서 영숫자/한글/한자/그리스 문자만 남기고 소문자화 - PDF 원문 추출 텍스트는
+// 줄바꿈으로 끊긴 하이픈 단어, 공백 간격 등이 LLM이 본 정제된 텍스트와 다를 수 있어
+// (alignSentencesToText와 동일한 방식) 순수 문자만 비교해야 안정적으로 매칭된다.
+const INSIGHT_MATCH_CHAR_RE = /[a-zA-Z0-9ㄱ-힝一-鿿Ͱ-Ͽ]/
+
 function locateTermInPdf(pageNum, term) {
   const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
   const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
@@ -5968,16 +5973,38 @@ function locateTermInPdf(pageNum, term) {
     return
   }
 
-  const idx = vtm.fullText.toLowerCase().indexOf(term.trim().toLowerCase())
-  if (idx === -1) {
+  const fullText = vtm.fullText
+  const cleanToRaw = []
+  let cleanText = ''
+  for (let i = 0; i < fullText.length; i++) {
+    const ch = fullText[i]
+    if (INSIGHT_MATCH_CHAR_RE.test(ch)) {
+      cleanToRaw.push(i)
+      cleanText += ch.toLowerCase()
+    }
+  }
+
+  let cleanTerm = ''
+  for (const ch of term.trim()) {
+    if (INSIGHT_MATCH_CHAR_RE.test(ch)) cleanTerm += ch.toLowerCase()
+  }
+
+  const cleanIdx = cleanTerm ? cleanText.indexOf(cleanTerm) : -1
+  if (cleanIdx === -1) {
     showToast('원문에서 해당 단어를 찾지 못했습니다.', 'warning')
     return
   }
 
+  const rawStart = cleanToRaw[cleanIdx]
+  const rawEnd = cleanToRaw[cleanIdx + cleanTerm.length - 1] + 1
+
   const textLayer = pw.querySelector('.textLayer')
   if (!textLayer) return
-  const rects = getSentenceRects({ charStart: idx, charEnd: idx + term.trim().length }, vtm, textLayer)
-  if (rects.length === 0) return
+  const rects = getSentenceRects({ charStart: rawStart, charEnd: rawEnd }, vtm, textLayer)
+  if (rects.length === 0) {
+    showToast('원문 위치를 하이라이트하지 못했습니다.', 'warning')
+    return
+  }
 
   pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
   const overlay = getOrCreateOverlay(pw)
