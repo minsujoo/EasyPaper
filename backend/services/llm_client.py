@@ -100,7 +100,18 @@ async def stream_translation(
         style_instruction = f"자연스럽고 명확한 {target_lang} 학술 문체를 사용하고, 문맥에 맞게 번역문을 매끄럽게 다듬으세요."
 
     rules = [
-        f"학술 전문 용어는 자연스럽게 번역 후 필요한 경우 괄호에 영어 원문을 병기하세요 (예: 심층 학습(Deep Learning)).",
+        "전문 용어 번역 원칙: 사전적으로 정확한 번역이 아니라, 이 분야의 한국어 논문·기술 문서에서 "
+        "실제로 관용적으로 쓰이는 표기를 따르세요.\n"
+        f"- 이미 자연스러운 {target_lang} 대응어가 정착된 일반 학술 용어는 {target_lang}로 번역하고 "
+        f"필요시 괄호에 영어 원문을 병기하세요 (예: 심층 학습(Deep Learning), 지도 학습(Supervised Learning)).\n"
+        "- 하지만 self-attention, transformer, attention mechanism, backpropagation, embedding, "
+        "fine-tuning, batch normalization, dropout, epoch처럼 실제 한국어 논문/기술 문서에서도 "
+        "번역하지 않고 영어 그대로 쓰거나 발음만 한글로 옮기는(예: '셀프 어텐션', '트랜스포머') "
+        "방법론·기법·모델 구성요소 명칭은 억지로 의미를 풀어서 번역하지 마세요. "
+        "(잘못된 예: self-attention → \"자기주의\" / 올바른 예: self-attention → \"self-attention\" "
+        "또는 \"셀프 어텐션\"). 모델명, 데이터셋명 등 고유명사도 항상 원문 그대로 유지하세요.\n"
+        "- 판단이 애매하면 그 분야 전공자가 실제로 쓰는 표현을 우선하세요 - 사전적으로는 맞아도 "
+        "현장에서 쓰지 않는 표현이면 부자연스러운 번역입니다.",
         "문단 구조(빈 줄)를 원문과 동일하게 유지하세요.",
         "URL, DOI, 저자명, 이메일 주소 등은 번역하지 말고 원문 그대로 유지하세요.",
         "논문 리뷰용 줄 번호(예: 001 002)나 페이지 헤더/푸터 정보는 번역에서 제외하세요.",
