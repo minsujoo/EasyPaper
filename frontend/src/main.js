@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 import { icon } from './icons.js'
@@ -118,6 +118,13 @@ const pullStatusText       = $('pull-status-text')
 const pullPctText          = $('pull-pct-text')
 const pullProgressBar      = $('pull-progress-bar')
 const pullModelSection     = $('pull-model-section')
+
+const ollamaInstallSection  = $('ollama-install-section')
+const ollamaInstallNotLocal = $('ollama-install-not-local')
+const ollamaInstallPrompt   = $('ollama-install-prompt')
+const ollamaInstallBtn      = $('ollama-install-btn')
+const ollamaInstallProgressArea = $('ollama-install-progress-area')
+const ollamaInstallLog      = $('ollama-install-log')
 
 const libraryScreen     = $('library-screen')
 const viewerScreen      = $('viewer-screen')
@@ -1846,13 +1853,14 @@ function updateSettingsUIVisibility() {
     hostGroup.style.display = providers.has('ollama') ? 'block' : 'none'
   }
   
-  // 2. Ollama 모델 다운로드 섹션 표시 여부
+  // 2. Ollama 모델 다운로드 섹션 표시 여부 (설치 여부에 따라 refreshOllamaInstallUI에서 최종 결정)
   if (providers.has('ollama')) {
-    pullModelSection.classList.remove('hidden')
+    refreshOllamaInstallUI()
   } else {
     pullModelSection.classList.add('hidden')
+    ollamaInstallSection.classList.add('hidden')
   }
-  
+
   // 3. API Keys 섹션 표시 여부
   const keysSection = $('setting-apikeys-section')
   const openaiGroup = $('setting-openai-key-group')
@@ -2014,6 +2022,60 @@ tabBtns.forEach(btn => {
 })
 
 // (provider+model event listeners are now handled inside ProviderModelPicker instances)
+
+// Ollama 미설치 시 설치 섹션과 모델 다운로드 섹션 중 무엇을 보여줄지 결정
+let ollamaStatusCheckInFlight = false
+async function refreshOllamaInstallUI() {
+  if (ollamaStatusCheckInFlight) return
+  ollamaStatusCheckInFlight = true
+  try {
+    const { installed, is_local } = await getOllamaStatusAPI()
+    if (installed) {
+      ollamaInstallSection.classList.add('hidden')
+      pullModelSection.classList.remove('hidden')
+    } else {
+      pullModelSection.classList.add('hidden')
+      ollamaInstallSection.classList.remove('hidden')
+      ollamaInstallNotLocal.classList.toggle('hidden', is_local)
+      ollamaInstallPrompt.classList.toggle('hidden', !is_local)
+    }
+  } catch (err) {
+    console.warn('Ollama 상태 확인 실패:', err)
+  } finally {
+    ollamaStatusCheckInFlight = false
+  }
+}
+
+// Ollama 설치
+ollamaInstallBtn.addEventListener('click', () => {
+  ollamaInstallBtn.disabled = true
+  ollamaInstallBtn.textContent = '설치 중...'
+  ollamaInstallProgressArea.classList.remove('hidden')
+  ollamaInstallLog.textContent = ''
+
+  showToast('Ollama 설치를 시작합니다. 다소 시간이 걸릴 수 있습니다.', 'info')
+
+  streamInstallOllamaAPI(
+    (data) => {
+      if (data.line) {
+        ollamaInstallLog.textContent += data.line + '\n'
+        ollamaInstallLog.scrollTop = ollamaInstallLog.scrollHeight
+      }
+    },
+    async () => {
+      showToast('Ollama 설치가 완료되었습니다!', 'success')
+      ollamaInstallBtn.disabled = false
+      ollamaInstallBtn.textContent = 'Ollama 설치하기'
+      ollamaInstallProgressArea.classList.add('hidden')
+      await refreshOllamaInstallUI()
+    },
+    (err) => {
+      showToast(`Ollama 설치 실패: ${err.message}`, 'error')
+      ollamaInstallBtn.disabled = false
+      ollamaInstallBtn.textContent = 'Ollama 설치하기'
+    }
+  )
+})
 
 // Ollama 모델 다운로드 (Pull)
 settingPullModelBtn.addEventListener('click', () => {
