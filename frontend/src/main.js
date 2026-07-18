@@ -6820,8 +6820,12 @@ if (viewerScrollContainer) {
       if (isNaN(sentenceIdx)) return;
 
       // 번역 패널 호버 → PDF 오버레이 하이라이트
+      // 볼드(**...**) 등으로 한 문장이 여러 DOM 노드에 걸쳐 쪼개진 경우, 같은
+      // sentenceIdx를 가진 .trans-sentence 조각이 여러 개 존재한다 - 커서 아래
+      // 조각 하나만 하이라이트하면 문장의 나머지 조각이 하이라이트되지 않으므로,
+      // 같은 문장에 속한 조각을 전부 찾아 함께 하이라이트한다.
       viewerScrollContainer.querySelectorAll('.sentence-highlight').forEach(el => el.classList.remove('sentence-highlight'));
-      transSent.classList.add('sentence-highlight');
+      pageWrapper.querySelectorAll(`.trans-sentence[data-sentence-idx="${sentenceIdx}"]`).forEach(el => el.classList.add('sentence-highlight'));
 
       const sentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum];
       if (sentenceRanges) {
@@ -6944,15 +6948,19 @@ if (viewerScrollContainer) {
       activeHighlightSentenceIdx = sentenceRange.sentenceIdx;
 
       // 번역 패널로 스크롤
+      // 볼드 등으로 문장이 여러 조각으로 쪼개져 있을 수 있으므로 같은
+      // sentenceIdx를 가진 조각을 모두 찾아 함께 펄스 처리한다.
       const transIdx = sentenceRange.sentenceIdx >= 10000 ? (sentenceRange.originalSentenceIdx ?? -1) : sentenceRange.sentenceIdx;
       if (transIdx >= 0) {
-        const match = viewerScrollContainer.querySelector(
+        const matches = viewerScrollContainer.querySelectorAll(
           `.trans-sentence[data-page="${pageNum}"][data-sentence-idx="${transIdx}"]`
         );
-        if (match) {
-          match.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          match.classList.add('sentence-pulse');
-          setTimeout(() => match.classList.remove('sentence-pulse'), 1000);
+        if (matches.length > 0) {
+          matches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          matches.forEach(match => {
+            match.classList.add('sentence-pulse');
+            setTimeout(() => match.classList.remove('sentence-pulse'), 1000);
+          });
         }
       }
     } catch (err) {
