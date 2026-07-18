@@ -478,6 +478,28 @@ def merge_bboxes(rects: list, threshold: float = 15.0) -> list:
     return rects
 
 
+def render_cover_image(pdf_path: str, output_path: str, top_fraction: float = 0.45, zoom: float = 2.0) -> bool:
+    """
+    라이브러리 카드 미리보기용으로, 1페이지 상단(제목+저자+abstract가 보통 위치하는
+    영역)만 잘라 이미지로 렌더링합니다. 논문마다 단 구성이 달라 abstract의 정확한
+    끝 지점을 텍스트 분석으로 판별하기보다, 첫 페이지 높이의 상단 일정 비율을
+    고정으로 잘라내는 실용적인 방식을 사용합니다.
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        if doc.page_count == 0:
+            return False
+        page = doc[0]
+        rect = page.rect
+        clip = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + rect.height * top_fraction)
+        matrix = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=matrix, clip=clip)
+        pix.save(output_path)
+        return True
+    finally:
+        doc.close()
+
+
 def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
     """
     PDF의 각 페이지에서 실제 그림/이미지(Figure) 및 테이블(Table)의 영역 정보를 추출합니다.

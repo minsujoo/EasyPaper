@@ -16,8 +16,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-PJiteAX9.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-B140-WQY.css">
+  <script type="module" crossorigin src="/assets/index-Cpj-tlmM.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Dai2ntca.css">
 </head>
 <body>
 
@@ -599,6 +599,28 @@
           <span class="upload-success-icon hidden" id="upload-item-success-icon">✓</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 논문 미리보기(빠른 보기) 팝업 -->
+  <div id="doc-preview-overlay" class="doc-preview-overlay hidden">
+    <div class="doc-preview-card">
+      <button id="doc-preview-close" class="doc-preview-close" title="닫기">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+      <div class="doc-preview-hero">
+        <img id="doc-preview-cover-img" class="doc-preview-cover-img" alt="" />
+        <div class="doc-preview-gradient"></div>
+        <div class="doc-preview-hero-content">
+          <div class="doc-preview-title-row">
+            <div id="doc-preview-title" class="doc-preview-title"></div>
+            <div id="doc-preview-pages" class="doc-preview-pages-badge"></div>
+          </div>
+          <div id="doc-preview-tags" class="doc-preview-tags"></div>
+          <div id="doc-preview-meta" class="doc-preview-meta"></div>
+        </div>
+      </div>
+      <button id="doc-preview-open-btn" class="doc-preview-open-btn">열기</button>
     </div>
   </div>
 

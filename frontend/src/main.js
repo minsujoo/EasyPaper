@@ -139,6 +139,15 @@ const libTabTrash       = $('lib-tab-trash')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 
+const docPreviewOverlay  = $('doc-preview-overlay')
+const docPreviewClose    = $('doc-preview-close')
+const docPreviewCoverImg = $('doc-preview-cover-img')
+const docPreviewTitle    = $('doc-preview-title')
+const docPreviewPages    = $('doc-preview-pages')
+const docPreviewTags     = $('doc-preview-tags')
+const docPreviewMeta     = $('doc-preview-meta')
+const docPreviewOpenBtn  = $('doc-preview-open-btn')
+
 // Google Drive Style Upload Popup references
 const uploadPopup        = $('upload-popup')
 const uploadPopupTitle   = $('upload-popup-title')
@@ -2717,6 +2726,10 @@ function prepareDocItemHtml(doc) {
     </button>
   `
 
+  const expandBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
+    <button class="doc-card-expand-btn" data-id="${doc.id}" title="미리보기">${icon('expand', 12)}</button>
+  `
+
   let progressHtml = ''
   if (!isDone) {
     progressHtml = `
@@ -2758,7 +2771,7 @@ function prepareDocItemHtml(doc) {
 
   const accent = getCardAccent(categories)
 
-  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, accent }
+  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, accent }
 }
 
 // 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
@@ -2928,7 +2941,10 @@ function createDocCard(doc) {
   card.style.setProperty('--card-accent-from', d.accent.from)
   card.innerHTML = `
     <div class="doc-card-zone">
-      ${d.checkBtnHtml}
+      <div class="doc-card-zone-actions">
+        ${d.expandBtnHtml}
+        ${d.checkBtnHtml}
+      </div>
       <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
       ${d.tagsHtml}
     </div>
@@ -2945,6 +2961,13 @@ function createDocCard(doc) {
       </div>
     </div>`
   wireDocItemEvents(card, doc, d.displayTitle)
+  const expandBtn = card.querySelector('.doc-card-expand-btn')
+  if (expandBtn) {
+    expandBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      showDocPreview(doc)
+    })
+  }
   return card
 }
 
@@ -2980,6 +3003,73 @@ function createDocListRow(doc) {
     </div>`
   wireDocItemEvents(row, doc, d.displayTitle)
   return row
+}
+
+// ── 논문 미리보기(빠른 보기) 팝업 ──────────────────────────
+let docPreviewCurrentDoc = null
+
+function showDocPreview(doc) {
+  docPreviewCurrentDoc = doc
+  const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+  docPreviewTitle.textContent = displayTitle
+
+  // 표지 이미지 생성 실패(손상된 PDF 등) 시 깨진 이미지 아이콘 대신 카드와 같은
+  // 카테고리 색 그라디언트로 자연스럽게 대체한다.
+  const accent = getCardAccent(doc.metadata?.categories || [])
+  const hero = docPreviewCoverImg.closest('.doc-preview-hero')
+  docPreviewCoverImg.classList.remove('hidden')
+  if (hero) hero.style.background = ''
+  docPreviewCoverImg.onerror = () => {
+    docPreviewCoverImg.classList.add('hidden')
+    if (hero) hero.style.background = `linear-gradient(160deg, color-mix(in srgb, ${accent.from} 35%, var(--bg-elevated)), var(--bg-elevated))`
+  }
+  docPreviewCoverImg.src = `/api/library/${doc.id}/cover`
+  docPreviewPages.textContent = `${doc.total_pages || 1}p`
+
+  const categories = doc.metadata?.categories || []
+  docPreviewTags.innerHTML = categories.map(cat => `<span>${escapeHtml(cat)}</span>`).join('')
+
+  const date = new Date(doc.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' })
+  const translated = doc.translated_pages?.length || 0
+  const total = doc.total_pages || 1
+  docPreviewMeta.textContent = `등록 ${date} · 번역 ${translated}/${total}p`
+
+  docPreviewOverlay.classList.remove('hidden')
+}
+
+function hideDocPreview() {
+  docPreviewOverlay.classList.add('hidden')
+  docPreviewCurrentDoc = null
+}
+
+if (docPreviewClose) docPreviewClose.addEventListener('click', hideDocPreview)
+if (docPreviewOverlay) {
+  docPreviewOverlay.addEventListener('click', (e) => {
+    if (e.target === docPreviewOverlay) hideDocPreview()
+  })
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && docPreviewOverlay && !docPreviewOverlay.classList.contains('hidden')) {
+    hideDocPreview()
+  }
+})
+
+if (docPreviewOpenBtn) {
+  docPreviewOpenBtn.addEventListener('click', async () => {
+    const doc = docPreviewCurrentDoc
+    if (!doc) return
+    const enterViewer = async () => {
+      hideDocPreview()
+      await openFromLibrary(doc)
+    }
+    // View Transitions API를 지원하는 브라우저에서는 팝업 닫힘 → 뷰어 진입이
+    // 즉각적인 화면 전환이 아니라 부드러운 크로스페이드로 이어지도록 한다.
+    if (document.startViewTransition) {
+      document.startViewTransition(enterViewer)
+    } else {
+      await enterViewer()
+    }
+  })
 }
 
 async function loadDocumentImages(docId) {
