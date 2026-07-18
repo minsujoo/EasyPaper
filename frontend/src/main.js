@@ -5987,6 +5987,32 @@ function isVtmFresh(vtm) {
   return !!(vtm && vtm.nodeRanges && vtm.nodeRanges.length > 0 && document.contains(vtm.nodeRanges[0].node))
 }
 
+// 요소가 스크롤 컨테이너 뷰포트 안에 이미 충분히 들어와 있는지 확인 - 이미 보이는
+// 위치라면 scrollIntoView가 사실상 아무것도 하지 않으므로 굳이 스크롤 완료를 기다릴
+// 필요가 없다(불필요한 지연 방지).
+function isElementReasonablyInView(el, container, marginPx = 40) {
+  const elRect = el.getBoundingClientRect()
+  const contRect = container.getBoundingClientRect()
+  return elRect.top >= contRect.top - marginPx && elRect.bottom <= contRect.bottom + marginPx
+}
+
+// 'scrollend' 이벤트로 부드러운 스크롤이 실제로 끝나는 시점을 기다린다. 브라우저 지원이
+// 없거나 스크롤이 예상보다 오래 걸리는 경우를 대비해 최대 대기 시간을 둔다.
+function waitForScrollSettle(container, timeoutMs = 1000) {
+  return new Promise(resolve => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      container.removeEventListener('scrollend', finish)
+      clearTimeout(timer)
+      resolve()
+    }
+    container.addEventListener('scrollend', finish, { once: true })
+    const timer = setTimeout(finish, timeoutMs)
+  })
+}
+
 async function locateTermInPdf(pageNum, term) {
   const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
   if (!pw) {
@@ -6048,10 +6074,18 @@ async function locateTermInPdf(pageNum, term) {
     return
   }
 
+  // 스크롤이 실제로 필요한 경우, 부드러운 스크롤 애니메이션이 끝나기 전에 하이라이트가
+  // 먼저 그려져서 화면 밖에 있는 동안 다 사라져버리는 문제(그래서 두 번 클릭해야 겨우
+  // 보이는 것처럼 느껴짐)를 막기 위해, 스크롤이 실제로 자리를 잡을 때까지 기다린 뒤에
+  // 하이라이트를 그린다. 이미 화면에 보이는 위치라면(스크롤이 사실상 필요 없다면) 바로 그린다.
+  const alreadyInView = isElementReasonablyInView(pw, viewerScrollContainer)
   pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  if (!alreadyInView) {
+    await waitForScrollSettle(viewerScrollContainer)
+  }
   const overlay = getOrCreateOverlay(pw)
-  renderSentenceOverlay(overlay, rects, 'sentence-pulse-box')
-  setTimeout(() => clearOverlayBoxes(overlay, 'sentence-pulse-box'), 900)
+  renderSentenceOverlay(overlay, rects, 'sentence-locate-pulse-box')
+  setTimeout(() => clearOverlayBoxes(overlay, 'sentence-locate-pulse-box'), 1800)
 }
 
 // 메인 진입점: buildVirtualTextMap → alignSentencesToText → state 저장 → 메모 오버레이 렌더링
