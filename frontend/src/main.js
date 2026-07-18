@@ -3055,20 +3055,21 @@ document.addEventListener('keydown', (e) => {
 })
 
 if (docPreviewOpenBtn) {
-  docPreviewOpenBtn.addEventListener('click', async () => {
+  docPreviewOpenBtn.addEventListener('click', () => {
     const doc = docPreviewCurrentDoc
     if (!doc) return
-    const enterViewer = async () => {
-      hideDocPreview()
-      await openFromLibrary(doc)
-    }
-    // View Transitions API를 지원하는 브라우저에서는 팝업 닫힘 → 뷰어 진입이
-    // 즉각적인 화면 전환이 아니라 부드러운 크로스페이드로 이어지도록 한다.
+    // 트랜지션 콜백에는 팝업을 닫는 즉각적인 DOM 변경만 넣는다 - openFromLibrary
+    // 전체(PDF 로드 + 페이지 렌더링)를 콜백 안에 넣고 기다리면, 뷰 트랜지션이
+    // "이후 상태" 스냅샷을 로딩이 다 끝날 때까지 못 찍어서 그 사이 화면이 멈춘
+    // 것처럼 보이고 뷰어 진입이 오히려 훨씬 느리게 느껴진다. 팝업 닫힘만 짧게
+    // 트랜지션으로 처리하고, 문서 로딩은 기존과 동일하게 곧장 진행해 원래의
+    // 점진적 로딩 표시(스피너 등)가 그대로 보이도록 한다.
     if (document.startViewTransition) {
-      document.startViewTransition(enterViewer)
+      document.startViewTransition(() => { hideDocPreview() })
     } else {
-      await enterViewer()
+      hideDocPreview()
     }
+    openFromLibrary(doc)
   })
 }
 
