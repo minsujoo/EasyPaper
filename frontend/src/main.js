@@ -5972,10 +5972,35 @@ function getOrCreateOverlay(pageWrapper) {
 // (alignSentencesToText와 동일한 방식) 순수 문자만 비교해야 안정적으로 매칭된다.
 const INSIGHT_MATCH_CHAR_RE = /[a-zA-Z0-9ㄱ-힝一-鿿Ͱ-Ͽ]/
 
-function locateTermInPdf(pageNum, term) {
-  const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
+// 줌 변경 시 모든 페이지의 캔버스/텍스트 레이어가 파괴되고 뷰포트에 들어온
+// 페이지만 지연 재렌더링되므로, 화면 밖으로 스크롤되어 있던 페이지의
+// virtualTextMaps는 이미 DOM에서 제거된(detached) 노드를 계속 참조하게 된다.
+// 그 상태로는 하이라이트 좌표를 계산할 수 없으므로 유효성을 먼저 확인한다.
+function isVtmFresh(vtm) {
+  return !!(vtm && vtm.nodeRanges && vtm.nodeRanges.length > 0 && document.contains(vtm.nodeRanges[0].node))
+}
+
+async function locateTermInPdf(pageNum, term) {
   const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
-  if (!vtm || !pw) {
+  if (!pw) {
+    showToast('원문 위치를 찾을 수 없습니다.', 'warning')
+    return
+  }
+
+  let vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
+  if (!isVtmFresh(vtm)) {
+    // 페이지로 스크롤해 지연 렌더링을 트리거한 뒤, 텍스트 레이어 재생성 및
+    // 재세그멘테이션이 끝나 virtualTextMaps가 갱신될 때까지 잠시 대기한다.
+    pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const deadline = Date.now() + 3000
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
+      if (isVtmFresh(vtm)) break
+    }
+  }
+
+  if (!isVtmFresh(vtm)) {
     showToast('원문 위치를 찾을 수 없습니다.', 'warning')
     return
   }
@@ -6006,7 +6031,10 @@ function locateTermInPdf(pageNum, term) {
   const rawEnd = cleanToRaw[cleanIdx + cleanTerm.length - 1] + 1
 
   const textLayer = pw.querySelector('.textLayer')
-  if (!textLayer) return
+  if (!textLayer) {
+    showToast('원문 위치를 찾을 수 없습니다.', 'warning')
+    return
+  }
   const rects = getSentenceRects({ charStart: rawStart, charEnd: rawEnd }, vtm, textLayer)
   if (rects.length === 0) {
     showToast('원문 위치를 하이라이트하지 못했습니다.', 'warning')
