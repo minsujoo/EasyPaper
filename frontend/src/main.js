@@ -2644,12 +2644,34 @@ function createEmptyState(isHistory = false) {
 }
 
 // 카테고리 이름을 해시해 8가지 색상 중 하나로 결정론적 배정 (같은 카테고리는 항상 같은 색)
-function categoryColorClass(category) {
+function categoryColorIndex(category) {
   let hash = 0
   for (let i = 0; i < category.length; i++) {
     hash = (hash * 31 + category.charCodeAt(i)) | 0
   }
-  return `doc-card-tag-c${Math.abs(hash) % 8}`
+  return Math.abs(hash) % 8
+}
+function categoryColorClass(category) {
+  return `doc-card-tag-c${categoryColorIndex(category)}`
+}
+
+// 카드 전체의 색 아이덴티티(아이콘 뱃지·상단 바·호버 글로우)를 대표 카테고리 색으로
+// 통일해서 카드마다 개성이 드러나도록 함. 카테고리가 없으면 기본 브랜드 그라디언트.
+const CARD_ACCENT_PALETTE = [
+  { from: '#8b5cf6', to: '#a855f7', glow: 'rgba(139, 92, 246, 0.45)' },
+  { from: '#3b82f6', to: '#6366f1', glow: 'rgba(59, 130, 246, 0.45)' },
+  { from: '#10b981', to: '#14b8a6', glow: 'rgba(16, 185, 129, 0.45)' },
+  { from: '#f59e0b', to: '#f97316', glow: 'rgba(245, 158, 11, 0.45)' },
+  { from: '#ec4899', to: '#f43f5e', glow: 'rgba(236, 72, 153, 0.45)' },
+  { from: '#14b8a6', to: '#06b6d4', glow: 'rgba(20, 184, 166, 0.45)' },
+  { from: '#ef4444', to: '#f97316', glow: 'rgba(239, 68, 68, 0.45)' },
+  { from: '#6366f1', to: '#8b5cf6', glow: 'rgba(99, 102, 241, 0.45)' },
+]
+function getCardAccent(categories) {
+  if (categories && categories.length > 0) {
+    return CARD_ACCENT_PALETTE[categoryColorIndex(categories[0])]
+  }
+  return { from: 'var(--accent-from)', to: 'var(--accent-to)', glow: 'var(--accent-glow)' }
 }
 
 function createDocCard(doc) {
@@ -2670,10 +2692,10 @@ function createDocCard(doc) {
   const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
   const isRead = doc.metadata?.read === true
 
-  let dateHtml = `<span>${icon('calendar', 12, 'style="vertical-align:-2px;margin-right:2px"')}등록: ${date}</span>`
+  let dateHtml = `<span class="doc-meta-chip">${icon('calendar', 12)}등록 ${date}</span>`
   if (isRead && doc.metadata?.read_at) {
     const readDateStr = new Date(doc.metadata.read_at).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' })
-    dateHtml = `<span>${icon('checkCircle', 12, 'style="vertical-align:-2px;margin-right:2px"')}완독: ${readDateStr}</span>`
+    dateHtml = `<span class="doc-meta-chip done">${icon('checkCircle', 12)}완독 ${readDateStr}</span>`
   }
 
   const checkBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
@@ -2688,7 +2710,7 @@ function createDocCard(doc) {
   if (!isDone) {
     progressHtml = `
       <div class="doc-card-progress">
-        <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"></div></div>
+        <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"><span class="doc-progress-shimmer"></span></div></div>
         <div class="doc-progress-label">
           <span>번역 중 (${translated}/${total}p)</span>
           <span class="doc-progress-pct">${pct}%</span>
@@ -2723,8 +2745,13 @@ function createDocCard(doc) {
     `
   }
 
+  const accent = getCardAccent(categories)
+
   const card = document.createElement('div')
   card.className = 'doc-card'
+  card.style.setProperty('--card-accent-from', accent.from)
+  card.style.setProperty('--card-accent-to', accent.to)
+  card.style.setProperty('--card-accent-glow', accent.glow)
   card.innerHTML = `
     ${checkBtnHtml}
     <div class="doc-card-header">
@@ -2733,7 +2760,7 @@ function createDocCard(doc) {
     </div>
     ${tagsHtml}
     <div class="doc-card-meta">
-      ${dateHtml}<span class="meta-dot"></span><span>${icon('layers', 12, 'style="vertical-align:-2px;margin-right:2px"')}${total}페이지</span>
+      ${dateHtml}<span class="doc-meta-chip">${icon('layers', 12)}${total}페이지</span>
     </div>
     ${progressHtml}
     <div class="doc-card-actions">
