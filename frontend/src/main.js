@@ -3158,10 +3158,13 @@ async function openFromLibrary(doc, shouldPushState = true) {
   ])
 
   // 채팅 기록 반영 (PDF 로딩과 병렬로 이미 완료됐을 가능성이 높음)
+  // 주의: 변수명을 "history"로 쓰면 이 함수 맨 위에서 쓰는 전역 history(window.history)
+  // 객체를 가려버려("Cannot access 'history' before initialization") 함수 전체가
+  // 조용히 실패하므로 반드시 다른 이름을 사용해야 한다.
   const chatRes = await chatHistoryPromise
-  const history = chatRes?.history || []
-  if (history.length > 0) {
-    for (const msg of history) {
+  const chatHistoryList = chatRes?.history || []
+  if (chatHistoryList.length > 0) {
+    for (const msg of chatHistoryList) {
       state.chatHistory.push({ role: msg.role, content: msg.content })
       const isAssistant = msg.role === 'assistant'
       const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
