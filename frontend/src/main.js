@@ -2643,6 +2643,15 @@ function createEmptyState(isHistory = false) {
   return el
 }
 
+// 카테고리 이름을 해시해 8가지 색상 중 하나로 결정론적 배정 (같은 카테고리는 항상 같은 색)
+function categoryColorClass(category) {
+  let hash = 0
+  for (let i = 0; i < category.length; i++) {
+    hash = (hash * 31 + category.charCodeAt(i)) | 0
+  }
+  return `doc-card-tag-c${Math.abs(hash) % 8}`
+}
+
 function createDocCard(doc) {
   const translated = doc.translated_pages?.length || 0
   const total = doc.total_pages || 1
@@ -2654,7 +2663,7 @@ function createDocCard(doc) {
   let tagsHtml = ''
   if (categories.length > 0) {
     tagsHtml = `<div class="doc-card-tags">` +
-      categories.map(cat => `<span class="doc-card-tag">${escapeHtml(cat)}</span>`).join('') +
+      categories.map(cat => `<span class="doc-card-tag ${categoryColorClass(cat)}">${escapeHtml(cat)}</span>`).join('') +
       `</div>`
   }
 
@@ -2682,7 +2691,7 @@ function createDocCard(doc) {
         <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"></div></div>
         <div class="doc-progress-label">
           <span>번역 중 (${translated}/${total}p)</span>
-          <span>${pct}%</span>
+          <span class="doc-progress-pct">${pct}%</span>
         </div>
       </div>
     `
@@ -2718,11 +2727,13 @@ function createDocCard(doc) {
   card.className = 'doc-card'
   card.innerHTML = `
     ${checkBtnHtml}
-    <div class="doc-card-icon">${icon('fileText', 28)}</div>
-    <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
+    <div class="doc-card-header">
+      <div class="doc-card-icon">${icon('fileText', 22)}</div>
+      <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
+    </div>
     ${tagsHtml}
     <div class="doc-card-meta">
-      ${dateHtml}<span>${icon('layers', 12, 'style="vertical-align:-2px;margin-right:2px"')}${total}페이지</span>
+      ${dateHtml}<span class="meta-dot"></span><span>${icon('layers', 12, 'style="vertical-align:-2px;margin-right:2px"')}${total}페이지</span>
     </div>
     ${progressHtml}
     <div class="doc-card-actions">
