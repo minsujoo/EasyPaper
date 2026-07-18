@@ -503,7 +503,14 @@ function createTransBlock(pageNum) {
   if (keywordsContentEl) {
     keywordsContentEl.addEventListener('click', (e) => {
       const termEl = e.target.closest('.insight-keyword-term')
-      if (termEl) locateTermInPdf(pageNum, termEl.textContent)
+      if (!termEl) return
+      locateTermInPdf(pageNum, termEl.textContent).catch(err => {
+        // async 함수 내부에서 예상 못한 예외가 나면 토스트 없이 조용히
+        // 아무 반응도 없는 것처럼 보일 수 있으므로, 항상 사용자에게 알리고
+        // 콘솔에도 원인을 남긴다.
+        console.error('locateTermInPdf failed:', err)
+        showToast('원문 위치를 찾는 중 오류가 발생했습니다.', 'warning')
+      })
     })
   }
   return block
