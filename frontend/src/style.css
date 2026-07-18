@@ -1204,11 +1204,9 @@ body:not(.light-theme) .pdf-page-inner canvas {
   font-weight: 500;
 }
 
-/* 문서 카드 - 파스텔 투톤 색인 카드 컨셉: 위쪽은 대표 카테고리 색을 옅게 입힌
-   "컬러 존", 아래쪽은 중립색 "푸터"로 나뉜다. --card-accent-from은 JS(getCardAccent)가
-   대표 카테고리 색으로 채워주는 커스텀 프로퍼티. */
+/* 문서 카드 - 미리보기 팝업과 동일한 톤(중립 배경, 굵은 산세리프 제목, 단일 브랜드
+   색만 사용)으로 통일. 카테고리별로 색이 달라지는 장식은 쓰지 않는다. */
 .doc-card {
-  --card-accent-from: var(--accent-mid);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -1227,18 +1225,16 @@ body:not(.light-theme) .pdf-page-inner canvas {
   box-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.5);
 }
 
-/* 컬러 존: 카테고리 색을 옅게 섞어 테마(다크/라이트) 양쪽에서 자연스럽게 어울리도록 함 */
 .doc-card-zone {
-  background: color-mix(in srgb, var(--card-accent-from) 16%, var(--bg-card));
-  padding: 22px 22px 20px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   position: relative;
 }
 
 .doc-card-title {
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1.3;
@@ -1251,26 +1247,17 @@ body:not(.light-theme) .pdf-page-inner canvas {
   padding-right: 34px;
 }
 
-/* 푸터: 메타 정보 + 진행률(좌) / 액션 버튼(우) */
+/* 푸터: 미리보기 팝업의 "열기" 버튼과 동일한 전체 너비 버튼 + 편집/삭제 아이콘 */
 .doc-card-footer {
-  background: var(--bg-card);
-  padding: 15px 16px 15px 22px;
+  padding: 0 20px 20px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin-top: auto;
-}
-.doc-card-footer-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
 }
 
 .doc-card-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -1287,15 +1274,14 @@ body:not(.light-theme) .pdf-page-inner canvas {
   flex-shrink: 0;
 }
 
-/* 번역 진행률 - 푸터 좌측에 작은 바 + 텍스트로 압축 표기 */
+/* 번역 진행률 - 작은 바 + 텍스트로 압축 표기. 브랜드 색 하나로 통일 */
 .doc-card-progress-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--card-accent-from);
+  color: var(--accent-mid);
 }
 .doc-card-progress-row .doc-progress-bar-wrap {
   width: 44px;
@@ -1308,11 +1294,11 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-card-progress-row .doc-progress-bar {
   height: 100%;
   border-radius: 4px;
-  background: var(--card-accent-from);
+  background: var(--accent-mid);
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 카드 액션 버튼 */
+/* 카드 액션 버튼 - 미리보기 팝업의 "열기" 버튼과 동일한 색/모양(흑백 반전) 사용 */
 .doc-card-cta {
   display: flex;
   align-items: center;
@@ -1322,36 +1308,47 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-icon-actions {
   display: flex;
   gap: 2px;
+  flex-shrink: 0;
 }
 .doc-open-btn, .doc-restore-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+  color: #14141a;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+body.light-theme .doc-open-btn,
+body.light-theme .doc-restore-btn {
+  background: #14141a;
+  color: #fff;
+}
+.doc-open-btn:hover, .doc-restore-btn:hover { filter: brightness(0.96); }
+.doc-open-btn:active, .doc-restore-btn:active { transform: scale(0.98); }
+
+/* 리스트 뷰용 컴팩트 변형 - 텍스트 없이 아이콘만, 원형으로 축소 */
+.doc-open-btn.doc-cta-compact, .doc-restore-btn.doc-cta-compact {
+  flex: none;
   width: 34px;
   height: 34px;
   padding: 0;
   border-radius: 50%;
-  background: var(--card-accent-from);
-  color: white;
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: filter 0.2s ease, transform 0.2s ease;
 }
-.doc-open-btn:hover, .doc-restore-btn:hover {
-  filter: brightness(1.1);
-  transform: scale(1.06);
-}
-.doc-open-btn:active, .doc-restore-btn:active {
-  filter: brightness(0.95);
-  transform: scale(1);
-}
+.doc-cta-compact span { display: none; }
 
 .doc-delete-btn, .doc-permanent-delete-btn, .doc-edit-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  border: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -1364,10 +1361,12 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-delete-btn:hover, .doc-permanent-delete-btn:hover {
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 .doc-edit-btn:hover {
-  color: var(--card-accent-from);
-  background: color-mix(in srgb, var(--card-accent-from) 14%, transparent);
+  color: var(--accent-mid);
+  background: color-mix(in srgb, var(--accent-mid) 14%, transparent);
+  border-color: var(--accent-mid);
 }
 
 /* ── 카드/리스트 보기 전환 토글 ── */
@@ -1407,11 +1406,9 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 10px;
 }
 .doc-list-row {
-  --card-accent-from: var(--accent-mid);
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--card-accent-from);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 12px 16px;
   display: flex;
   align-items: center;
@@ -1422,6 +1419,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
 }
 .doc-list-row:hover {
   background: var(--bg-card-hover);
+  border-color: var(--border-strong);
   transform: translateX(2px);
 }
 .doc-list-row .doc-card-check-btn {
@@ -1455,7 +1453,6 @@ body:not(.light-theme) .pdf-page-inner canvas {
   width: 120px;
 }
 .doc-list-progress-slot:empty { width: 0; }
-.doc-list-row .doc-card-progress-row { color: var(--card-accent-from); }
 .doc-list-row .doc-card-cta {
   flex-shrink: 0;
   margin-left: auto;
@@ -1594,7 +1591,6 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-preview-meta {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.65);
-  font-family: var(--font-mono);
 }
 
 .doc-preview-open-btn {
@@ -2725,8 +2721,8 @@ body.light-theme .provider-picker-panel {
   box-shadow: 0 4px 12px var(--accent-glow);
 }
 
-/* Card Category Tag - 카드의 컬러 존과 같은 색 계열의 필(pill) 태그로,
-   한 카드 안의 모든 태그는 그 카드의 대표 카테고리 색(--card-accent-from)을 공유한다. */
+/* Card Category Tag - 미리보기 팝업 태그와 톤을 맞춘 중립 필(pill). 카테고리마다
+   색이 달라지지 않고 모두 동일한 스타일을 공유해 카드 전체의 통일성을 유지한다. */
 .doc-card-tags {
   display: flex;
   gap: 8px;
@@ -2737,8 +2733,9 @@ body.light-theme .provider-picker-panel {
   font-weight: 700;
   padding: 4px 11px;
   border-radius: 100px;
-  background: color-mix(in srgb, var(--card-accent-from) 28%, var(--bg-card));
-  color: color-mix(in srgb, var(--card-accent-from) 80%, var(--text-primary));
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
 /* ── Google Drive Style Upload Popup ── */
@@ -4025,8 +4022,8 @@ body.light-theme .library-tab-btn.active {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  border: none;
-  background: color-mix(in srgb, var(--card-accent-from) 22%, var(--bg-card));
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -4042,16 +4039,17 @@ body.light-theme .library-tab-btn.active {
   transform: scale(1);
 }
 .doc-card-expand-btn:hover {
-  color: var(--card-accent-from);
-  background: color-mix(in srgb, var(--card-accent-from) 32%, var(--bg-card));
+  color: var(--accent-mid);
+  background: color-mix(in srgb, var(--accent-mid) 14%, var(--bg-elevated));
+  border-color: var(--accent-mid);
 }
 
 .doc-card-check-btn {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  border: none;
-  background: color-mix(in srgb, var(--card-accent-from) 22%, var(--bg-card));
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   display: flex;
   align-items: center;
   justify-content: center;

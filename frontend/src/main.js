@@ -2675,23 +2675,6 @@ function createEmptyState(isHistory = false) {
   return el
 }
 
-// 카테고리 이름을 해시해 8가지 색상 중 하나로 결정론적 배정 (같은 카테고리는 항상 같은 색)
-function categoryColorIndex(category) {
-  let hash = 0
-  for (let i = 0; i < category.length; i++) {
-    hash = (hash * 31 + category.charCodeAt(i)) | 0
-  }
-  return Math.abs(hash) % 8
-}
-// 카드 컬러 존과 진행률 바 색을 대표 카테고리 색으로 통일해서 카드마다
-// 개성이 드러나도록 함. 카테고리가 없으면 기본 브랜드 색.
-const CARD_ACCENT_PALETTE = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6', '#ef4444', '#6366f1']
-function getCardAccent(categories) {
-  if (categories && categories.length > 0) {
-    return { from: CARD_ACCENT_PALETTE[categoryColorIndex(categories[0])] }
-  }
-  return { from: 'var(--accent-mid)' }
-}
 
 // 카드/리스트 뷰 공용: 문서 데이터로부터 두 뷰가 함께 쓰는 마크업 조각을 미리 계산한다.
 function prepareDocItemHtml(doc) {
@@ -2742,8 +2725,11 @@ function prepareDocItemHtml(doc) {
 
   const openIcon = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>'
 
+  // ctaBtnHtml: 리스트 뷰용 - 자리를 적게 차지하는 아이콘 전용 버튼
+  // ctaBtnFullHtml: 카드 뷰용 - 미리보기 팝업의 "열기" 버튼과 동일한 전체 너비 텍스트 버튼
   let iconActionsHtml = ''
   let ctaBtnHtml = ''
+  let ctaBtnFullHtml = ''
   if (state.currentLibraryTab === 'trash') {
     iconActionsHtml = `
       <button class="doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
@@ -2753,7 +2739,8 @@ function prepareDocItemHtml(doc) {
         </svg>
       </button>
     `
-    ctaBtnHtml = `<button class="doc-restore-btn" data-id="${doc.id}" title="복원">${icon('refreshCw', 15)}</button>`
+    ctaBtnHtml = `<button class="doc-restore-btn doc-cta-compact" data-id="${doc.id}" title="복원">${icon('refreshCw', 15)}</button>`
+    ctaBtnFullHtml = `<button class="doc-restore-btn" data-id="${doc.id}"><span>복원</span>${icon('refreshCw', 15)}</button>`
   } else {
     iconActionsHtml = `
       <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
@@ -2766,12 +2753,11 @@ function prepareDocItemHtml(doc) {
         </svg>
       </button>
     `
-    ctaBtnHtml = `<button class="doc-open-btn" data-id="${doc.id}" title="열기">${openIcon}</button>`
+    ctaBtnHtml = `<button class="doc-open-btn doc-cta-compact" data-id="${doc.id}" title="열기">${openIcon}</button>`
+    ctaBtnFullHtml = `<button class="doc-open-btn" data-id="${doc.id}"><span>열기</span>${openIcon}</button>`
   }
 
-  const accent = getCardAccent(categories)
-
-  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, accent }
+  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, ctaBtnFullHtml }
 }
 
 // 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
@@ -2938,7 +2924,6 @@ function createDocCard(doc) {
   const d = prepareDocItemHtml(doc)
   const card = document.createElement('div')
   card.className = 'doc-card'
-  card.style.setProperty('--card-accent-from', d.accent.from)
   card.innerHTML = `
     <div class="doc-card-zone">
       <div class="doc-card-zone-actions">
@@ -2947,18 +2932,14 @@ function createDocCard(doc) {
       </div>
       <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
       ${d.tagsHtml}
+      <div class="doc-card-meta">
+        ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
+      </div>
+      ${d.progressHtml}
     </div>
     <div class="doc-card-footer">
-      <div class="doc-card-footer-info">
-        <div class="doc-card-meta">
-          ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
-        </div>
-        ${d.progressHtml}
-      </div>
-      <div class="doc-card-cta">
-        <div class="doc-icon-actions">${d.iconActionsHtml}</div>
-        ${d.ctaBtnHtml}
-      </div>
+      ${d.ctaBtnFullHtml}
+      <div class="doc-icon-actions">${d.iconActionsHtml}</div>
     </div>`
   wireDocItemEvents(card, doc, d.displayTitle)
   const expandBtn = card.querySelector('.doc-card-expand-btn')
@@ -2988,7 +2969,6 @@ function createDocListRow(doc) {
 
   const row = document.createElement('div')
   row.className = 'doc-list-row'
-  row.style.setProperty('--card-accent-from', d.accent.from)
   row.innerHTML = `
     ${d.checkBtnHtml}
     <div class="doc-list-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
@@ -3013,15 +2993,14 @@ function showDocPreview(doc) {
   const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
   docPreviewTitle.textContent = displayTitle
 
-  // 표지 이미지 생성 실패(손상된 PDF 등) 시 깨진 이미지 아이콘 대신 카드와 같은
-  // 카테고리 색 그라디언트로 자연스럽게 대체한다.
-  const accent = getCardAccent(doc.metadata?.categories || [])
+  // 표지 이미지 생성 실패(손상된 PDF 등) 시 깨진 이미지 아이콘 대신 중립 그라디언트로
+  // 자연스럽게 대체한다 (카테고리 색을 쓰지 않아 다른 곳과 톤이 일관됨).
   const hero = docPreviewCoverImg.closest('.doc-preview-hero')
   docPreviewCoverImg.classList.remove('hidden')
   if (hero) hero.style.background = ''
   docPreviewCoverImg.onerror = () => {
     docPreviewCoverImg.classList.add('hidden')
-    if (hero) hero.style.background = `linear-gradient(160deg, color-mix(in srgb, ${accent.from} 35%, var(--bg-elevated)), var(--bg-elevated))`
+    if (hero) hero.style.background = 'linear-gradient(160deg, var(--bg-elevated), var(--bg-card))'
   }
   docPreviewCoverImg.src = `/api/library/${doc.id}/cover`
   docPreviewPages.textContent = `${doc.total_pages || 1}p`
