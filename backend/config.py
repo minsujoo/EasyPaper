@@ -29,6 +29,16 @@ def get_project_root() -> str:
 def get_ollama_host() -> str:
     return OLLAMA_HOST
 
+def is_ollama_host_local() -> bool:
+    """설정된 Ollama 호스트가 이 서버 자신(localhost)을 가리키는지 확인합니다.
+    원격 호스트를 가리키는 경우 이 서버에 설치 스크립트를 실행하는 것은 의미가 없습니다."""
+    from urllib.parse import urlparse
+    try:
+        hostname = urlparse(OLLAMA_HOST).hostname or ""
+    except Exception:
+        return False
+    return hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
 def get_trans_provider() -> str:
     return TRANS_PROVIDER
 

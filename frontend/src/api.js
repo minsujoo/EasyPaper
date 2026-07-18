@@ -352,6 +352,45 @@ export async function cancelJobAPI(sessionId) {
 }
 
 /**
+ * 이 서버에 Ollama CLI가 설치되어 있는지, 설정된 호스트가 로컬인지 확인합니다.
+ */
+export async function getOllamaStatusAPI() {
+  const res = await fetch(`${API_BASE}/settings/ollama-status`)
+  return res.json()
+}
+
+/**
+ * 이 서버(localhost)에 Ollama를 설치하고 진행 상황을 스트리밍합니다.
+ */
+export function streamInstallOllamaAPI(onProgress, onDone, onError) {
+  const eventSource = new EventSource(`${API_BASE}/settings/install-ollama`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (data.status === 'error') {
+        onError(new Error(data.message || 'Ollama 설치 실패'))
+        eventSource.close()
+      } else if (data.status === 'success') {
+        onDone()
+        eventSource.close()
+      } else {
+        onProgress(data)
+      }
+    } catch (err) {
+      console.warn('Install ollama message parse error:', err)
+    }
+  }
+
+  eventSource.onerror = () => {
+    onError(new Error('네트워크 연결 끊김 또는 설치 실패'))
+    eventSource.close()
+  }
+
+  return () => eventSource.close()
+}
+
+/**
  * Ollama 서버에 새로운 모델 다운로드를 요청하고 상태를 스트리밍합니다.
  */
 export function streamPullModelAPI(modelName, onStatus, onDone, onError) {

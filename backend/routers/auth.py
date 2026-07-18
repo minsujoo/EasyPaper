@@ -9,6 +9,7 @@ from config import (
     get_app_password_hash,
     update_credentials_in_env,
     get_ollama_host,
+    is_ollama_host_local,
     update_system_settings,
     get_trans_provider,
     get_trans_model,
@@ -197,6 +198,69 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
     update_translation_prompt_template(data.translation_prompt_template)
     
     return {"message": "시스템 설정이 성공적으로 변경되었습니다."}
+
+@router.get("/settings/ollama-status")
+async def ollama_status(current_user: str = Depends(get_current_user)):
+    """Ollama CLI가 이 서버에 설치되어 있는지, 설정된 호스트가 로컬인지 확인합니다."""
+    import os
+    import shutil
+    installed = bool(shutil.which("ollama") or os.path.exists("/usr/local/bin/ollama"))
+    return {
+        "installed": installed,
+        "is_local": is_ollama_host_local(),
+    }
+
+
+@router.get("/settings/install-ollama")
+async def install_ollama_stream(current_user: str = Depends(get_current_user)):
+    """공식 설치 스크립트(https://ollama.com/install.sh)를 실행해 이 서버에 Ollama를
+    설치하고 진행 상황을 스트리밍합니다. 원격 호스트를 가리키고 있거나 이미 설치된
+    경우에는 실행하지 않습니다."""
+    import asyncio
+    import shutil
+
+    async def event_stream():
+        if not is_ollama_host_local():
+            yield f"data: {json.dumps({'status': 'error', 'message': 'Ollama 호스트가 이 서버(localhost)가 아니어서 여기서 설치할 수 없습니다.'})}\n\n"
+            return
+        if shutil.which("ollama"):
+            yield f"data: {json.dumps({'status': 'error', 'message': 'Ollama가 이미 설치되어 있습니다.'})}\n\n"
+            return
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "curl -fsSL https://ollama.com/install.sh | sh",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                # sudo가 비밀번호를 요구하면 무한 대기하지 않고 즉시 실패하도록 stdin을 막는다
+                stdin=asyncio.subprocess.DEVNULL,
+            )
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+
+            await proc.wait()
+            if proc.returncode == 0 and shutil.which("ollama"):
+                yield f"data: {json.dumps({'status': 'success'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'status': 'error', 'message': f'설치 스크립트가 오류 코드 {proc.returncode}로 종료되었습니다. sudo 권한이 필요할 수 있습니다.'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
+
 
 @router.get("/settings/pull-model")
 async def pull_model_stream(model_name: str, current_user: str = Depends(get_current_user)):

@@ -16,7 +16,7 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-D1u7GfUO.js"></script>
+  <script type="module" crossorigin src="/assets/index-BvNfe2LK.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-D3SxXu79.css">
 </head>
 <body>
@@ -446,6 +446,25 @@
             <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">시스템 설정 저장</button>
           </div>
         </form>
+
+        <!-- Ollama 미설치 안내 및 설치 섹션 -->
+        <div id="ollama-install-section" class="modal-form hidden" style="border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 10px; padding-top: 10px;">
+          <h3 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>Ollama 설치</h3>
+
+          <div id="ollama-install-not-local" class="hidden" style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+            현재 Ollama API 주소가 이 서버(localhost)가 아닌 원격 호스트를 가리키고 있어, 여기서 직접 설치할 수 없습니다. 해당 원격 서버에서 직접 설치해 주세요.
+          </div>
+
+          <div id="ollama-install-prompt">
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6;">이 서버에 Ollama가 설치되어 있지 않습니다. 아래 버튼을 누르면 공식 설치 스크립트를 실행합니다 (관리자 권한 필요, 다소 시간이 걸릴 수 있습니다).</p>
+            <button type="button" id="ollama-install-btn" class="btn btn-primary" style="padding: 10px 18px; font-size: 13px;">Ollama 설치하기</button>
+          </div>
+
+          <div id="ollama-install-progress-area" class="hidden" style="margin-top: 15px; background: var(--bg-elevated); border: 1px solid var(--border-strong); padding: 12px; border-radius: var(--radius-md);">
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">설치 진행 중...</div>
+            <div id="ollama-install-log" style="max-height: 160px; overflow-y: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); white-space: pre-wrap; line-height: 1.5;"></div>
+          </div>
+        </div>
 
         <!-- 모델 다운로드 섹션 (Ollama 전용) -->
         <div id="pull-model-section" class="modal-form hidden" style="border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 10px; padding-top: 10px;">
