@@ -3116,24 +3116,16 @@ async function openFromLibrary(doc, shouldPushState = true) {
   // 번역이 완료된 페이지 번호만 기록하고 번역본 로드는 lazy-load에 위임
   state.translatedPages  = new Set(doc.translated_pages || [])
 
-  // 채팅 내역 초기화 및 복원
+  // 채팅 내역 초기화
   state.chatHistory = []
   chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
-  
-  try {
-    const res = await getChatHistoryAPI(doc.id)
-    const history = res.history || []
-    if (history && history.length > 0) {
-      for (const msg of history) {
-        state.chatHistory.push({ role: msg.role, content: msg.content })
-        const isAssistant = msg.role === 'assistant'
-        const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
-        appendChatMessage(msg.role, renderedContent, true)
-      }
-    }
-  } catch (err) {
+
+  // 채팅 기록 조회는 PDF 로딩과 서로 무관한 별개의 요청이므로, 기다리지 않고
+  // 병렬로 시작해 전체 대기 시간을 줄인다 (완료되면 아래에서 반영).
+  const chatHistoryPromise = getChatHistoryAPI(doc.id).catch(err => {
     console.error('채팅 기록 로드 실패:', err)
-  }
+    return null
+  })
 
   await loadPDF(`/api/library/${doc.id}/pdf`)
   docTitle.textContent  = displayTitle
@@ -3151,12 +3143,31 @@ async function openFromLibrary(doc, shouldPushState = true) {
   state.currentPage = restorePage
 
   showViewer()
-  await initScrollViewer()
-  if (restorePage > 1) {
-    scrollToPage(viewerScrollContainer, restorePage, { instant: true })
-  }
   hideOutlineSidebar()
-  await loadPDFOutline()
+
+  // PDF가 로드된 뒤에만 가능한 두 작업(페이지 렌더링, 목차 조회)은 서로 무관하므로
+  // 병렬로 실행한다 - 이전에는 순차 실행이라 두 작업 시간이 그대로 더해졌었다.
+  await Promise.all([
+    (async () => {
+      await initScrollViewer()
+      if (restorePage > 1) {
+        scrollToPage(viewerScrollContainer, restorePage, { instant: true })
+      }
+    })(),
+    loadPDFOutline(),
+  ])
+
+  // 채팅 기록 반영 (PDF 로딩과 병렬로 이미 완료됐을 가능성이 높음)
+  const chatRes = await chatHistoryPromise
+  const history = chatRes?.history || []
+  if (history.length > 0) {
+    for (const msg of history) {
+      state.chatHistory.push({ role: msg.role, content: msg.content })
+      const isAssistant = msg.role === 'assistant'
+      const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
+      appendChatMessage(msg.role, renderedContent, true)
+    }
+  }
 }
 
 function escapeHtml(str) {
