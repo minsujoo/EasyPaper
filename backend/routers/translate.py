@@ -181,7 +181,14 @@ async def health_check():
         claude_path = get_claude_code_path()
         has_cli = bool(os.path.exists(claude_path) or shutil.which(claude_path))
         return {"status": "ok" if has_cli else "error", "provider": "claude_code", "model_available": has_cli}
-        
+    elif provider == "codex":
+        import os
+        import shutil
+        from config import get_codex_path
+        codex_path = get_codex_path()
+        has_cli = bool(os.path.exists(codex_path) or shutil.which(codex_path))
+        return {"status": "ok" if has_cli else "error", "provider": "codex", "model_available": has_cli}
+
     health = await check_ollama_health()
     health["provider"] = "ollama"
     return health
@@ -192,19 +199,24 @@ async def get_providers_availability():
     """각 제공자(CLI)가 로컬에 설치되어 사용 가능한지 여부를 확인합니다."""
     import os
     import shutil
-    from config import get_agy_path, get_claude_code_path
-    
+    from config import get_agy_path, get_claude_code_path, get_codex_path
+
     # 1. antigravity (agy)
     agy_path = get_agy_path()
     has_agy = bool(os.path.exists(agy_path) or shutil.which(agy_path))
-    
+
     # 2. claude_code (claude)
     claude_path = get_claude_code_path()
     has_claude_code = bool(os.path.exists(claude_path) or shutil.which(claude_path))
-    
+
+    # 3. codex
+    codex_path = get_codex_path()
+    has_codex = bool(os.path.exists(codex_path) or shutil.which(codex_path))
+
     return {
         "antigravity": has_agy,
-        "claude_code": has_claude_code
+        "claude_code": has_claude_code,
+        "codex": has_codex
     }
 
 

@@ -55,7 +55,7 @@ const state = {
   isSelectionDragging: false,   // 마우스 드래그 선택 중인지 여부
   pdfPageSentences: {},        // pageNum → sentenceRanges 보관용
   pdfPageElements: {},         // pageNum → elRanges 보관용
-  cliAvailability: { antigravity: true, claude_code: true },
+  cliAvailability: { antigravity: true, claude_code: true, codex: true },
   // PDF 원문 위에 마우스를 올려두면(드래그 없이) 700ms 뒤 자동으로 문장을 선택하고
   // 선택 메뉴(툴팁)를 띄우는 기능을 끌지 여부. true면 드래그로 직접 선택할 때만 뜬다.
   disableHoverTooltip: localStorage.getItem('easypaper_disable_hover_tooltip') === 'true',
@@ -1434,6 +1434,27 @@ const PROVIDER_CONFIG = [
     ]
   },
   {
+    id: 'codex', label: 'Codex', icon: icon('code', 13),
+    models: [
+      // GPT-5.6 Terra
+      { value: 'gpt-5.6-terra|low',    label: 'Terra · Low',    group: 'GPT-5.6 Terra' },
+      { value: 'gpt-5.6-terra|medium', label: 'Terra · Medium', group: 'GPT-5.6 Terra' },
+      { value: 'gpt-5.6-terra|high',   label: 'Terra · High',   group: 'GPT-5.6 Terra' },
+      { value: 'gpt-5.6-terra|xhigh',  label: 'Terra · xHigh',  group: 'GPT-5.6 Terra' },
+      { value: 'gpt-5.6-terra|max',    label: 'Terra · Max',    group: 'GPT-5.6 Terra' },
+      // GPT-5.6 Luna
+      { value: 'gpt-5.6-luna|low',    label: 'Luna · Low',    group: 'GPT-5.6 Luna' },
+      { value: 'gpt-5.6-luna|medium', label: 'Luna · Medium', group: 'GPT-5.6 Luna' },
+      { value: 'gpt-5.6-luna|high',   label: 'Luna · High',   group: 'GPT-5.6 Luna' },
+      { value: 'gpt-5.6-luna|xhigh',  label: 'Luna · xHigh',  group: 'GPT-5.6 Luna' },
+      // GPT-5.5
+      { value: 'gpt-5.5|low',    label: 'GPT-5.5 · Low',    group: 'GPT-5.5' },
+      { value: 'gpt-5.5|medium', label: 'GPT-5.5 · Medium', group: 'GPT-5.5' },
+      { value: 'gpt-5.5|high',   label: 'GPT-5.5 · High',   group: 'GPT-5.5' },
+      { value: 'gpt-5.5|xhigh',  label: 'GPT-5.5 · xHigh',  group: 'GPT-5.5' },
+    ]
+  },
+  {
     id: 'ollama', label: 'Ollama (로컬)', icon: icon('hardDrive', 13),
     models: [
       { value: 'gemma4:e4b', label: 'gemma4 e4b' },
@@ -1536,6 +1557,7 @@ class ProviderModelPicker {
     let config = PROVIDER_CONFIG.filter(p => {
       if (p.id === 'antigravity') return state.cliAvailability?.antigravity !== false
       if (p.id === 'claude_code') return state.cliAvailability?.claude_code !== false
+      if (p.id === 'codex') return state.cliAvailability?.codex !== false
       return true
     }).map(p => {
       if (p.id === 'ollama') {
