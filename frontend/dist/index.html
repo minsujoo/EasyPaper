@@ -16,8 +16,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-Bmzlk-GH.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DZeV0SmN.css">
+  <script type="module" crossorigin src="/assets/index-PJiteAX9.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-B140-WQY.css">
 </head>
 <body>
 
@@ -79,8 +79,14 @@
       <!-- 독서 통계 위젯 영역 -->
       <div id="library-stats-container" class="hidden" style="margin-bottom: 16px;"></div>
 
-      <!-- 카테고리 필터 영역 -->
-      <div id="library-category-filters" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; align-items: center;"></div>
+      <!-- 카테고리 필터 + 보기 방식 전환 영역 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px;">
+        <div id="library-category-filters" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;"></div>
+        <div id="library-view-toggle" class="library-view-toggle">
+          <button class="view-toggle-btn" data-view="card" title="카드 보기"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></button>
+          <button class="view-toggle-btn" data-view="list" title="리스트 보기"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg></button>
+        </div>
+      </div>
 
       <div id="library-grid" class="library-grid">
         <div class="lib-empty" id="lib-empty">

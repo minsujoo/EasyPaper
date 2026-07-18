@@ -2481,6 +2481,24 @@ if (libTabTrash) {
   })
 }
 
+// 라이브러리 카드/리스트 보기 전환 - 마지막 선택을 기억해 다음 방문에도 유지
+let libraryViewMode = localStorage.getItem('easypaper_library_view') === 'list' ? 'list' : 'card'
+function updateViewToggleUI() {
+  document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === libraryViewMode)
+  })
+}
+document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.view === libraryViewMode) return
+    libraryViewMode = btn.dataset.view
+    localStorage.setItem('easypaper_library_view', libraryViewMode)
+    updateViewToggleUI()
+    filterLibraryCards(currentLibraryDocs)
+  })
+})
+updateViewToggleUI()
+
 async function showLibraryScreen(shouldPushState = true) {
   hasLibraryStateInHistory = true
   if (shouldPushState) {
@@ -2608,8 +2626,12 @@ async function renderLibrary() {
   }
 }
 
+let currentLibraryDocs = []
+
 function filterLibraryCards(docs) {
+  currentLibraryDocs = docs
   libraryGrid.innerHTML = ''
+  libraryGrid.classList.toggle('list-view', libraryViewMode === 'list')
 
   // Update filter buttons active class
   document.querySelectorAll('.category-filter-btn').forEach(btn => {
@@ -2625,7 +2647,8 @@ function filterLibraryCards(docs) {
     libraryGrid.appendChild(createEmptyState(state.currentLibraryTab === 'history')); return
   }
 
-  filteredDocs.forEach(doc => libraryGrid.appendChild(createDocCard(doc)))
+  const createItem = libraryViewMode === 'list' ? createDocListRow : createDocCard
+  filteredDocs.forEach(doc => libraryGrid.appendChild(createItem(doc)))
 }
 
 function createEmptyState(isHistory = false) {
@@ -2651,11 +2674,7 @@ function categoryColorIndex(category) {
   }
   return Math.abs(hash) % 8
 }
-function categoryColorClass(category) {
-  return `doc-card-tag-c${categoryColorIndex(category)}`
-}
-
-// 카드 왼쪽 책등(spine)과 진행률 바 색을 대표 카테고리 색으로 통일해서 카드마다
+// 카드 컬러 존과 진행률 바 색을 대표 카테고리 색으로 통일해서 카드마다
 // 개성이 드러나도록 함. 카테고리가 없으면 기본 브랜드 색.
 const CARD_ACCENT_PALETTE = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6', '#ef4444', '#6366f1']
 function getCardAccent(categories) {
@@ -2665,7 +2684,8 @@ function getCardAccent(categories) {
   return { from: 'var(--accent-mid)' }
 }
 
-function createDocCard(doc) {
+// 카드/리스트 뷰 공용: 문서 데이터로부터 두 뷰가 함께 쓰는 마크업 조각을 미리 계산한다.
+function prepareDocItemHtml(doc) {
   const translated = doc.translated_pages?.length || 0
   const total = doc.total_pages || 1
   const pct = Math.round((translated / total) * 100)
@@ -2676,7 +2696,7 @@ function createDocCard(doc) {
   let tagsHtml = ''
   if (categories.length > 0) {
     tagsHtml = `<div class="doc-card-tags">` +
-      categories.map(cat => `<span class="doc-card-tag ${categoryColorClass(cat)}">${escapeHtml(cat)}</span>`).join('') +
+      categories.map(cat => `<span class="doc-card-tag">${escapeHtml(cat)}</span>`).join('') +
       `</div>`
   }
 
@@ -2700,20 +2720,19 @@ function createDocCard(doc) {
   let progressHtml = ''
   if (!isDone) {
     progressHtml = `
-      <div class="doc-card-progress">
+      <div class="doc-card-progress-row">
         <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"></div></div>
-        <div class="doc-progress-label">
-          <span>번역 중 (${translated}/${total}p)</span>
-          <span class="doc-progress-pct">${pct}%</span>
-        </div>
+        <span>${translated}/${total} · ${pct}%</span>
       </div>
     `
   }
 
-  let actionsHtml = ''
+  const openIcon = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>'
+
+  let iconActionsHtml = ''
+  let ctaBtnHtml = ''
   if (state.currentLibraryTab === 'trash') {
-    actionsHtml = `
-      <button class="doc-restore-btn" data-id="${doc.id}">복원</button>
+    iconActionsHtml = `
       <button class="doc-permanent-delete-btn" data-id="${doc.id}" title="영구 삭제">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
@@ -2721,9 +2740,9 @@ function createDocCard(doc) {
         </svg>
       </button>
     `
+    ctaBtnHtml = `<button class="doc-restore-btn" data-id="${doc.id}" title="복원">${icon('refreshCw', 15)}</button>`
   } else {
-    actionsHtml = `
-      <button class="doc-open-btn" data-id="${doc.id}">열기 →</button>
+    iconActionsHtml = `
       <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
       </button>
@@ -2734,26 +2753,18 @@ function createDocCard(doc) {
         </svg>
       </button>
     `
+    ctaBtnHtml = `<button class="doc-open-btn" data-id="${doc.id}" title="열기">${openIcon}</button>`
   }
 
   const accent = getCardAccent(categories)
 
-  const card = document.createElement('div')
-  card.className = 'doc-card'
-  card.style.setProperty('--card-accent-from', accent.from)
-  card.innerHTML = `
-    ${checkBtnHtml}
-    <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
-    ${tagsHtml}
-    <div class="doc-card-meta">
-      ${dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${total}p</span>
-    </div>
-    ${progressHtml}
-    <div class="doc-card-actions">
-      ${actionsHtml}
-    </div>`
+  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, accent }
+}
 
-  const checkBtn = card.querySelector('.doc-card-check-btn')
+// 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
+// 클래스명(.doc-card-check-btn, .doc-open-btn 등)만 맞으면 어떤 레이아웃이든 동작한다.
+function wireDocItemEvents(container, doc, displayTitle) {
+  const checkBtn = container.querySelector('.doc-card-check-btn')
   if (checkBtn) {
     checkBtn.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -2777,12 +2788,12 @@ function createDocCard(doc) {
     })
   }
 
-  const openBtn = card.querySelector('.doc-open-btn')
+  const openBtn = container.querySelector('.doc-open-btn')
   if (openBtn) {
     openBtn.addEventListener('click', (e) => { e.stopPropagation(); openFromLibrary(doc) })
   }
 
-  const deleteBtn = card.querySelector('.doc-delete-btn')
+  const deleteBtn = container.querySelector('.doc-delete-btn')
   if (deleteBtn) {
     deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -2800,7 +2811,7 @@ function createDocCard(doc) {
     })
   }
 
-  const restoreBtn = card.querySelector('.doc-restore-btn')
+  const restoreBtn = container.querySelector('.doc-restore-btn')
   if (restoreBtn) {
     restoreBtn.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -2815,7 +2826,7 @@ function createDocCard(doc) {
     })
   }
 
-  const permDeleteBtn = card.querySelector('.doc-permanent-delete-btn')
+  const permDeleteBtn = container.querySelector('.doc-permanent-delete-btn')
   if (permDeleteBtn) {
     permDeleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -2836,11 +2847,11 @@ function createDocCard(doc) {
     })
   }
   
-  const editBtn = card.querySelector('.doc-edit-btn')
+  const editBtn = container.querySelector('.doc-edit-btn')
   if (editBtn) {
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation()
-      const titleEl = card.querySelector('.doc-card-title')
+      const titleEl = container.querySelector('.doc-card-title')
       const oldTitle = displayTitle
       
       const input = document.createElement('input')
@@ -2899,15 +2910,76 @@ function createDocCard(doc) {
       }, 100)
     })
   })
-}
-  card.addEventListener('click', () => {
+  }
+
+  container.addEventListener('click', () => {
     if (state.currentLibraryTab === 'trash') {
       showToast('휴지통에 있는 논문입니다. 복원 후 열 수 있습니다.', 'warning')
       return
     }
     openFromLibrary(doc)
   })
+}
+
+function createDocCard(doc) {
+  const d = prepareDocItemHtml(doc)
+  const card = document.createElement('div')
+  card.className = 'doc-card'
+  card.style.setProperty('--card-accent-from', d.accent.from)
+  card.innerHTML = `
+    <div class="doc-card-zone">
+      ${d.checkBtnHtml}
+      <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
+      ${d.tagsHtml}
+    </div>
+    <div class="doc-card-footer">
+      <div class="doc-card-footer-info">
+        <div class="doc-card-meta">
+          ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
+        </div>
+        ${d.progressHtml}
+      </div>
+      <div class="doc-card-cta">
+        <div class="doc-icon-actions">${d.iconActionsHtml}</div>
+        ${d.ctaBtnHtml}
+      </div>
+    </div>`
+  wireDocItemEvents(card, doc, d.displayTitle)
   return card
+}
+
+function createDocListRow(doc) {
+  const d = prepareDocItemHtml(doc)
+
+  // 리스트 뷰는 한 줄에 담아야 하므로, 태그가 CSS로 중간에 잘려 보이는 것을 막기 위해
+  // 최대 2개만 보여주고 나머지는 "+N"으로 요약한다 (카드 뷰의 전체 태그와는 별도로 계산).
+  let listTagsHtml = ''
+  if (d.categories.length > 0) {
+    const shown = d.categories.slice(0, 2)
+    const restCount = d.categories.length - shown.length
+    listTagsHtml = `<div class="doc-card-tags">` +
+      shown.map(cat => `<span class="doc-card-tag">${escapeHtml(cat)}</span>`).join('') +
+      (restCount > 0 ? `<span class="doc-card-tag">+${restCount}</span>` : '') +
+      `</div>`
+  }
+
+  const row = document.createElement('div')
+  row.className = 'doc-list-row'
+  row.style.setProperty('--card-accent-from', d.accent.from)
+  row.innerHTML = `
+    ${d.checkBtnHtml}
+    <div class="doc-list-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
+    ${listTagsHtml}
+    <div class="doc-card-meta">
+      ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
+    </div>
+    <div class="doc-list-progress-slot">${d.progressHtml}</div>
+    <div class="doc-card-cta">
+      <div class="doc-icon-actions">${d.iconActionsHtml}</div>
+      ${d.ctaBtnHtml}
+    </div>`
+  wireDocItemEvents(row, doc, d.displayTitle)
+  return row
 }
 
 async function loadDocumentImages(docId) {
