@@ -4,7 +4,7 @@ from services.auth import get_current_user
 from services.library import (
     list_documents, get_document, permanently_delete_document,
     soft_delete_document, restore_document, empty_trash,
-    get_translation, get_pdf_path, update_document_metadata
+    get_translation, get_pdf_path, get_cover_path, update_document_metadata
 )
 from pydantic import BaseModel
 import json
@@ -137,6 +137,15 @@ async def get_library_pdf(doc_id: str):
     if not pdf_path:
         raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
     return FileResponse(pdf_path, media_type="application/pdf")
+
+
+@router.get("/library/{doc_id}/cover")
+async def get_library_cover(doc_id: str):
+    """라이브러리 카드 미리보기용 1페이지 상단(제목+abstract) 캡쳐 이미지를 서빙합니다."""
+    cover_path = get_cover_path(doc_id)
+    if not cover_path:
+        raise HTTPException(status_code=404, detail="미리보기 이미지를 생성할 수 없습니다.")
+    return FileResponse(cover_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.delete("/library/{doc_id}")

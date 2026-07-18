@@ -23,6 +23,9 @@ from services.db import (
 def _pdf_path(doc_id: str) -> str:
     return os.path.join(LIBRARY_DIR, doc_id, "document.pdf")
 
+def _cover_path(doc_id: str) -> str:
+    return os.path.join(LIBRARY_DIR, doc_id, "cover.jpg")
+
 
 # ── 문서 저장 ─────────────────────────────────────────────────────────────────
 
@@ -277,6 +280,23 @@ def get_pdf_path(doc_id: str) -> Optional[str]:
     """라이브러리 PDF 파일 경로를 반환합니다."""
     path = _pdf_path(doc_id)
     return path if os.path.exists(path) else None
+
+def get_cover_path(doc_id: str) -> Optional[str]:
+    """1페이지 상단(제목+abstract) 미리보기 이미지 경로를 반환합니다. 아직 생성되지
+    않았다면 이 시점에 만들어 캐시합니다(문서당 최초 1회만 렌더링 비용 발생)."""
+    pdf_path = get_pdf_path(doc_id)
+    if not pdf_path:
+        return None
+    cover_path = _cover_path(doc_id)
+    if not os.path.exists(cover_path):
+        from services.pdf_parser import render_cover_image
+        try:
+            if not render_cover_image(pdf_path, cover_path):
+                return None
+        except Exception as e:
+            print(f"[get_cover_path] 표지 이미지 생성 실패 ({doc_id}): {e}")
+            return None
+    return cover_path
 
 def update_document_metadata(doc_id: str, metadata: dict) -> None:
     """문서 메타데이터를 업데이트합니다."""
