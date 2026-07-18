@@ -14,6 +14,7 @@ from config import (
     get_agy_path,
     get_agy_env,
     get_claude_code_path,
+    get_codex_path,
     get_translation_prompt_template,
     get_project_root
 )
@@ -49,7 +50,7 @@ async def stream_translation(
     # 이전 페이지의 지시사항을 전혀 모름), 그 경우도 page_num이 그대로 1부터
     # 시작되어 자연히 첫 페이지에서 전체 규칙을 다시 받게 된다.
     REMINDER_INTERVAL = 5
-    is_session_persistent = provider in ("antigravity", "claude_code")
+    is_session_persistent = provider in ("antigravity", "claude_code", "codex")
     is_reminder_page = (
         page_num is None
         or page_num == 1
@@ -83,6 +84,10 @@ async def stream_translation(
             return
         elif provider == "claude_code":
             async for token in stream_claude_code(prompt, model=model, session_id=session_id):
+                yield token
+            return
+        elif provider == "codex":
+            async for token in stream_codex(prompt, model=model, session_id=session_id):
                 yield token
             return
         # 세션 지속 provider가 아니면 여기 도달하지 않지만, 안전하게 아래 전체
@@ -211,6 +216,10 @@ async def stream_translation(
         return
     elif provider == "claude_code":
         async for token in stream_claude_code(prompt, model=model, session_id=session_id):
+            yield token
+        return
+    elif provider == "codex":
+        async for token in stream_codex(prompt, model=model, session_id=session_id):
             yield token
         return
 
@@ -568,6 +577,30 @@ async def stream_chat(
         if include_full_context:
             _mark_chat_context_sent(session_id, "claude_code")
         return
+    elif provider == "codex":
+        try:
+            from services.usage_tracker import record_call
+            record_call("chat")
+        except Exception:
+            pass
+        # codex CLI가 자체적으로 resume 세션(thread) 내에 이전 대화 히스토리(논문 원문+
+        # 가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번 보냈다면
+        # 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만 붙이고
+        # 이후에는 질문만 전달한다.
+        include_full_context = not _chat_context_already_sent(session_id, "codex")
+        formatted_prompt = []
+        if include_full_context:
+            formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
+        if history_messages:
+            latest_msg = history_messages[-1]
+            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
+
+        chat_prompt = "\n".join(formatted_prompt)
+        async for token in stream_codex(chat_prompt, model=model, session_id=session_id, is_chat=True):
+            yield token
+        if include_full_context:
+            _mark_chat_context_sent(session_id, "codex")
+        return
 
     # Fallback to Ollama:
     payload = {
@@ -682,6 +715,10 @@ async def stream_page_insight(
         return
     elif provider == "claude_code":
         async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="insight"):
+            yield token
+        return
+    elif provider == "codex":
+        async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="insight"):
             yield token
         return
 
@@ -910,6 +947,162 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 return
             except Exception as e:
                 print(f"[Claude Code CLI Exec Error] {e}")
+                return
+
+
+_codex_session_locks = {}
+
+def _get_codex_session_lock(session_id: str) -> asyncio.Lock:
+    if not session_id:
+        return asyncio.Lock()
+    if session_id not in _codex_session_locks:
+        _codex_session_locks[session_id] = asyncio.Lock()
+    return _codex_session_locks[session_id]
+
+
+async def stream_codex(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False, usage_label: str = None) -> AsyncGenerator[str, None]:
+    """Codex CLI(`codex exec`)로 번역/채팅/인사이트를 생성합니다.
+
+    codex exec --json은 claude/antigravity와 달리 토큰 단위 스트리밍을 제공하지
+    않고, 한 턴이 끝나면 완성된 메시지를 item.completed 이벤트 하나로 통째로
+    내려준다. 그래서 응답을 받은 뒤 작은 조각으로 나눠 짧은 지연을 두고
+    순차적으로 yield해 다른 provider와 동일한 점진적 스트리밍 UX를 흉내낸다.
+    """
+    import asyncio
+    import os
+
+    codex_path = get_codex_path()
+    if not os.path.exists(codex_path):
+        codex_path = "codex"
+
+    env = get_agy_env()
+
+    # model 값이 'gpt-5.6-terra|high'처럼 파이프(|)로 모델과 reasoning effort를 구분할 수 있음
+    model_name = None
+    effort_level = None
+    if model and model.strip() and model.strip().lower() not in ["custom", "default"]:
+        raw = model.strip()
+        if "|" in raw:
+            parts = raw.split("|", 1)
+            model_name = parts[0].strip() or None
+            effort_level = parts[1].strip() or None
+        else:
+            model_name = raw
+
+    # 이 문서를 마지막으로 쓴 provider가 codex가 아니면(예: antigravity/claude_code로
+    # 갔다가 다시 돌아온 경우) 그 세션은 이 provider에서 재사용할 수 없으므로 새로
+    # 만들어야 하고, 대신 우리 DB 채팅 이력으로 캐치업 문맥을 붙여준다.
+    session_meta = _get_effective_session_meta(session_id)
+    provider_switched = session_meta is not None and session_meta.get("provider") != "codex"
+    thread_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
+    catchup_prefix = _build_catchup_prefix(session_id) if (is_chat and provider_switched) else ""
+
+    # 프롬프트에 직접 출력 포맷 지시 추가 (뷰어가 markdown+LaTeX를 렌더링하므로 그대로 출력 허용)
+    guided_prompt = (
+        "You are a direct-output translation/QA assistant. "
+        "Output ONLY the result — no preambles, no explanations, no commentary. "
+        "You MAY use markdown and LaTeX ($...$, $$...$$) in your output since the viewer renders them. "
+        "Do NOT wrap math variables in placeholder tokens — preserve them as-is or wrap in $...$. "
+        "Start the output immediately.\n\n"
+        f"{catchup_prefix}{prompt}"
+    )
+    encoded_prompt = guided_prompt.encode("utf-8")
+
+    try:
+        from services.usage_tracker import record_call
+        record_call(usage_label or ("translate" if not is_chat else "chat"))
+    except Exception:
+        pass
+
+    def build_cmd(resume_id):
+        cmd = [codex_path, "exec"]
+        if resume_id:
+            cmd += ["resume", resume_id]
+        # 순수 텍스트 생성 용도이므로 파일 수정/명령 실행 권한이 필요 없다 -
+        # 혹시라도 모델이 툴을 사용하려 들 경우를 대비해 read-only 샌드박스로 제한한다.
+        # (`-s/--sandbox`는 `codex exec resume` 서브커맨드에서는 지원되지 않으므로,
+        # resume에도 공통으로 통하는 `-c sandbox_mode=` config override를 사용한다.)
+        cmd += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode=read-only"]
+        if model_name:
+            cmd += ["-m", model_name]
+        if effort_level:
+            cmd += ["-c", f"model_reasoning_effort={effort_level}"]
+        cmd += ["-"]
+        return cmd
+
+    # 한 문서(session_id)는 하나의 Codex 세션(thread)만 사용한다: resume 대상
+    # thread가 더 이상 존재하지 않으면(세션 파일 소실 등) 새 세션으로 1회 재시도한다.
+    lock = _get_codex_session_lock(session_id)
+    async with lock:
+        for attempt in range(2):
+            cmd = build_cmd(thread_id)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    cwd=get_project_root()
+                )
+
+                process.stdin.write(encoded_prompt)
+                await process.stdin.drain()
+                process.stdin.close()
+
+                new_thread_id = None
+                message_parts = []
+
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ev_type = event.get("type")
+                    if ev_type == "thread.started":
+                        new_thread_id = event.get("thread_id")
+                    elif ev_type == "item.completed":
+                        item = event.get("item") or {}
+                        if item.get("type") == "agent_message":
+                            text = item.get("text") or ""
+                            if text:
+                                message_parts.append(text)
+
+                await process.wait()
+                final_text = "".join(message_parts)
+
+                if process.returncode == 0 and final_text:
+                    CHUNK_SIZE = 24
+                    for i in range(0, len(final_text), CHUNK_SIZE):
+                        yield final_text[i:i + CHUNK_SIZE]
+                        await asyncio.sleep(0.012)
+
+                    if session_id and new_thread_id:
+                        save_ai_session_meta(session_id, provider="codex", conversation_id=new_thread_id)
+                    return
+
+                stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+
+                # resume 대상 세션이 더 이상 존재하지 않는 경우에만 새 세션으로 1회 재시도한다.
+                if (
+                    not final_text
+                    and attempt == 0
+                    and thread_id
+                    and ("no rollout found" in stderr_out or "thread/resume" in stderr_out)
+                ):
+                    thread_id = None
+                    continue
+
+                print(f"[Codex CLI Error] code={process.returncode} stderr={stderr_out}")
+                return
+            except Exception as e:
+                print(f"[Codex CLI Exec Error] {e}")
                 return
 
 
@@ -1257,6 +1450,9 @@ Category Tags:"""
                 tokens.append(token)
         elif provider == "claude_code":
             async for token in stream_claude_code(prompt, model=model, session_id=session_id):
+                tokens.append(token)
+        elif provider == "codex":
+            async for token in stream_codex(prompt, model=model, session_id=session_id):
                 tokens.append(token)
         else:
             # Fallback to Ollama chat api

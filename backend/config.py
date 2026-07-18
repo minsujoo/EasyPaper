@@ -185,6 +185,7 @@ APP_PORT = int(os.getenv("APP_PORT", "8000"))
 # Antigravity CLI path
 AGY_PATH = os.getenv("AGY_PATH", "/home/ubuntu/.local/bin/agy")
 CLAUDE_CODE_PATH = os.getenv("CLAUDE_CODE_PATH", "/home/ubuntu/.local/bin/claude")
+CODEX_PATH = os.getenv("CODEX_PATH", "/home/ubuntu/.local/bin/codex")
 
 def get_app_host() -> str:
     return APP_HOST
@@ -197,6 +198,9 @@ def get_agy_path() -> str:
 
 def get_claude_code_path() -> str:
     return CLAUDE_CODE_PATH
+
+def get_codex_path() -> str:
+    return CODEX_PATH
 
 def get_agy_env() -> dict:
     env = os.environ.copy()
