@@ -1530,9 +1530,12 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-preview-cover-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: top center;
   display: block;
+  /* 논문 페이지 자체가 흰 배경이므로, contain으로 인해 생기는 여백도 흰색으로 채워
+     이질감 없이 자연스럽게 이어지도록 함 */
+  background: #fdfdfd;
 }
 .doc-preview-gradient {
   position: absolute;
