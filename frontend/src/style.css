@@ -1204,129 +1204,62 @@ body:not(.light-theme) .pdf-page-inner canvas {
   font-weight: 500;
 }
 
-/* 문서 카드
-   --card-accent-from/to/glow는 JS(getCardAccent)가 대표 카테고리 색으로 채워주는
-   커스텀 프로퍼티 - 카드마다 아이콘/상단 바/호버 글로우가 그 색으로 통일된다 */
+/* 문서 카드 - 도서관 색인 카드(index card) 컨셉: 아이콘/그라디언트/글로우 대신
+   왼쪽 색 책등(spine)과 모노스페이스 메타데이터로 카드 아이덴티티를 표현한다.
+   --card-accent-from은 JS(getCardAccent)가 대표 카테고리 색으로 채워주는 커스텀 프로퍼티. */
 .doc-card {
-  --card-accent-from: var(--accent-from);
-  --card-accent-to: var(--accent-to);
-  --card-accent-glow: var(--accent-glow);
+  --card-accent-from: var(--accent-mid);
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: 22px 22px 20px;
+  border-left: 4px solid var(--card-accent-from);
+  border-radius: 10px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s ease, background 0.4s ease;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s ease;
   cursor: pointer;
   position: relative;
-  overflow: hidden;
   box-shadow: var(--shadow-sm);
   box-sizing: border-box;
 }
-.doc-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--card-accent-from), var(--card-accent-to));
-  opacity: 0.5;
-  transition: opacity 0.3s ease;
-}
-/* 대각선으로 스치는 하이라이트("sheen") - 호버 시 카드를 가로질러 은은하게 훑고 지나감 */
-.doc-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.07) 50%, transparent 60%);
-  background-size: 250% 250%;
-  background-position: 120% 0%;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease, background-position 0.9s cubic-bezier(0.16, 1, 0.3, 1);
-}
 .doc-card:hover {
-  border-color: color-mix(in srgb, var(--card-accent-from) 35%, transparent);
   background: var(--bg-card-hover);
-  transform: translateY(-7px) scale(1.012);
-  box-shadow: var(--shadow-hover), 0 0 32px -6px var(--card-accent-glow);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 28px -14px rgba(0, 0, 0, 0.5);
 }
-.doc-card:hover::before { opacity: 1; }
-.doc-card:hover::after { opacity: 1; background-position: -20% 0%; }
-
-/* 아이콘 뱃지 + 제목을 한 줄에 나란히 배치 */
-.doc-card-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-/* 아이콘을 대표 카테고리 색 그라디언트 뱃지로 감싸 앱 아이콘처럼 정돈된 인상을 준다 */
-.doc-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, var(--card-accent-from), var(--card-accent-to));
-  box-shadow: 0 8px 18px -4px var(--card-accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.doc-card-icon::after {
-  /* 유리 광택 하이라이트 */
-  content: '';
-  position: absolute;
-  top: -60%; left: -20%;
-  width: 70%; height: 140%;
-  background: rgba(255, 255, 255, 0.22);
-  transform: rotate(20deg);
-}
-.doc-card-icon svg { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.15)); position: relative; z-index: 1; }
-.doc-card:hover .doc-card-icon { transform: rotate(-4deg) scale(1.08); }
 
 .doc-card-title {
-  font-size: 16px;
-  font-weight: 750;
+  font-size: 16.5px;
+  font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.42;
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   letter-spacing: -0.015em;
-  padding-top: 2px;
+  /* 우측 상단 읽음 표시 버튼과 겹치지 않도록 여유 공간 확보 */
+  padding-right: 30px;
 }
 
 .doc-card-meta {
+  font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  font-weight: 600;
+  gap: 7px;
+  font-weight: 500;
 }
-/* 메타 정보를 텍스트 나열 대신 작은 칩으로 묶어 시각적 무게감을 줌 */
-.doc-meta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  padding: 3px 9px 3px 7px;
-  border-radius: 100px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-}
-.doc-meta-chip.done {
-  color: var(--success);
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.22);
+.doc-meta-chip.done { color: var(--success); font-weight: 600; }
+.doc-card-meta .meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex-shrink: 0;
 }
 
 /* 번역 진행률 */
@@ -1336,43 +1269,28 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 7px;
 }
 .doc-progress-bar-wrap {
-  height: 7px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 100px;
+  height: 3px;
+  background: var(--border);
   overflow: hidden;
 }
 .doc-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--card-accent-from, var(--accent-from)), var(--card-accent-to, var(--accent-to)));
-  border-radius: 100px;
+  background: var(--card-accent-from);
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  overflow: hidden;
-}
-/* 진행 중인 항목이 정적으로 멈춰있지 않고 살아있는 느낌을 주는 은은한 반짝임 */
-.doc-progress-shimmer {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-  width: 40%;
-  animation: docProgressShimmer 1.8s ease-in-out infinite;
-}
-@keyframes docProgressShimmer {
-  0%   { transform: translateX(-120%); }
-  100% { transform: translateX(280%); }
 }
 .doc-progress-label {
   display: flex;
   justify-content: space-between;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 .doc-progress-label .doc-progress-pct {
-  color: var(--card-accent-from, var(--accent-mid));
-  font-weight: 800;
+  color: var(--card-accent-from);
+  font-weight: 700;
 }
-.doc-progress-label.done { color: var(--success); text-shadow: 0 0 8px rgba(16, 185, 129, 0.15); }
+.doc-progress-label.done { color: var(--success); }
 
 /* 카드 액션 버튼 */
 .doc-card-actions {
@@ -1384,16 +1302,16 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .doc-open-btn, .doc-restore-btn {
   flex: 1;
   padding: 10px 16px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+  border-radius: 7px;
+  background: var(--card-accent-from);
   color: white;
   font-size: 13px;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: var(--font-mono);
+  letter-spacing: 0.01em;
+  border: none;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  font-family: var(--font-body);
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+  transition: filter 0.2s ease, transform 0.2s ease;
   text-align: center;
   display: flex;
   align-items: center;
@@ -1401,57 +1319,48 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 6px;
 }
 .doc-open-btn:hover, .doc-restore-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.3);
+  filter: brightness(1.1);
 }
 .doc-open-btn:active, .doc-restore-btn:active {
-  transform: translateY(0);
+  filter: brightness(0.95);
 }
 
 .doc-delete-btn, .doc-permanent-delete-btn {
   width: 38px; height: 38px;
-  border-radius: var(--radius-sm);
+  border-radius: 7px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 .doc-delete-btn:hover, .doc-permanent-delete-btn:hover {
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.4);
   color: #fca5a5;
-  background: rgba(239, 68, 68, 0.12);
-  transform: translateY(-1px);
-}
-.doc-delete-btn:active {
-  transform: translateY(0);
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .doc-edit-btn {
   width: 38px; height: 38px;
-  border-radius: var(--radius-sm);
+  border-radius: 7px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 .doc-edit-btn:hover {
-  border-color: rgba(139, 92, 246, 0.3);
-  color: var(--accent-mid);
-  background: rgba(139, 92, 246, 0.12);
-  transform: translateY(-1px);
-}
-.doc-edit-btn:active {
-  transform: translateY(0);
+  border-color: var(--card-accent-from);
+  color: var(--card-accent-from);
+  background: color-mix(in srgb, var(--card-accent-from) 10%, transparent);
 }
 
 .doc-title-edit-btn:hover {
@@ -2560,33 +2469,41 @@ body.light-theme .provider-picker-panel {
   box-shadow: 0 4px 12px var(--accent-glow);
 }
 
-/* Card Category Tag */
+/* Card Category Tag - 논문 아카이브(arXiv) 분류 태그 느낌의 모노스페이스 라벨 +
+   색 점(dot) 표시. 배경 필(pill) 대신 텍스트 자체에 색을 실어 더 절제된 인상을 준다. */
 .doc-card-tags {
   display: flex;
-  gap: 6px;
+  gap: 14px;
   flex-wrap: wrap;
-  margin-top: 4px;
 }
 .doc-card-tag {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 100px;
-  background: rgba(139, 92, 246, 0.12);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
   color: var(--accent-mid);
-  border: 1px solid rgba(139, 92, 246, 0.2);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.doc-card-tag::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 /* 카테고리별로 색을 달리 주어 한눈에 구분되도록 함 (이름 해시로 결정론적 배정) */
-.doc-card-tag-c0 { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border-color: rgba(139, 92, 246, 0.22); }
-.doc-card-tag-c1 { background: rgba(59, 130, 246, 0.12);  color: #60a5fa; border-color: rgba(59, 130, 246, 0.22); }
-.doc-card-tag-c2 { background: rgba(16, 185, 129, 0.12);  color: #34d399; border-color: rgba(16, 185, 129, 0.22); }
-.doc-card-tag-c3 { background: rgba(245, 158, 11, 0.14);  color: #fbbf24; border-color: rgba(245, 158, 11, 0.25); }
-.doc-card-tag-c4 { background: rgba(236, 72, 153, 0.12);  color: #f472b6; border-color: rgba(236, 72, 153, 0.22); }
-.doc-card-tag-c5 { background: rgba(20, 184, 166, 0.12);  color: #2dd4bf; border-color: rgba(20, 184, 166, 0.22); }
-.doc-card-tag-c6 { background: rgba(239, 68, 68, 0.12);   color: #f87171; border-color: rgba(239, 68, 68, 0.22); }
-.doc-card-tag-c7 { background: rgba(99, 102, 241, 0.12);  color: #818cf8; border-color: rgba(99, 102, 241, 0.22); }
+.doc-card-tag-c0 { color: #a78bfa; }
+.doc-card-tag-c1 { color: #60a5fa; }
+.doc-card-tag-c2 { color: #34d399; }
+.doc-card-tag-c3 { color: #fbbf24; }
+.doc-card-tag-c4 { color: #f472b6; }
+.doc-card-tag-c5 { color: #2dd4bf; }
+.doc-card-tag-c6 { color: #f87171; }
+.doc-card-tag-c7 { color: #818cf8; }
 /* 라이트 테마에서는 파스텔 톤 대신 더 진한 색으로 대비를 확보 */
 body.light-theme .doc-card-tag-c0 { color: #7c3aed; }
 body.light-theme .doc-card-tag-c1 { color: #2563eb; }
@@ -3875,11 +3792,9 @@ body.light-theme .library-tab-btn.active {
   right: 16px;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: 6px;
   border: 1px solid var(--border-strong);
   background: var(--bg-card);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3908,7 +3823,6 @@ body.light-theme .library-tab-btn.active {
   background: rgba(16, 185, 129, 0.12);
   border-color: rgba(16, 185, 129, 0.4);
   color: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
 }
 .doc-card-check-btn.checked svg {
   opacity: 1;

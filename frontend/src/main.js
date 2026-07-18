@@ -2655,23 +2655,14 @@ function categoryColorClass(category) {
   return `doc-card-tag-c${categoryColorIndex(category)}`
 }
 
-// 카드 전체의 색 아이덴티티(아이콘 뱃지·상단 바·호버 글로우)를 대표 카테고리 색으로
-// 통일해서 카드마다 개성이 드러나도록 함. 카테고리가 없으면 기본 브랜드 그라디언트.
-const CARD_ACCENT_PALETTE = [
-  { from: '#8b5cf6', to: '#a855f7', glow: 'rgba(139, 92, 246, 0.45)' },
-  { from: '#3b82f6', to: '#6366f1', glow: 'rgba(59, 130, 246, 0.45)' },
-  { from: '#10b981', to: '#14b8a6', glow: 'rgba(16, 185, 129, 0.45)' },
-  { from: '#f59e0b', to: '#f97316', glow: 'rgba(245, 158, 11, 0.45)' },
-  { from: '#ec4899', to: '#f43f5e', glow: 'rgba(236, 72, 153, 0.45)' },
-  { from: '#14b8a6', to: '#06b6d4', glow: 'rgba(20, 184, 166, 0.45)' },
-  { from: '#ef4444', to: '#f97316', glow: 'rgba(239, 68, 68, 0.45)' },
-  { from: '#6366f1', to: '#8b5cf6', glow: 'rgba(99, 102, 241, 0.45)' },
-]
+// 카드 왼쪽 책등(spine)과 진행률 바 색을 대표 카테고리 색으로 통일해서 카드마다
+// 개성이 드러나도록 함. 카테고리가 없으면 기본 브랜드 색.
+const CARD_ACCENT_PALETTE = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6', '#ef4444', '#6366f1']
 function getCardAccent(categories) {
   if (categories && categories.length > 0) {
-    return CARD_ACCENT_PALETTE[categoryColorIndex(categories[0])]
+    return { from: CARD_ACCENT_PALETTE[categoryColorIndex(categories[0])] }
   }
-  return { from: 'var(--accent-from)', to: 'var(--accent-to)', glow: 'var(--accent-glow)' }
+  return { from: 'var(--accent-mid)' }
 }
 
 function createDocCard(doc) {
@@ -2692,10 +2683,10 @@ function createDocCard(doc) {
   const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
   const isRead = doc.metadata?.read === true
 
-  let dateHtml = `<span class="doc-meta-chip">${icon('calendar', 12)}등록 ${date}</span>`
+  let dateHtml = `<span class="doc-meta-chip">${date}</span>`
   if (isRead && doc.metadata?.read_at) {
     const readDateStr = new Date(doc.metadata.read_at).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' })
-    dateHtml = `<span class="doc-meta-chip done">${icon('checkCircle', 12)}완독 ${readDateStr}</span>`
+    dateHtml = `<span class="doc-meta-chip done">완독 ${readDateStr}</span>`
   }
 
   const checkBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
@@ -2710,7 +2701,7 @@ function createDocCard(doc) {
   if (!isDone) {
     progressHtml = `
       <div class="doc-card-progress">
-        <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"><span class="doc-progress-shimmer"></span></div></div>
+        <div class="doc-progress-bar-wrap"><div class="doc-progress-bar" style="width:${pct}%"></div></div>
         <div class="doc-progress-label">
           <span>번역 중 (${translated}/${total}p)</span>
           <span class="doc-progress-pct">${pct}%</span>
@@ -2732,7 +2723,7 @@ function createDocCard(doc) {
     `
   } else {
     actionsHtml = `
-      <button class="doc-open-btn" data-id="${doc.id}">열기</button>
+      <button class="doc-open-btn" data-id="${doc.id}">열기 →</button>
       <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
       </button>
@@ -2750,17 +2741,12 @@ function createDocCard(doc) {
   const card = document.createElement('div')
   card.className = 'doc-card'
   card.style.setProperty('--card-accent-from', accent.from)
-  card.style.setProperty('--card-accent-to', accent.to)
-  card.style.setProperty('--card-accent-glow', accent.glow)
   card.innerHTML = `
     ${checkBtnHtml}
-    <div class="doc-card-header">
-      <div class="doc-card-icon">${icon('fileText', 22)}</div>
-      <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
-    </div>
+    <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(displayTitle)}</div>
     ${tagsHtml}
     <div class="doc-card-meta">
-      ${dateHtml}<span class="doc-meta-chip">${icon('layers', 12)}${total}페이지</span>
+      ${dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${total}p</span>
     </div>
     ${progressHtml}
     <div class="doc-card-actions">
