@@ -187,7 +187,7 @@ html, body {
   width: 100%;
   max-width: 540px;
   border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
   background: var(--bg-surface);
   transition: border-color 0.2s ease, background 0.2s ease;
   cursor: pointer;
@@ -1062,7 +1062,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   bottom: 32px;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: rgba(23, 20, 38, 0.85);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: 100px;
   padding: 14px 28px;
@@ -1078,8 +1078,9 @@ body:not(.light-theme) .pdf-page-inner canvas {
   letter-spacing: -0.01em;
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
-.toast.success { border-color: rgba(16, 185, 129, 0.4); text-shadow: 0 0 10px rgba(16, 185, 129, 0.1); }
+.toast.success { border-color: rgba(16, 185, 129, 0.4); }
 .toast.error { border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+body.light-theme .toast.error { color: #dc2626; }
 
 /* ── 유틸리티 ── */
 .hidden { display: none !important; }
