@@ -21,6 +21,11 @@
   --accent-mid:     #7c3aed; /* Violet */
   --accent-glow:    rgba(124, 58, 237, 0.3);
 
+  /* 탭/태그/버튼 등 컨트롤 요소용 차분한 톤 (검정 반전 대신 사용) */
+  --control-accent:      #7269b0;
+  --control-accent-soft: rgba(114, 105, 176, 0.14);
+  --control-accent-text: #a79ee0;
+
   --text-primary:   #f3f4f6;
   --text-secondary: #a1a1aa;
   --text-muted:     #6b7280;
@@ -71,6 +76,8 @@ body.light-theme {
   --text-primary:   #0f172a;
   --text-secondary: #475569;
   --text-muted:     #94a3b8;
+
+  --control-accent-text: #5b4fa0;
 
   --shadow-sm:      0 2px 8px rgba(15, 23, 42, 0.04);
   --shadow-md:      0 10px 30px rgba(15, 23, 42, 0.06);
@@ -249,20 +256,16 @@ html, body {
   gap: 8px;
   padding: 12px 32px;
   border-radius: 100px;
-  background: #fff;
-  color: #14141a;
+  background: var(--control-accent);
+  color: #fff;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
   transition: filter 0.15s ease, transform 0.15s ease;
   border: none;
 }
-body.light-theme .file-btn {
-  background: #14141a;
-  color: #fff;
-}
 .file-btn:hover {
-  filter: brightness(0.96);
+  filter: brightness(1.1);
 }
 .file-btn:active {
   transform: scale(0.98);
@@ -1320,20 +1323,15 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 8px;
   padding: 12px;
   border-radius: 14px;
-  background: #fff;
-  color: #14141a;
+  background: var(--control-accent);
+  color: #fff;
   border: none;
   cursor: pointer;
   font-size: 14px;
   font-weight: 800;
   transition: filter 0.15s ease, transform 0.15s ease;
 }
-body.light-theme .doc-open-btn,
-body.light-theme .doc-restore-btn {
-  background: #14141a;
-  color: #fff;
-}
-.doc-open-btn:hover, .doc-restore-btn:hover { filter: brightness(0.96); }
+.doc-open-btn:hover, .doc-restore-btn:hover { filter: brightness(1.1); }
 .doc-open-btn:active, .doc-restore-btn:active { transform: scale(0.98); }
 
 /* 리스트 뷰용 컴팩트 변형 - 텍스트 없이 아이콘만, 원형으로 축소 */
@@ -1397,7 +1395,7 @@ body.light-theme .doc-restore-btn {
 .view-toggle-btn:hover { color: var(--text-primary); }
 .view-toggle-btn.active {
   background: var(--bg-card);
-  color: var(--accent-mid);
+  color: var(--control-accent);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1602,20 +1600,15 @@ body.light-theme .doc-restore-btn {
   padding: 14px;
   border: none;
   border-radius: 16px;
-  background: #fff;
-  color: #14141a;
+  background: var(--control-accent);
+  color: #fff;
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.15s ease;
 }
-.doc-preview-open-btn:hover { filter: brightness(0.96); }
+.doc-preview-open-btn:hover { filter: brightness(1.1); }
 .doc-preview-open-btn:active { transform: scale(0.98); }
-
-body.light-theme .doc-preview-open-btn {
-  background: #14141a;
-  color: #fff;
-}
 
 .doc-title-edit-btn:hover {
   opacity: 1 !important;
@@ -1635,8 +1628,8 @@ body.light-theme .doc-preview-open-btn {
 
 /* 로그인 인풋 포커스 스타일 */
 #login-username:focus, #login-password:focus {
-  border-color: var(--accent-mid) !important;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12) !important;
+  border-color: var(--control-accent) !important;
+  box-shadow: 0 0 0 3px var(--control-accent-soft) !important;
 }
 .global-theme-toggle button {
   width: 42px;
@@ -2717,7 +2710,7 @@ body.light-theme .provider-picker-panel {
   border-color: var(--border-glow);
 }
 .category-filter-btn.active {
-  background: var(--accent-mid);
+  background: var(--control-accent);
   color: #fff;
   border-color: transparent;
 }
@@ -2734,9 +2727,9 @@ body.light-theme .provider-picker-panel {
   font-weight: 700;
   padding: 4px 11px;
   border-radius: 100px;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  background: var(--control-accent-soft);
+  color: var(--control-accent-text);
+  border: 1px solid transparent;
 }
 
 /* ── Google Drive Style Upload Popup ── */
@@ -4003,7 +3996,7 @@ body.light-theme .floating-memo.color-red .floating-memo-render {
 }
 .library-tab-btn.active {
   color: #fff !important;
-  background: var(--accent-mid);
+  background: var(--control-accent);
 }
 body.light-theme .library-tab-btn.active {
   color: #fff !important;
@@ -4287,7 +4280,7 @@ body.light-theme .sentence-memo-box {
   font-size: 14px;
   font-weight: 700;
   border-radius: 50px;
-  background: var(--accent-mid);
+  background: var(--control-accent);
   color: #fff;
   border: none;
   box-shadow: var(--shadow-md);
