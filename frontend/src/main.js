@@ -3274,7 +3274,6 @@ function deriveAccentTokens(baseHex) {
     from: fromHex,
     to: toHex,
     glow: `rgba(${base.r}, ${base.g}, ${base.b}, 0.3)`,
-    glowStrong: `rgba(${base.r}, ${base.g}, ${base.b}, 0.55)`,
     controlSoft: `rgba(${base.r}, ${base.g}, ${base.b}, 0.16)`,
     textDark: shadeHex(baseHex, 0.24),   // 다크 테마에서 태그 텍스트로 쓸 밝은 톤
     textLight: shadeHex(baseHex, -0.24), // 라이트 테마에서 태그 텍스트로 쓸 어두운 톤
@@ -3290,7 +3289,6 @@ function applyAccentColor(hex, { persist = true } = {}) {
   root.setProperty('--accent-mid', hex)
   root.setProperty('--accent-to', tokens.to)
   root.setProperty('--accent-glow', tokens.glow)
-  root.setProperty('--accent-glow-strong', tokens.glowStrong)
   root.setProperty('--control-accent-soft', tokens.controlSoft)
 
   const isLight = document.body.classList.contains('light-theme')
