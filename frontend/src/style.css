@@ -249,21 +249,23 @@ html, body {
   gap: 8px;
   padding: 12px 32px;
   border-radius: 100px;
-  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
-  color: white;
+  background: #fff;
+  color: #14141a;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: filter 0.15s ease, transform 0.15s ease;
+  border: none;
+}
+body.light-theme .file-btn {
+  background: #14141a;
+  color: #fff;
 }
 .file-btn:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 12px 32px rgba(124, 58, 237, 0.45);
+  filter: brightness(0.96);
 }
 .file-btn:active {
-  transform: translateY(0) scale(0.98);
+  transform: scale(0.98);
 }
 
 .drop-hint { font-size: 12px; color: var(--text-muted); font-weight: 500; }
@@ -1634,7 +1636,7 @@ body.light-theme .doc-preview-open-btn {
 /* 로그인 인풋 포커스 스타일 */
 #login-username:focus, #login-password:focus {
   border-color: var(--accent-mid) !important;
-  box-shadow: var(--shadow-glow), 0 0 0 2px rgba(124, 58, 237, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12) !important;
 }
 .global-theme-toggle button {
   width: 42px;
@@ -2715,10 +2717,9 @@ body.light-theme .provider-picker-panel {
   border-color: var(--border-glow);
 }
 .category-filter-btn.active {
-  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid));
+  background: var(--accent-mid);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 4px 12px var(--accent-glow);
 }
 
 /* Card Category Tag - 미리보기 팝업 태그와 톤을 맞춘 중립 필(pill). 카테고리마다
@@ -4003,7 +4004,6 @@ body.light-theme .floating-memo.color-red .floating-memo-render {
 .library-tab-btn.active {
   color: #fff !important;
   background: var(--accent-mid);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 body.light-theme .library-tab-btn.active {
   color: #fff !important;
@@ -4285,13 +4285,13 @@ body.light-theme .sentence-memo-box {
   z-index: 999;
   padding: 14px 28px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   border-radius: 50px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: white;
+  background: var(--accent-mid);
+  color: #fff;
   border: none;
-  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5), 0 8px 10px -6px rgba(99, 102, 241, 0.5);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-md);
+  transition: filter 0.15s ease, transform 0.15s ease;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4299,13 +4299,12 @@ body.light-theme .sentence-memo-box {
 }
 
 #lib-upload-btn:hover {
-  transform: translateY(-4px) scale(1.02);
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  box-shadow: 0 20px 30px -10px rgba(99, 102, 241, 0.7), 0 10px 15px -5px rgba(99, 102, 241, 0.5);
+  transform: translateY(-2px);
+  filter: brightness(1.06);
 }
 
 #lib-upload-btn:active {
-  transform: translateY(-1px) scale(0.98);
+  transform: translateY(0) scale(0.98);
 }
 
 /* 휴지통 비우기 우하단 플로팅 버튼 스타일 */
@@ -4316,13 +4315,13 @@ body.light-theme .sentence-memo-box {
   z-index: 999;
   padding: 14px 28px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   border-radius: 50px;
-  background: linear-gradient(135deg, #ef4444, #f43f5e);
-  color: white;
+  background: #e5484d;
+  color: #fff;
   border: none;
-  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.5), 0 8px 10px -6px rgba(239, 68, 68, 0.5);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-md);
+  transition: filter 0.15s ease, transform 0.15s ease;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4330,13 +4329,12 @@ body.light-theme .sentence-memo-box {
 }
 
 #lib-empty-trash-btn:hover {
-  transform: translateY(-4px) scale(1.02);
-  background: linear-gradient(135deg, #dc2626, #e11d48);
-  box-shadow: 0 20px 30px -10px rgba(239, 68, 68, 0.7), 0 10px 15px -5px rgba(239, 68, 68, 0.5);
+  transform: translateY(-2px);
+  filter: brightness(1.06);
 }
 
 #lib-empty-trash-btn:active {
-  transform: translateY(-1px) scale(0.98);
+  transform: translateY(0) scale(0.98);
 }
 
 /* 우측 상단 플로팅 패널 내 휴지통 버튼 스타일 */
