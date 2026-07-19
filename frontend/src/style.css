@@ -14,17 +14,20 @@
 
   --border:         rgba(255, 255, 255, 0.05);
   --border-strong:  rgba(255, 255, 255, 0.1);
-  --border-glow:    rgba(129, 140, 248, 0.2);
+  --border-glow:    rgba(37, 99, 235, 0.2);
 
-  --accent-from:    #4f46e5; /* Indigo */
-  --accent-to:      #a855f7; /* Purple */
-  --accent-mid:     #7c3aed; /* Violet */
-  --accent-glow:    rgba(124, 58, 237, 0.3);
+  /* 기본값: 강한 블루 - 설정 > 일반 설정 > 테마 색상에서 사용자가 직접 변경 가능
+     (main.js의 applyAccentColor()가 아래 토큰들을 런타임에 덮어씀) */
+  --accent-from:    #1d4ed8;
+  --accent-to:      #60a5fa;
+  --accent-mid:     #2563eb;
+  --accent-glow:    rgba(37, 99, 235, 0.3);
+  --accent-glow-strong: rgba(37, 99, 235, 0.55);
 
-  /* 탭/태그/버튼 등 컨트롤 요소용 차분한 톤 (검정 반전 대신 사용) */
-  --control-accent:      #7269b0;
-  --control-accent-soft: rgba(114, 105, 176, 0.14);
-  --control-accent-text: #a79ee0;
+  /* 탭/태그/버튼 등 컨트롤 요소용 톤 (검정 반전 대신 사용, 브랜드 accent와 동일 계열) */
+  --control-accent:      var(--accent-mid);
+  --control-accent-soft: rgba(37, 99, 235, 0.16);
+  --control-accent-text: #93c5fd;
 
   --text-primary:   #f3f4f6;
   --text-secondary: #a1a1aa;
@@ -71,13 +74,13 @@ body.light-theme {
 
   --border:         rgba(0, 0, 0, 0.04);
   --border-strong:  rgba(0, 0, 0, 0.08);
-  --border-glow:    rgba(79, 70, 229, 0.1);
+  --border-glow:    rgba(29, 78, 216, 0.1);
 
   --text-primary:   #0f172a;
   --text-secondary: #475569;
   --text-muted:     #94a3b8;
 
-  --control-accent-text: #5b4fa0;
+  --control-accent-text: #1e40af;
 
   --shadow-sm:      0 2px 8px rgba(15, 23, 42, 0.04);
   --shadow-md:      0 10px 30px rgba(15, 23, 42, 0.06);
@@ -138,8 +141,8 @@ html, body {
   filter: blur(120px);
   animation: orbFloat 12s ease-in-out infinite alternate;
 }
-.orb-1 { width: 600px; height: 600px; background: rgba(79, 70, 229, 0.15); top: -200px; left: -150px; }
-.orb-2 { width: 500px; height: 500px; background: rgba(168, 85, 247, 0.12); bottom: -150px; right: -100px; animation-delay: -4s; }
+.orb-1 { width: 600px; height: 600px; background: rgba(46, 95, 138, 0.15); top: -200px; left: -150px; }
+.orb-2 { width: 500px; height: 500px; background: rgba(126, 196, 232, 0.12); bottom: -150px; right: -100px; animation-delay: -4s; }
 .orb-3 { width: 400px; height: 400px; background: rgba(16, 185, 129, 0.08); top: 40%; left: 55%; animation-delay: -8s; }
 
 @keyframes orbFloat {
@@ -169,7 +172,7 @@ html, body {
   letter-spacing: -0.04em;
   font-family: 'Outfit', var(--font-body);
 }
-.logo-icon { display: inline-flex; color: var(--text-primary); filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.5)); }
+.logo-icon { display: inline-flex; color: var(--text-primary); filter: drop-shadow(0 0 10px rgba(74, 135, 181, 0.5)); }
 .logo-text {
   background: linear-gradient(135deg, #ffffff, #d1d5db);
   -webkit-background-clip: text;
@@ -188,11 +191,11 @@ html, body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #818cf8, #c084fc 50%, #e879f9);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid) 50%, var(--accent-to));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  filter: drop-shadow(0 2px 8px rgba(168, 85, 247, 0.3));
+  filter: drop-shadow(0 2px 8px rgba(126, 196, 232, 0.3));
 }
 
 .upload-subtitle {
@@ -220,8 +223,8 @@ html, body {
 .drop-zone:hover,
 .drop-zone.drag-over {
   border-color: var(--accent-mid);
-  background: rgba(124, 58, 237, 0.08);
-  box-shadow: 0 0 40px rgba(124, 58, 237, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  background: rgba(74, 135, 181, 0.08);
+  box-shadow: 0 0 40px rgba(74, 135, 181, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
   transform: translateY(-4px);
   border-style: solid;
 }
@@ -236,7 +239,7 @@ html, body {
 
 .drop-icon {
   font-size: 56px;
-  filter: drop-shadow(0 0 25px rgba(124, 58, 237, 0.4));
+  filter: drop-shadow(0 0 25px rgba(74, 135, 181, 0.4));
   animation: iconBob 4s ease-in-out infinite;
 }
 @keyframes iconBob {
@@ -250,19 +253,32 @@ html, body {
   font-weight: 600;
 }
 
+/* 주요 CTA 버튼(로그인/열기/새 논문 추가)에 공통으로 쓰는 은은한 앰비언트 글로우 펄스 */
+@keyframes btn-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(0, 0, 0, 0); }
+  50%      { box-shadow: 0 6px 24px var(--accent-glow-strong); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-btn, .doc-open-btn, .doc-restore-btn, .doc-preview-open-btn, #lib-upload-btn {
+    animation: none !important;
+    box-shadow: 0 6px 20px var(--accent-glow-strong);
+  }
+}
+
 .file-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 12px 32px;
   border-radius: 100px;
-  background: var(--control-accent);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid));
   color: #fff;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
   transition: filter 0.15s ease, transform 0.15s ease;
   border: none;
+  animation: btn-glow-pulse 2.8s ease-in-out infinite;
 }
 .file-btn:hover {
   filter: brightness(1.1);
@@ -299,7 +315,7 @@ html, body {
   border-radius: 100px;
   width: 0%;
   transition: width 0.3s ease;
-  box-shadow: 0 0 12px rgba(108,99,255,0.5);
+  box-shadow: 0 0 12px rgba(192,138,69,0.5);
 }
 .progress-text {
   font-size: 13px;
@@ -444,10 +460,10 @@ html, body {
   transform: translateY(0) scale(0.95);
 }
 .icon-btn.active {
-  background: rgba(124, 58, 237, 0.15);
-  color: #c084fc;
-  border-color: rgba(124, 58, 237, 0.4);
-  box-shadow: 0 0 15px rgba(124, 58, 237, 0.15);
+  background: rgba(74, 135, 181, 0.15);
+  color: var(--accent-to);
+  border-color: rgba(74, 135, 181, 0.4);
+  box-shadow: 0 0 15px rgba(74, 135, 181, 0.15);
 }
 
 /* ── Unified Zoom Group Refinement ── */
@@ -533,7 +549,7 @@ html, body {
 }
 #page-input:focus {
   border-color: var(--accent-mid);
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.2);
+  box-shadow: 0 0 10px rgba(74, 135, 181, 0.2);
 }
 
 .zoom-label {
@@ -551,11 +567,11 @@ html, body {
   gap: 10px;
   padding: 6px 14px;
   border-radius: 100px;
-  background: rgba(124, 58, 237, 0.12);
-  border: 1px solid rgba(124, 58, 237, 0.25);
+  background: rgba(74, 135, 181, 0.12);
+  border: 1px solid rgba(74, 135, 181, 0.25);
   font-size: 12px;
   font-weight: 600;
-  color: #c084fc;
+  color: var(--accent-to);
 }
 .progress-mini-bar {
   width: 70px; height: 4px;
@@ -652,7 +668,7 @@ html, body {
 }
 
 .page-pair:hover {
-  border-color: rgba(129, 140, 248, 0.15);
+  border-color: rgba(74, 135, 181, 0.15);
   background: var(--bg-page-pair-hover);
   box-shadow: var(--shadow-hover);
   transform: translateY(-2px);
@@ -712,17 +728,17 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .textLayer .highlight {
   margin: -1px;
   padding: 1px;
-  background-color: rgba(124, 58, 237, 0.35);
+  background-color: rgba(74, 135, 181, 0.35);
   border-radius: 4px;
 }
 
 .textLayer ::selection {
-  background: rgba(124, 58, 237, 0.4);
+  background: rgba(74, 135, 181, 0.4);
   color: transparent;
 }
 
 .textLayer ::-moz-selection {
-  background: rgba(124, 58, 237, 0.4);
+  background: rgba(74, 135, 181, 0.4);
   color: transparent;
 }
 
@@ -806,7 +822,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
 
 .spinner {
   width: 16px; height: 16px;
-  border: 2px solid rgba(124, 58, 237, 0.2);
+  border: 2px solid rgba(74, 135, 181, 0.2);
   border-top-color: var(--accent-mid);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -831,7 +847,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   color: var(--text-muted);
   text-align: center;
 }
-.trans-init-hint .placeholder-icon { font-size: 56px; opacity: 0.4; filter: drop-shadow(0 0 20px rgba(124, 58, 237, 0.1)); }
+.trans-init-hint .placeholder-icon { font-size: 56px; opacity: 0.4; filter: drop-shadow(0 0 20px rgba(74, 135, 181, 0.1)); }
 .trans-init-hint p { font-size: 14px; font-weight: 500; }
 
 /* 페이지별 번역 블록 */
@@ -950,7 +966,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
   letter-spacing: -0.01em;
   cursor: pointer;
   text-decoration: underline;
-  text-decoration-color: rgba(124, 58, 237, 0.35);
+  text-decoration-color: rgba(74, 135, 181, 0.35);
   text-underline-offset: 3px;
   width: fit-content;
 }
@@ -976,7 +992,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
 /* ── 요약 탭: 인용구 스타일 박스 ── */
 .insight-summary-box {
   padding: 18px 20px;
-  background: rgba(124, 58, 237, 0.06);
+  background: rgba(74, 135, 181, 0.06);
   border-left: 4px solid var(--accent-mid);
   border-radius: var(--radius-sm);
   font-size: 15px;
@@ -1035,7 +1051,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
 .trans-wait-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(124, 58, 237, 0.2);
+  border: 2px solid rgba(74, 135, 181, 0.2);
   border-top-color: var(--accent-mid);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1138,11 +1154,11 @@ body:not(.light-theme) .pdf-page-inner canvas {
   box-shadow: var(--shadow-sm);
 }
 .library-link-btn:hover {
-  border-color: rgba(129, 140, 248, 0.3);
+  border-color: rgba(74, 135, 181, 0.3);
   color: var(--text-primary);
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(74, 135, 181, 0.1);
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.15);
+  box-shadow: 0 8px 20px rgba(74, 135, 181, 0.15);
 }
 .library-link-btn:active {
   transform: translateY(0) scale(0.98);
@@ -1323,13 +1339,14 @@ body:not(.light-theme) .pdf-page-inner canvas {
   gap: 8px;
   padding: 12px;
   border-radius: 14px;
-  background: var(--control-accent);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid));
   color: #fff;
   border: none;
   cursor: pointer;
   font-size: 14px;
   font-weight: 800;
   transition: filter 0.15s ease, transform 0.15s ease;
+  animation: btn-glow-pulse 2.8s ease-in-out infinite;
 }
 .doc-open-btn:hover, .doc-restore-btn:hover { filter: brightness(1.1); }
 .doc-open-btn:active, .doc-restore-btn:active { transform: scale(0.98); }
@@ -1600,12 +1617,13 @@ body:not(.light-theme) .pdf-page-inner canvas {
   padding: 14px;
   border: none;
   border-radius: 16px;
-  background: var(--control-accent);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid));
   color: #fff;
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.15s ease;
+  animation: btn-glow-pulse 2.8s ease-in-out infinite;
 }
 .doc-preview-open-btn:hover { filter: brightness(1.1); }
 .doc-preview-open-btn:active { transform: scale(0.98); }
@@ -1725,7 +1743,7 @@ body.light-theme .pdf-annotation-underline {
 }
 
 .selection-menu .menu-btn.ask-ai-btn:hover {
-  background: rgba(139, 92, 246, 0.15) !important;
+  background: rgba(126, 196, 232, 0.15) !important;
   color: var(--accent-mid) !important;
 }
 
@@ -1756,7 +1774,7 @@ body.light-theme .pdf-annotation-underline {
   border-radius: var(--radius-lg);
   width: 90%;
   max-width: 440px;
-  box-shadow: var(--shadow-md), 0 0 50px rgba(108, 99, 255, 0.15);
+  box-shadow: var(--shadow-md), 0 0 50px rgba(74, 135, 181, 0.15);
   overflow: hidden;
   transform: scale(0.95);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1834,7 +1852,7 @@ body.light-theme .pdf-annotation-underline {
 
 .form-group input:focus {
   border-color: var(--accent-mid);
-  box-shadow: var(--shadow-glow), 0 0 0 2px rgba(108, 99, 255, 0.15);
+  box-shadow: var(--shadow-glow), 0 0 0 2px rgba(74, 135, 181, 0.15);
 }
 
 .form-actions {
@@ -1869,12 +1887,12 @@ body.light-theme .pdf-annotation-underline {
   background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(74, 135, 181, 0.2);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(108, 99, 255, 0.3), var(--shadow-glow);
+  box-shadow: 0 6px 20px rgba(74, 135, 181, 0.3), var(--shadow-glow);
 }
 
 .btn-primary:active {
@@ -1944,7 +1962,7 @@ body.light-theme .pdf-annotation-underline {
 
 .form-select:focus {
   border-color: var(--accent-mid);
-  box-shadow: var(--shadow-glow), 0 0 0 2px rgba(108, 99, 255, 0.15);
+  box-shadow: var(--shadow-glow), 0 0 0 2px rgba(74, 135, 181, 0.15);
 }
 
 .checkbox-group {
@@ -1969,6 +1987,73 @@ body.light-theme .pdf-annotation-underline {
   height: 16px;
   accent-color: var(--accent-mid);
   cursor: pointer;
+}
+
+/* ── 테마 색상(강조색) 커스터마이징 ── */
+.accent-swatch-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 4px 14px;
+}
+.accent-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  outline-offset: 2px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.accent-swatch:hover { transform: scale(1.1); }
+.accent-swatch.active {
+  border-color: var(--text-primary);
+}
+.accent-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.accent-picker-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.accent-picker-swatch input[type="color"] {
+  width: 140%;
+  height: 140%;
+  transform: translate(-14%, -14%);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  background: none;
+}
+.accent-hex-label {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.accent-reset-btn {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.accent-reset-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-glow);
 }
 
 
@@ -2053,7 +2138,7 @@ body.light-theme .pdf-annotation-underline {
 
 .chat-header-icon {
   font-size: 18px;
-  filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.4));
+  filter: drop-shadow(0 0 8px rgba(74, 135, 181, 0.4));
 }
 
 .chat-title {
@@ -2166,7 +2251,7 @@ body.light-theme .chat-messages::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
   color: white;
   border-top-right-radius: 4px;
-  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.22);
+  box-shadow: 0 6px 20px rgba(126, 196, 232, 0.22);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -2288,7 +2373,7 @@ body.light-theme .chat-input-area {
 
 .chat-input-box:focus-within {
   border-color: var(--accent-mid);
-  box-shadow: 0 0 16px rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 16px rgba(126, 196, 232, 0.12);
 }
 
 #chat-input {
@@ -2362,12 +2447,12 @@ body.light-theme .chat-input-area {
   justify-content: center;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(126, 196, 232, 0.3);
 }
 
 .chat-send-btn:hover:not(:disabled) {
   transform: scale(1.08);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.45);
+  box-shadow: 0 4px 12px rgba(126, 196, 232, 0.45);
 }
 
 .chat-send-btn:active:not(:disabled) {
@@ -2486,7 +2571,7 @@ body.light-theme .chat-loading-progress {
 }
 .selection-tooltip .tooltip-icon {
   font-size: 15px;
-  filter: drop-shadow(0 0 5px rgba(124, 58, 237, 0.5));
+  filter: drop-shadow(0 0 5px rgba(74, 135, 181, 0.5));
 }
 
 @keyframes fadeInTooltip {
@@ -2653,7 +2738,7 @@ body.light-theme .provider-picker-panel {
   color: var(--text-primary);
 }
 .picker-model-item.selected {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(126, 196, 232, 0.15);
   color: var(--accent-mid);
   font-weight: 600;
 }
@@ -2874,7 +2959,7 @@ body.light-theme .provider-picker-panel {
 
 /* ── Library Screen Drag Over ── */
 #library-screen.drag-over {
-  background-color: rgba(124, 58, 237, 0.08) !important;
+  background-color: rgba(74, 135, 181, 0.08) !important;
   outline: 2px dashed var(--accent-mid);
   outline-offset: -12px;
 }
@@ -2884,8 +2969,8 @@ body.light-theme .upload-bg {
   background: radial-gradient(circle at 10% 20%, #e2e8f0 0%, #f8fafc 60%),
               radial-gradient(circle at 90% 80%, #f1f5f9 0%, #f8fafc 70%);
 }
-body.light-theme .orb-1 { background: rgba(79, 70, 229, 0.06); }
-body.light-theme .orb-2 { background: rgba(168, 85, 247, 0.05); }
+body.light-theme .orb-1 { background: rgba(46, 95, 138, 0.06); }
+body.light-theme .orb-2 { background: rgba(126, 196, 232, 0.05); }
 body.light-theme .orb-3 { background: rgba(16, 185, 129, 0.04); }
 
 body.light-theme .logo-text,
@@ -2975,28 +3060,28 @@ body.light-theme .library-grid::-webkit-scrollbar-thumb:hover {
 }
 
 .trans-sentence.sentence-highlight {
-  background-color: rgba(124, 58, 237, 0.25) !important;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18);
+  background-color: rgba(74, 135, 181, 0.25) !important;
+  box-shadow: 0 0 0 2px rgba(74, 135, 181, 0.18);
   border-radius: 3px;
   color: var(--text-primary) !important;
 }
 
 /* For light theme, use slightly adjusted color */
 body.light-theme .pdf-sentence.sentence-highlight {
-  background-color: rgba(124, 58, 237, 0.20) !important;
+  background-color: rgba(74, 135, 181, 0.20) !important;
 }
 
 body.light-theme .trans-sentence.sentence-highlight {
-  background-color: rgba(124, 58, 237, 0.20) !important;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+  background-color: rgba(74, 135, 181, 0.20) !important;
+  box-shadow: 0 0 0 2px rgba(74, 135, 181, 0.15);
   color: #000000 !important;
 }
 
 /* ── Sentence Click Pulse Highlight Effect ── */
 @keyframes sentencePulse {
   0% {
-    background-color: rgba(124, 58, 237, 0.45) !important;
-    box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25) !important;
+    background-color: rgba(74, 135, 181, 0.45) !important;
+    box-shadow: 0 0 0 4px rgba(74, 135, 181, 0.25) !important;
   }
   100% {
     background-color: transparent;
@@ -3035,14 +3120,14 @@ body.light-theme .trans-sentence.sentence-highlight {
 }
 .katex-display-wrap.trans-sentence.sentence-highlight .katex-display,
 .katex-inline-wrap.trans-sentence.sentence-highlight .katex {
-  background-color: rgba(124, 58, 237, 0.25) !important;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18) !important;
+  background-color: rgba(74, 135, 181, 0.25) !important;
+  box-shadow: 0 0 0 2px rgba(74, 135, 181, 0.18) !important;
   border-radius: 4px !important;
 }
 body.light-theme .katex-display-wrap.trans-sentence.sentence-highlight .katex-display,
 body.light-theme .katex-inline-wrap.trans-sentence.sentence-highlight .katex {
-  background-color: rgba(124, 58, 237, 0.20) !important;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15) !important;
+  background-color: rgba(74, 135, 181, 0.20) !important;
+  box-shadow: 0 0 0 2px rgba(74, 135, 181, 0.15) !important;
 }
 .katex-display-wrap.trans-sentence.sentence-pulse,
 .katex-inline-wrap.trans-sentence.sentence-pulse {
@@ -3059,7 +3144,7 @@ body.light-theme .katex-inline-wrap.trans-sentence.sentence-highlight .katex {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(74, 135, 181, 0.08);
   border-left: 3px solid var(--accent-mid);
   padding: 8px 12px;
   border-radius: 4px;
@@ -3136,7 +3221,7 @@ body.light-theme .katex-inline-wrap.trans-sentence.sentence-highlight .katex {
 
 /* Light Theme overrides */
 body.light-theme .chat-quote-area {
-  background: rgba(124, 58, 237, 0.05);
+  background: rgba(74, 135, 181, 0.05);
 }
 
 
@@ -3151,17 +3236,17 @@ body.light-theme .chat-quote-area {
 }
 
 .pdf-figure-overlay {
-  border: 2px dashed rgba(139, 92, 246, 0.45);
-  background: rgba(139, 92, 246, 0.05);
+  border: 2px dashed rgba(126, 196, 232, 0.45);
+  background: rgba(126, 196, 232, 0.05);
   border-radius: 4px;
   transition: all 0.2s ease-in-out;
   pointer-events: auto !important;
 }
 
 .pdf-figure-overlay:hover {
-  background: rgba(139, 92, 246, 0.18);
-  border-color: rgba(139, 92, 246, 1.0);
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+  background: rgba(126, 196, 232, 0.18);
+  border-color: rgba(126, 196, 232, 1.0);
+  box-shadow: 0 0 10px rgba(126, 196, 232, 0.5);
 }
 
 /* ── Capture Crop Mode Styling ── */
@@ -3176,10 +3261,10 @@ body.light-theme .chat-quote-area {
 }
 
 #capture-area-btn.active {
-  background: var(--accent-mid, #8b5cf6) !important;
+  background: var(--accent-mid, #4a87b5) !important;
   color: white !important;
-  border-color: var(--accent-mid, #8b5cf6) !important;
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-mid, #4a87b5) !important;
+  box-shadow: 0 0 8px rgba(126, 196, 232, 0.4);
 }
 
 /* ── Chat Input Quote Area Image Preview ── */
@@ -3230,10 +3315,10 @@ body.light-theme .message-quote-img {
 }
 
 #capture-area-btn.active {
-  background: var(--accent-mid, #8b5cf6) !important;
+  background: var(--accent-mid, #4a87b5) !important;
   color: white !important;
-  border-color: var(--accent-mid, #8b5cf6) !important;
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-mid, #4a87b5) !important;
+  box-shadow: 0 0 8px rgba(126, 196, 232, 0.4);
 }
 
 /* ── 번역 창 너비 커스텀 변수 바인딩 ── */
@@ -3284,7 +3369,7 @@ body.light-theme .message-quote-img {
 }
 .trans-resizer-handle:hover,
 body.resizing-trans .trans-resizer-handle {
-  background: rgba(139, 92, 246, 0.25) !important;
+  background: rgba(126, 196, 232, 0.25) !important;
 }
 .trans-resizer-handle::after {
   content: '';
@@ -3341,7 +3426,7 @@ body.resizing-trans .trans-resizer-handle::after {
   width: 16px;
   right: -16px;
   border-radius: 0 6px 6px 0;
-  box-shadow: 4px 0 12px rgba(139, 92, 246, 0.2);
+  box-shadow: 4px 0 12px rgba(126, 196, 232, 0.2);
 }
 .trans-collapse-btn:active {
   width: 12px;
@@ -3394,7 +3479,7 @@ body.resizing-trans .trans-resizer-handle::after {
   color: var(--text-primary);
 }
 .toolbar-group .icon-btn.active {
-  background: rgba(139, 92, 246, 0.15) !important;
+  background: rgba(126, 196, 232, 0.15) !important;
   color: var(--accent-mid) !important;
 }
 
@@ -3504,12 +3589,12 @@ body.resizing-trans .trans-resizer-handle::after {
 
 /* ── 문장 더블클릭 수정 모드 스타일 ── */
 .trans-sentence.inline-editing {
-  background: rgba(139, 92, 246, 0.15) !important;
+  background: rgba(126, 196, 232, 0.15) !important;
   outline: 2px solid var(--accent-mid) !important;
   border-radius: var(--radius-sm);
   padding: 2px 4px;
   cursor: text !important;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 10px rgba(126, 196, 232, 0.3);
 }
 
 /* ── 텍스트 선택 메뉴 내 컬러 피커 스타일 ── */
@@ -3579,12 +3664,12 @@ body.light-theme .color-dot.selected {
 
 /* 클릭으로 매칭/이동 시 고정 하이라이트 유지 스타일 */
 .pdf-sentence.active-mapped-sentence, .trans-sentence.active-mapped-sentence {
-  background-color: rgba(139, 92, 246, 0.28) !important;
+  background-color: rgba(126, 196, 232, 0.28) !important;
   border-radius: var(--radius-xs);
   transition: background-color 0.15s ease;
 }
 body.light-theme .pdf-sentence.active-mapped-sentence, body.light-theme .trans-sentence.active-mapped-sentence {
-  background-color: rgba(139, 92, 246, 0.18) !important;
+  background-color: rgba(126, 196, 232, 0.18) !important;
 }
 
 /* 메모를 보유한 원문 문장 하이라이트 스타일 */
@@ -3856,7 +3941,7 @@ body.light-theme .custom-confirm-modal {
 }
 .custom-confirm-btn.confirm-btn.primary-btn:hover {
   background: var(--accent-strong);
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 12px rgba(126, 196, 232, 0.4);
 }
 
 /* ── Color picker in memo header ── */
@@ -4058,7 +4143,7 @@ body.light-theme .library-tab-btn.active {
 }
 .doc-card-check-btn:hover {
   border-color: var(--accent-mid);
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(126, 196, 232, 0.05);
   color: var(--accent-mid);
   transform: scale(1.05);
 }
@@ -4170,11 +4255,11 @@ body.light-theme .viewer-read-btn.active svg {
   border-left: 3px solid var(--accent-mid);
   border-bottom: 1px solid var(--border-strong);
   margin-bottom: 0;
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(126, 196, 232, 0.05);
   padding: 10px 14px;
 }
 body.light-theme .chat-input-box .chat-quote-area {
-  background: rgba(139, 92, 246, 0.03);
+  background: rgba(126, 196, 232, 0.03);
 }
 
 
@@ -4195,23 +4280,23 @@ body.light-theme .chat-input-box .chat-quote-area {
 .sentence-hover-box {
   position: absolute;
   pointer-events: none !important;
-  background-color: rgba(124, 58, 237, 0.22);
+  background-color: rgba(74, 135, 181, 0.22);
   border-radius: 2px;
 }
 body.light-theme .sentence-hover-box {
-  background-color: rgba(124, 58, 237, 0.18);
+  background-color: rgba(74, 135, 181, 0.18);
 }
 
 /* 클릭 고정 하이라이트 상자 */
 .sentence-active-box {
   position: absolute;
   pointer-events: none !important;
-  background-color: rgba(124, 58, 237, 0.30);
+  background-color: rgba(74, 135, 181, 0.30);
   border-radius: 2px;
-  outline: 1px solid rgba(124, 58, 237, 0.40);
+  outline: 1px solid rgba(74, 135, 181, 0.40);
 }
 body.light-theme .sentence-active-box {
-  background-color: rgba(124, 58, 237, 0.22);
+  background-color: rgba(74, 135, 181, 0.22);
 }
 
 /* 메모 표시 하이라이트 상자 */
@@ -4237,7 +4322,7 @@ body.light-theme .sentence-memo-box {
 
 /* 클릭 펄스 애니메이션 (오버레이 상자용) */
 @keyframes overlayPulse {
-  0% { background-color: rgba(124, 58, 237, 0.50); }
+  0% { background-color: rgba(74, 135, 181, 0.50); }
   100% { background-color: transparent; }
 }
 .sentence-pulse-box {
@@ -4250,15 +4335,15 @@ body.light-theme .sentence-memo-box {
 /* 키워드/단어 탭 용어 클릭 시 원문 위치 하이라이트 - 스크롤이 끝난 뒤에 표시되므로
    citation 클릭용 pulse보다 오래 보이도록 별도 애니메이션을 둔다(일정 시간 유지 후 페이드) */
 @keyframes locateHighlightPulse {
-  0%   { background-color: rgba(124, 58, 237, 0.55); }
-  65%  { background-color: rgba(124, 58, 237, 0.55); }
+  0%   { background-color: rgba(74, 135, 181, 0.55); }
+  65%  { background-color: rgba(74, 135, 181, 0.55); }
   100% { background-color: transparent; }
 }
 .sentence-locate-pulse-box {
   position: absolute;
   pointer-events: none !important;
   border-radius: 2px;
-  outline: 2px solid rgba(124, 58, 237, 0.45);
+  outline: 2px solid rgba(74, 135, 181, 0.45);
   animation: locateHighlightPulse 1.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
@@ -4271,6 +4356,17 @@ body.light-theme .sentence-memo-box {
 }
 
 /* 라이브러리 화면 새 논문 추가 플로팅 버튼 */
+@keyframes btn-glow-pulse-fab {
+  0%, 100% { box-shadow: var(--shadow-md), 0 0 0 rgba(0, 0, 0, 0); }
+  50%      { box-shadow: var(--shadow-md), 0 6px 24px var(--accent-glow-strong); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #lib-upload-btn {
+    animation: none !important;
+    box-shadow: var(--shadow-md), 0 6px 20px var(--accent-glow-strong);
+  }
+}
+
 #lib-upload-btn {
   position: fixed;
   bottom: 40px;
@@ -4280,11 +4376,12 @@ body.light-theme .sentence-memo-box {
   font-size: 14px;
   font-weight: 700;
   border-radius: 50px;
-  background: var(--control-accent);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-mid));
   color: #fff;
   border: none;
   box-shadow: var(--shadow-md);
   transition: filter 0.15s ease, transform 0.15s ease;
+  animation: btn-glow-pulse-fab 2.8s ease-in-out infinite;
   display: flex;
   align-items: center;
   gap: 8px;

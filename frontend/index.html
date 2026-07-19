@@ -356,7 +356,19 @@
               <option value="2.5">170%</option>
             </select>
           </div>
-          
+
+          <div class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
+            <label>테마 색상</label>
+            <div id="setting-accent-swatches" class="accent-swatch-group"></div>
+            <div class="accent-picker-row">
+              <label for="setting-accent-picker" class="accent-picker-swatch">
+                <input type="color" id="setting-accent-picker" value="#2563eb" />
+              </label>
+              <span id="setting-accent-hex" class="accent-hex-label">#2563EB</span>
+              <button type="button" id="setting-accent-reset-btn" class="accent-reset-btn">기본값</button>
+            </div>
+          </div>
+
           <div class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
             <label>뷰어 편의 설정</label>
             <div class="checkbox-group">
