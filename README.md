@@ -9,10 +9,12 @@ EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으�
 ## Screenshots
 <details>
 <summary>이미지 보기</summary>
-  <img src="./image/library1.png" width="45%">
-  <img src="./image/library2.png" width="45%">
-  <img src="./image/viewer1.png" width="45%">
-  <img src="./image/viewer2.png" width="45%">
+
+![library1](./image/library1.png)
+![library2](./image/library2.png)
+![viewer1](./image/viewer1.png)
+![viewer2](./image/viewer2.png)
+
 </details>
 
 
