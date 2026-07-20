@@ -3,7 +3,18 @@
 EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으로 대화할 수 있는 통합 웹 서비스입니다. 
 논문을 업로드하면 원문 옆에 AI 번역본이 함께 표시되며, 궁금한 내용을 바로 질문할 수 있습니다. 
 
-본 서비스의 번역 및 어시스턴트 모델로는 로컬 Ollama 모델, 외부 API(Gemini, Claude, OpenAI), antigravity를 지원합니다.
+본 서비스의 번역 및 어시스턴트 모델로는 로컬 Ollama 모델, 외부 API(Gemini, Claude, OpenAI), 그리고 CLI 기반 엔진(Antigravity, Claude Code, Codex)을 지원합니다.
+
+
+## Screenshots
+<details>
+<summary>이미지 보기</summary>
+  <img src="./image/library1.png" width="45%">
+  <img src="./image/library2.png" width="45%">
+  <img src="./image/viewer1.png" width="45%">
+  <img src="./image/viewer2.png" width="45%">
+</details>
+
 
 ---
 
@@ -35,13 +46,14 @@ cd EasyPaper
 
 ## 주요 기능
 
-1. **내 라이브러리** — 라이브러리 화면에 PDF를 드래그 앤 드롭하여 바로 업로드할 수 있으며, 업로드 완료 즉시 백그라운드 번역이 시작됩니다.
+1. **내 라이브러리** — 라이브러리 화면에 PDF를 드래그 앤 드롭하여 바로 업로드할 수 있으며, 업로드 완료 즉시 백그라운드 번역이 시작됩니다. 카드형/리스트형 보기를 전환할 수 있고, 카테고리 필터로 원하는 논문만 모아볼 수 있습니다.
 2. **AI 카테고리 자동 태깅** — 업로드 후 AI가 논문 초록과 본문을 분석하여 카테고리 태그(예: `VLM`, `VLA`, `GAN`, `CNN`,`Optimizer` 등)를 자동으로 부여합니다.
 3. **정밀한 1:1 문장 매칭 & 스크롤 이동** — 원문 PDF 문장과 번역문 문장 간의 마우스 오버 하이라이트 및 클릭 시 반대편 패널 위치 자동 스크롤(양방향) 기능을 지원합니다. LLM 의미론적 태깅 정렬 방식(Semantic Tag Alignment)을 통해 정밀도 높은 문장 정렬을 제공합니다.
 4. **듀얼 패널 뷰어** — 원본 PDF와 AI 번역 결과를 나란히 보며 읽을 수 있고, 패널 너비를 자유롭게 조절할 수 있습니다.
 5. **AI 채팅 어시스턴트** — 논문 내용을 바탕으로 질문할 수 있으며, 답변 생성 대기 상태의 **선형 프로그레스 바(Linear Loader)**와 **현대적인 알약(Capsule) 디자인 UI**를 제공합니다.
-6. **통합 모델 선택기** — UI 안에서 제공업체와 AI 모델(Ollama, Gemini, Claude, OpenAI, Antigravity)을 즉시 전환할 수 있습니다.
-7. **자유 배치 Floating 메모** — 논문 본문 및 번역문 위에 메모를 자유롭게 배치하여 기록할 수 있습니다. 실시간 Markdown & LaTeX 수식 렌더링, 5색 테마 컬러 피커, 글래스모피즘 기반 커스텀 삭제 대화상자를 지원합니다.
+6. **통합 모델 선택기** — UI 안에서 제공업체와 AI 모델(Ollama, Gemini, Claude, OpenAI, Antigravity, Claude Code, Codex)을 즉시 전환할 수 있습니다. 로컬에 Ollama가 설치되어 있지 않다면 설정 화면에서 원클릭으로 바로 설치할 수 있습니다.
+7. **자유 배치 Floating 메모** — 논문 본문 및 번역문 위에 메모를 자유롭게 배치하여 기록할 수 있습니다. 실시간 Markdown & LaTeX 수식 렌더링, 5색 테마 컬러 피커, 커스텀 삭제 대화상자를 지원합니다.
+8. **테마 색상 커스터마이징** — 설정 화면에서 프리셋 컬러 또는 컬러 피커로 서비스 전체의 강조 색상을 자유롭게 바꿀 수 있으며, 미니멀하고 절제된 다크/라이트 테마를 기본으로 제공합니다.
 
 ---
 
@@ -112,80 +124,10 @@ sudo journalctl -u easypaper -f
 
 ---
 
-## Antigravity CLI (`agy`) 연동 가이드
+## CLI 기반 AI 엔진 (Antigravity / Claude Code / Codex)
 
-EasyPaper 백엔드에는 Google Antigravity CLI(`agy`)를 서브프로세스로 호출하여 번역, 논문 태깅, 채팅을 처리하는 전용 `antigravity` LLM Provider 엔진이 포함되어 있습니다.
+EasyPaper는 Google Antigravity(`agy`), Anthropic Claude Code(`claude`), OpenAI Codex(`codex`) CLI를 서브프로세스로 연동하는 전용 LLM Provider를 내장하고 있습니다.
 
-`antigravity`를 사용하여 더 나은 번역과 질문 응답을 받아보려면 아래 단계를 완료하세요:
+로컬 또는 서버 환경에 해당 CLI 프로그램이 설치되어 로그인까지 완료되어 있다면, EasyPaper가 기동 시 이를 자동으로 감지하여 라이브러리·뷰어의 모델 선택 드롭다운에 해당 공급자를 바로 활성화합니다. 별도의 추가 설정은 필요하지 않습니다.
 
-### 1. `agy` CLI 설치 확인
-
-서버에 `agy` 실행 파일이 설치되어 있어야 합니다.
-
-- EasyPaper는 기본적으로 `/home/ubuntu/.local/bin/agy` 경로를 먼저 확인합니다.
-- 해당 경로에 없으면 시스템 `PATH`에서 `agy`를 찾아 실행합니다.
-
-> 다른 경로에 설치한 경우, 해당 경로가 `PATH` 환경 변수에 등록되어 있는지 확인하세요.
-
-### 2. Google 계정 인증
-
-`agy` CLI는 EasyPaper 서버를 실행하는 OS 사용자 계정(예: `ubuntu`)에서 미리 인증이 완료되어 있어야 합니다.
-
-```bash
-# agy를 한 번 실행하여 OAuth 인증을 시작합니다
-agy
-```
-
-최초 실행 시 Google OAuth 로그인 URL이 출력됩니다. 브라우저에서 해당 URL로 로그인한 뒤, 발급된 인증 코드를 터미널에 붙여넣으면 인증이 완료됩니다. 이후 정상 동작 여부를 확인합니다:
-
-```bash
-/home/ubuntu/.local/bin/agy --help
-```
-
-### 3. 자동 실행 권한 설정
-
-EasyPaper는 백그라운드 번역 작업을 중단 없이 실행하기 위해 `agy --dangerously-skip-permissions` 플래그를 사용합니다. 이 플래그는 대화형 권한 확인 프롬프트를 건너뛰고 자동으로 승인합니다.
-
-서버 실행 사용자가 `agy` 바이너리를 실행할 수 있는 권한을 가지고 있으며, `~/.gemini/antigravity-cli/settings.json`에 정의된 워크스페이스 디렉토리에 접근 가능한지 확인하세요.
-
-### 4. systemd 서비스 실행 시 환경변수 주의사항
-Linux 서버에서 `easypaper.service` 데몬을 통해 실행할 경우, systemd 컨텍스트에 `$HOME` 환경 변수가 누락되어 `agy` 자식 프로세스 실행 시 `$HOME is not defined` 에러와 함께 무한 대기(Hang) 현상이 일어날 수 있습니다.
-
-이를 위해 백엔드 코드 내부적으로 호출 시 `/home/ubuntu` 경로와 `ubuntu` 유저 정보를 환경변수 딕셔너리에 동적으로 주입(`get_agy_env()`)하여 안전망을 확보해 두었습니다. 서비스 설정 파일 내 `User=ubuntu` 속성이 실제 서버 실행 계정명과 일치하는지 최종 확인해 주시기 바랍니다.
-
-> **Antigravity를 사용하지 않는 경우:** `.env` 파일에서 `TRANS_PROVIDER`와 `CHAT_PROVIDER`를 `ollama`로 설정하거나, Gemini·OpenAI·Claude API 키를 등록하여 사용하세요.
-
----
-
-## Claude Code CLI (`claude`) 연동 가이드
-
-EasyPaper는 Anthropic의 Claude Code CLI(`claude`)를 서브프로세스로 연동하여 실시간 논문 번역 및 AI 어시스턴트(채팅), 그리고 자동 카테고리 태깅 엔진으로 사용할 수 있는 `claude_code` LLM Provider를 지원합니다.
-
-`claude_code`를 사용하여 우수한 한국어 번역 결과와 뛰어난 논문 분석 기능을 경험해 보세요.
-
-### 1. `claude` CLI 설치 확인
-서버 환경에 Claude Code CLI가 설치되어 있어야 합니다.
-- EasyPaper는 기본적으로 `/home/ubuntu/.local/bin/claude` 경로를 먼저 확인합니다.
-- 해당 경로에 없으면 시스템 `PATH`에서 `claude`를 찾아 실행합니다.
-- 환경변수 `CLAUDE_CODE_PATH`를 통해 커스텀 설치 경로를 수동 지정할 수도 있습니다.
-
-### 2. Anthropic 계정 인증
-Claude Code CLI는 EasyPaper 서버를 실행하는 OS 사용자 계정에서 미리 로그인이 완료되어 있어야 합니다.
-
-```bash
-# 최초 1회 로그인을 수행합니다 (인증 창이 열립니다)
-claude auth
-```
-
-인증이 성공적으로 완료되었는지 확인하려면 다음 명령어를 터미널에서 실행하여 정상 작동하는지 점검하세요:
-```bash
-/home/ubuntu/.local/bin/claude --version
-```
-
-### 3. 무인 자동 실행 및 권한 정책
-EasyPaper는 논문 번역 및 채팅 요청을 백그라운드에서 실시간으로 스트리밍하기 위해 `--permission-mode dontAsk` 플래그를 사용합니다. 이를 통해 대화형 동의 확인 절차를 건너뛰고 비대화식(`--print`) 출력을 바로 수집합니다.
-
-### 4. 동적 드롭다운 표시
-EasyPaper는 기동 시 로컬 환경에 `claude` 실행 파일이 유효하게 설치되어 있고 실행 가능한지 백엔드에서 자체 진단합니다.
-- 설치가 확인되면 라이브러리 및 뷰어 화면의 모델 선택 드롭다운에 **`Claude Code`** 공급자 그룹과 관련 모델(`Sonnet`, `Fable`, `Opus`, `Haiku`)이 자동으로 활성화되어 나타납니다.
-- 설치되어 있지 않다면 드롭다운 목록에 노출되지 않아 잘못된 선택으로 인한 오류를 예방합니다.
+> CLI 엔진을 사용하지 않는 경우: 설정 화면 또는 `.env`에서 Ollama, Gemini, OpenAI, Claude API 중 원하는 방식으로 자유롭게 사용할 수 있습니다.

@@ -16,10 +16,12 @@ dist-ssr/
 # AI
 ask/
 AGENTS.md
+CLAUDE.md
 
 # EasyPaper Local Databases & Storage
 backend/easypaper.db
 backend/easypaper.db-journal
+/cache/
 backend/uploads/
 backend/library/
 backend/cache/
