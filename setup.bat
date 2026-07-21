@@ -7,11 +7,28 @@ echo =========================================
 echo EasyPaper Auto Setup ^& Installation Script
 echo =========================================
 
-where python >nul 2>nul
+where python 2>nul | findstr /i "WindowsApps" >nul
+if not errorlevel 1 (
+    echo Error: 'python' currently points to the Windows Store app-execution-alias
+    echo stub, not a real Python installation ^(this stub only prints "Python" and
+    echo exits without doing anything^).
+    echo.
+    echo If you installed Python via Miniforge/Anaconda/Miniconda: run this script
+    echo from an "Anaconda Prompt" / "Miniforge Prompt" ^(where the base environment
+    echo is already activated^) instead of double-clicking it from Explorer.
+    echo.
+    echo Otherwise, disable the fake alias at:
+    echo   Settings ^> Apps ^> Advanced app settings ^> App execution aliases
+    echo   ^(turn off "python.exe" / "python3.exe"^)
+    goto :error
+)
+
+python --version >nul 2>nul
 if errorlevel 1 (
     echo Error: 'python' command not found.
     echo Please install Python 3.8+ from https://www.python.org/downloads/
     echo and make sure to check "Add python.exe to PATH" during installation.
+    echo ^(If you use Miniforge/Anaconda, run this from an Anaconda/Miniforge Prompt.^)
     goto :error
 )
 
