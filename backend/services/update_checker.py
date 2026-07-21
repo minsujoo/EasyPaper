@@ -18,6 +18,7 @@ VALID_INTERVALS = ("daily", "weekly", "never")
 DEFAULT_INTERVAL = "weekly"
 
 _current_version_cache: Optional[str] = None
+_current_version_date_cache: Optional[str] = None
 
 
 async def _run_git(*args: str, timeout: float = 30.0) -> tuple[int, str, str]:
@@ -58,21 +59,41 @@ async def get_current_version() -> str:
     return _current_version_cache
 
 
+async def get_current_version_date() -> Optional[str]:
+    """현재 실행 중인 커밋의 날짜(YYYY-MM-DD)를 반환합니다. 버전 해시 자체는 그대로
+    두고, 화면에 표시할 때 사람이 읽기 쉽도록 날짜를 함께 보여주기 위한 값이다."""
+    global _current_version_date_cache
+    if _current_version_date_cache:
+        return _current_version_date_cache
+    _current_version_date_cache = await _get_commit_date("HEAD")
+    return _current_version_date_cache
+
+
+async def _get_commit_date(ref: str) -> Optional[str]:
+    code, out, _ = await _run_git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d", ref)
+    return out if code == 0 and out else None
+
+
 async def check_for_update() -> dict:
     """원격 origin/main을 fetch해 현재 버전과 비교합니다.
 
-    반환값: {ok, current_version, latest_version, update_available, changelog, error?}
+    반환값: {ok, current_version, current_version_date, latest_version,
+    latest_version_date, update_available, changelog, error?}
     changelog는 현재 버전에는 없고 최신 버전에는 있는 커밋들의 {sha, subject} 목록
-    (오래된 순 → 최신 순).
+    (오래된 순 → 최신 순). *_version_date는 해시 자체는 그대로 두고 화면에 표시할
+    때 사람이 읽기 쉽도록 덧붙이는 커밋 날짜(YYYY-MM-DD)다.
     """
     current_version = await get_current_version()
+    current_version_date = await get_current_version_date()
 
     fetch_code, _, fetch_err = await _run_git("fetch", "origin", "main")
     if fetch_code != 0:
         return {
             "ok": False,
             "current_version": current_version,
+            "current_version_date": current_version_date,
             "latest_version": current_version,
+            "latest_version_date": current_version_date,
             "update_available": False,
             "changelog": [],
             "error": f"원격 저장소 확인 실패: {fetch_err or '알 수 없는 오류'}",
@@ -83,7 +104,9 @@ async def check_for_update() -> dict:
         return {
             "ok": False,
             "current_version": current_version,
+            "current_version_date": current_version_date,
             "latest_version": current_version,
+            "latest_version_date": current_version_date,
             "update_available": False,
             "changelog": [],
             "error": f"최신 버전 확인 실패: {latest_err or '알 수 없는 오류'}",
@@ -96,16 +119,21 @@ async def check_for_update() -> dict:
         return {
             "ok": True,
             "current_version": current_version,
+            "current_version_date": current_version_date,
             "latest_version": latest_version,
+            "latest_version_date": current_version_date,
             "update_available": False,
             "changelog": [],
         }
 
+    latest_version_date = await _get_commit_date("origin/main")
     changelog = await _get_changelog(current_version, "origin/main")
     return {
         "ok": True,
         "current_version": current_version,
+        "current_version_date": current_version_date,
         "latest_version": latest_version,
+        "latest_version_date": latest_version_date,
         "update_available": True,
         "changelog": changelog,
     }
@@ -157,15 +185,16 @@ async def get_post_update_notice() -> dict:
     (업데이트된 게 아니라 그냥 처음 뜬 것이므로).
     """
     current_version = await get_current_version()
+    current_version_date = await get_current_version_date()
     last_shown = db_get_meta("last_shown_update_version")
 
     if last_shown is None:
         db_set_meta("last_shown_update_version", current_version)
-        return {"show": False, "version": current_version, "changelog": []}
+        return {"show": False, "version": current_version, "version_date": current_version_date, "changelog": []}
 
     if last_shown == current_version:
-        return {"show": False, "version": current_version, "changelog": []}
+        return {"show": False, "version": current_version, "version_date": current_version_date, "changelog": []}
 
     changelog = await _get_changelog(last_shown, "HEAD")
     db_set_meta("last_shown_update_version", current_version)
-    return {"show": True, "version": current_version, "changelog": changelog}
+    return {"show": True, "version": current_version, "version_date": current_version_date, "changelog": changelog}
