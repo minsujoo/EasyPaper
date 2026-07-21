@@ -117,6 +117,18 @@ npm run dev # 개발 서버 시작 (http://localhost:5173)
 
 ---
 
+## 테스트
+
+백엔드 테스트는 pytest로 작성되어 있으며, 실제 프로젝트 데이터(DB/업로드/라이브러리)는 건드리지 않고 임시 디렉터리에서 격리 실행됩니다.
+
+```bash
+cd backend
+.venv/bin/pip install -r requirements-dev.txt   # 최초 1회
+.venv/bin/python -m pytest tests/ -v
+```
+
+---
+
 ## 상시 구동 — systemd 서비스 등록 (선택 사항)
 
 Linux 서버에서 EasyPaper를 백그라운드 데몬으로 상시 실행하려면 제공된 `easypaper.service` 파일을 활용하세요.
