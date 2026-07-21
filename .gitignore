@@ -368,3 +368,8 @@ pyrightconfig.json
 *.xhtml
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,python,node,web
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/

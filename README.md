@@ -127,6 +127,16 @@ cd backend
 .venv/bin/python -m pytest tests/ -v
 ```
 
+프론트엔드 E2E 테스트는 Playwright로 작성되어 있으며, 실제 백엔드 없이 `/api/**` 응답을 목(mock)으로 대체해 빌드된 `dist/`를 대상으로 실행됩니다.
+
+```bash
+cd frontend
+npm install                # 최초 1회
+npm run build               # dist/ 생성
+npx playwright install chromium   # 최초 1회, 브라우저 바이너리 설치
+npm run test:e2e
+```
+
 ---
 
 ## 상시 구동 — systemd 서비스 등록 (선택 사항)
