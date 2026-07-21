@@ -38,6 +38,12 @@ cd EasyPaper
 ```
 
 > **Windows에서 실행하는 경우:** `git clone` 시 이미 설치된 **Git Bash**(Git for Windows 기본 포함)에서 위 명령을 그대로 실행하면 됩니다. 별도의 스크립트나 셸이 필요하지 않으며, 파이썬 가상환경 내부 경로(`bin/` vs `Scripts/`) 차이는 스크립트가 자동으로 감지해서 처리합니다.
+>
+> 만약 `setup.sh: line 3: $'\r': command not found` 같은 오류가 발생한다면, 클론 당시 Git의 `core.autocrlf` 설정으로 인해 스크립트 파일이 Windows 줄바꿈(CRLF)으로 변환되어 저장된 것입니다(현재 저장소에는 이를 방지하는 `.gitattributes`가 포함되어 있어 새로 클론하면 발생하지 않습니다). 이미 클론한 상태라면 저장소를 새로 클론하거나, 기존 폴더에서 다음 명령으로 파일을 다시 체크아웃하세요:
+> ```bash
+> git rm --cached -r .
+> git reset --hard
+> ```
 
 서버 구동 후 브라우저에서 `http://localhost:8000` 에 접속합니다.
 
