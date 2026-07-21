@@ -569,6 +569,43 @@ export async function triggerSystemUpdateAPI() {
   return res.json()
 }
 
+/**
+ * 자동 업데이트 확인 주기 설정을 조회/저장합니다.
+ */
+export async function getUpdateCheckConfigAPI() {
+  const res = await fetch(`${API_BASE}/settings/update-check-config`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('업데이트 확인 설정 조회 실패')
+  return res.json()
+}
+
+export async function setUpdateCheckConfigAPI(interval) {
+  const res = await fetch(`${API_BASE}/settings/update-check-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interval })
+  })
+  if (!res.ok) throw new Error('업데이트 확인 설정 저장 실패')
+  return res.json()
+}
+
+/**
+ * 원격 저장소를 확인해 새 버전이 있는지 조회합니다 (변경 로그 포함).
+ */
+export async function checkForUpdateAPI() {
+  const res = await fetch(`${API_BASE}/settings/update-check`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('업데이트 확인 실패')
+  return res.json()
+}
+
+/**
+ * 방금 업데이트가 적용되어 재시작된 직후라면(1회 한정) 안내 정보를 조회합니다.
+ */
+export async function getPostUpdateNoticeAPI() {
+  const res = await fetch(`${API_BASE}/settings/post-update-notice`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('업데이트 완료 안내 조회 실패')
+  return res.json()
+}
+
 export async function fetchTrashAPI() {
   const res = await fetch(`${API_BASE}/library/trash`, { cache: 'no-store' })
   if (!res.ok) throw new Error('휴지통 목록 조회 실패')
