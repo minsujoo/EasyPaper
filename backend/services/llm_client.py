@@ -72,6 +72,29 @@ async def _wait_with_timeout(process, label: str = "CLI"):
         raise RuntimeError(f"{label} 프로세스가 출력 종료 후에도 {CLI_EXIT_TIMEOUT_SECONDS}초 이상 종료되지 않아 강제 종료했습니다.")
 
 
+def _start_stderr_drain(process):
+    """stderr을 별도 태스크로 즉시 계속 읽기 시작한다.
+
+    이전에는 stdout을 다 읽고 프로세스가 끝난 뒤에야 stderr를 읽었는데, CLI가
+    stderr에 충분히 많은 내용을 써서 OS 파이프 버퍼(보통 64KB)가 가득 차면
+    자식 프로세스가 그 write() 호출에서 멈춰버리고, 그 상태로는 stdout도
+    더 이상 진행되지 않아 사실상 데드락에 빠질 수 있었다. 생성과 동시에
+    별도 태스크로 계속 읽어 버퍼가 절대 가득 차지 않게 한다.
+    """
+    return asyncio.create_task(process.stderr.read())
+
+
+async def _finish_stderr_drain(stderr_task) -> str:
+    """stderr 드레인 태스크를 정리하고 지금까지 모인 내용을 문자열로 반환한다."""
+    if not stderr_task.done():
+        stderr_task.cancel()
+    try:
+        data = await stderr_task
+    except (asyncio.CancelledError, Exception):
+        return ""
+    return data.decode("utf-8", errors="replace") if data else ""
+
+
 async def stream_translation(
     text: str,
     target_lang: str = "한국어",
@@ -948,6 +971,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     env=env,
                     cwd=get_project_root()
                 )
+                stderr_task = _start_stderr_drain(process)
 
                 process.stdin.write(encoded_prompt)
                 await process.stdin.drain()
@@ -982,7 +1006,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                         save_ai_session_meta(session_id, provider="claude_code")
                     return
 
-                stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+                stderr_out = await _finish_stderr_drain(stderr_task)
 
                 # --resume 대상 세션이 아직 존재하지 않는 최초 호출인 경우에만
                 # --session-id로 세션을 새로 만들며 1회 재시도한다.
@@ -1104,6 +1128,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                     env=env,
                     cwd=get_project_root()
                 )
+                stderr_task = _start_stderr_drain(process)
 
                 process.stdin.write(encoded_prompt)
                 await process.stdin.drain()
@@ -1146,7 +1171,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                         save_ai_session_meta(session_id, provider="codex", conversation_id=new_thread_id)
                     return
 
-                stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+                stderr_out = await _finish_stderr_drain(stderr_task)
 
                 # resume 대상 세션이 더 이상 존재하지 않는 경우에만 새 세션으로 1회 재시도한다.
                 if (
@@ -1462,6 +1487,7 @@ async def stream_antigravity(
             env=get_agy_env(),
             cwd=get_project_root()
         )
+        stderr_task = _start_stderr_drain(process)
 
         import codecs
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -1485,7 +1511,7 @@ async def stream_antigravity(
         # 저장해버렸다. 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직
         # (에러 응답, failed_pages 기록 등)이 실제로 작동하게 한다.
         if process.returncode and process.returncode != 0:
-            stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+            stderr_out = await _finish_stderr_drain(stderr_task)
             print(f"[Antigravity CLI Error] code={process.returncode} stderr={stderr_out[:500]}", flush=True)
             raise RuntimeError(
                 f"Antigravity CLI 실행 실패 (code={process.returncode}): "
