@@ -642,4 +642,41 @@ async def system_update(current_user: str = Depends(get_current_user)):
         }
 
 
+class UpdateCheckConfigRequest(BaseModel):
+    interval: str
+
+
+@router.get("/settings/update-check-config")
+async def get_update_check_config_endpoint(current_user: str = Depends(get_current_user)):
+    """자동 업데이트 확인 주기 설정과 마지막 확인 시각을 반환합니다."""
+    from services.update_checker import get_update_check_config
+    return get_update_check_config()
+
+
+@router.post("/settings/update-check-config")
+async def set_update_check_config_endpoint(
+    data: UpdateCheckConfigRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """자동 업데이트 확인 주기를 저장합니다 (daily/weekly/never)."""
+    from services.update_checker import set_update_check_interval
+    try:
+        return set_update_check_interval(data.interval)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/settings/update-check")
+async def check_for_update_endpoint(current_user: str = Depends(get_current_user)):
+    """원격 저장소를 확인해 새 버전이 있는지, 있다면 변경 로그를 반환합니다."""
+    from services.update_checker import check_for_update
+    return await check_for_update()
+
+
+@router.get("/settings/post-update-notice")
+async def post_update_notice_endpoint(current_user: str = Depends(get_current_user)):
+    """직전 재시작으로 버전이 바뀌었다면(방금 업데이트 완료) 1회에 한해 안내 정보를 반환합니다."""
+    from services.update_checker import get_post_update_notice
+    return await get_post_update_notice()
+
 

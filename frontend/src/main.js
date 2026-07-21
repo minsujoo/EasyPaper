@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 import { icon } from './icons.js'
@@ -1378,6 +1378,11 @@ async function checkAuthentication() {
     await loadLibraryCount()
     await refreshSystemSettings()
     maybeShowOnboarding()
+    // 업데이트 직후(방금 재시작됨) 안내가 있으면 그것부터 먼저 보여주고, 없을
+    // 때만 "새 업데이트가 있는지" 확인 - 두 팝업이 동시에 겹쳐 뜨지 않도록 함
+    checkPostUpdateNoticeOnce().then((shown) => {
+      if (!shown) maybeAutoCheckForUpdate()
+    })
   } else {
     showLogin()
   }
@@ -2417,6 +2422,197 @@ if (systemUpdateBtn) {
       }, 5000)
     }
   })
+}
+
+// ── 자동 업데이트 확인 / 새 버전 안내 / 업데이트 완료 안내 ──────────────
+const settingUpdateCheckInterval = $('setting-update-check-interval')
+const currentVersionLabel = $('current-version-label')
+
+const updateAvailableModal = $('update-available-modal')
+const updateAvailableCloseBtn = $('update-available-close-btn')
+const updateAvailableVersionLine = $('update-available-version-line')
+const updateAvailableChangelog = $('update-available-changelog')
+const updateAvailableProgressArea = $('update-available-progress-area')
+const updateAvailableStatus = $('update-available-status')
+const updateAvailableActions = $('update-available-actions')
+const updateAvailableLaterBtn = $('update-available-later-btn')
+const updateAvailableNowBtn = $('update-available-now-btn')
+
+const updateCompleteModal = $('update-complete-modal')
+const updateCompleteCloseBtn = $('update-complete-close-btn')
+const updateCompleteVersionLine = $('update-complete-version-line')
+const updateCompleteChangelog = $('update-complete-changelog')
+const updateCompleteConfirmBtn = $('update-complete-confirm-btn')
+
+const UPDATE_CHECK_INTERVAL_MS = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+}
+
+function renderChangelogList(ulEl, changelog) {
+  if (!ulEl) return
+  if (!changelog || changelog.length === 0) {
+    ulEl.innerHTML = `<li style="font-size: 12.5px; color: var(--text-muted);">세부 변경 내역이 없습니다.</li>`
+    return
+  }
+  ulEl.innerHTML = changelog.map(c => `
+    <li style="display: flex; gap: 8px; font-size: 12.5px; color: var(--text-primary); line-height: 1.5;">
+      <span style="color: var(--control-accent); flex-shrink: 0;">•</span>
+      <span>${escapeHtml(c.subject)}</span>
+    </li>
+  `).join('')
+}
+
+// 설정 화면에서 자동 업데이트 확인 주기를 로드/저장
+async function initUpdateCheckSettingUI() {
+  if (!settingUpdateCheckInterval) return
+  try {
+    const cfg = await getUpdateCheckConfigAPI()
+    settingUpdateCheckInterval.value = cfg.interval || 'weekly'
+  } catch (err) {
+    console.warn('업데이트 확인 설정 로드 실패:', err)
+  }
+}
+globalSettingsBtn.addEventListener('click', initUpdateCheckSettingUI)
+
+if (settingUpdateCheckInterval) {
+  settingUpdateCheckInterval.addEventListener('change', async () => {
+    try {
+      await setUpdateCheckConfigAPI(settingUpdateCheckInterval.value)
+      showToast('자동 업데이트 확인 설정이 저장되었습니다.', 'success')
+    } catch (err) {
+      showToast(err.message || '설정 저장 실패', 'error')
+    }
+  })
+}
+
+function closeUpdateAvailableModal() {
+  if (updateAvailableModal) updateAvailableModal.classList.add('hidden')
+}
+
+function closeUpdateCompleteModal() {
+  if (updateCompleteModal) updateCompleteModal.classList.add('hidden')
+}
+
+if (updateAvailableCloseBtn) updateAvailableCloseBtn.addEventListener('click', closeUpdateAvailableModal)
+if (updateAvailableLaterBtn) updateAvailableLaterBtn.addEventListener('click', closeUpdateAvailableModal)
+if (updateAvailableModal) {
+  updateAvailableModal.addEventListener('click', (e) => {
+    if (e.target === updateAvailableModal) closeUpdateAvailableModal()
+  })
+}
+if (updateCompleteCloseBtn) updateCompleteCloseBtn.addEventListener('click', closeUpdateCompleteModal)
+if (updateCompleteConfirmBtn) updateCompleteConfirmBtn.addEventListener('click', closeUpdateCompleteModal)
+if (updateCompleteModal) {
+  updateCompleteModal.addEventListener('click', (e) => {
+    if (e.target === updateCompleteModal) closeUpdateCompleteModal()
+  })
+}
+
+// 서버가 재시작할 시간을 준 뒤, 응답이 돌아올 때까지 짧게 폴링하고 새로고침한다.
+// (git pull 직후 서버가 스스로 프로세스를 내렸다 올리는 구간이라, 그 사이의
+// 연결 실패는 실패가 아니라 재시작 중이라는 정상 신호로 취급해야 한다)
+async function waitForServerRestartAndReload() {
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  const maxAttempts = 24 // 약 2초 + 24 * 1.5초 = 최대 약 38초 대기
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const auth = await checkAuthAPI()
+      if (auth) {
+        location.reload()
+        return
+      }
+    } catch (err) {
+      // 아직 재시작 중 - 계속 폴링
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500))
+  }
+  // 시간이 오래 걸려도 일단 새로고침을 시도해본다
+  location.reload()
+}
+
+if (updateAvailableNowBtn) {
+  updateAvailableNowBtn.addEventListener('click', async () => {
+    updateAvailableNowBtn.disabled = true
+    if (updateAvailableLaterBtn) updateAvailableLaterBtn.disabled = true
+    if (updateAvailableProgressArea) updateAvailableProgressArea.classList.remove('hidden')
+    if (updateAvailableActions) updateAvailableActions.style.display = 'none'
+    if (updateAvailableStatus) updateAvailableStatus.textContent = 'GitHub 코드 가져오는 중...'
+
+    try {
+      const res = await triggerSystemUpdateAPI()
+      if (res.ok) {
+        if (updateAvailableStatus) updateAvailableStatus.textContent = '업데이트 성공! 서버 재시작을 기다리는 중...'
+        await waitForServerRestartAndReload()
+      } else {
+        if (updateAvailableStatus) updateAvailableStatus.textContent = res.message || '업데이트 실패'
+        showToast(res.message || '업데이트 실패', 'error')
+        updateAvailableNowBtn.disabled = false
+        if (updateAvailableLaterBtn) updateAvailableLaterBtn.disabled = false
+        if (updateAvailableActions) updateAvailableActions.style.display = 'flex'
+      }
+    } catch (err) {
+      // 요청 도중 서버가 이미 재시작을 시작해 연결이 끊겼을 가능성이 높다
+      if (updateAvailableStatus) updateAvailableStatus.textContent = '서버 재시작을 감지했습니다. 잠시 후 새로고침합니다...'
+      await waitForServerRestartAndReload()
+    }
+  })
+}
+
+// 설정된 주기(매일/매주)가 지났으면 원격 저장소를 확인해 새 버전이 있는지 확인하고,
+// 있으면 변경 로그와 함께 안내 팝업을 띄운다. "사용 안 함"이면 절대 확인하지 않는다.
+async function maybeAutoCheckForUpdate() {
+  try {
+    const cfg = await getUpdateCheckConfigAPI()
+    if (settingUpdateCheckInterval) settingUpdateCheckInterval.value = cfg.interval || 'weekly'
+    if (cfg.interval === 'never') return
+
+    const intervalMs = UPDATE_CHECK_INTERVAL_MS[cfg.interval] || UPDATE_CHECK_INTERVAL_MS.weekly
+    const lastCheckedAt = cfg.last_checked_at ? new Date(cfg.last_checked_at).getTime() : 0
+    const dueNow = !lastCheckedAt || (Date.now() - lastCheckedAt) >= intervalMs
+    if (!dueNow) return
+
+    const result = await checkForUpdateAPI()
+    if (currentVersionLabel && result.current_version) {
+      currentVersionLabel.textContent = `현재 버전: ${result.current_version}`
+    }
+    if (!result.ok || !result.update_available) return
+
+    if (updateAvailableVersionLine) {
+      updateAvailableVersionLine.textContent = `${result.current_version} → ${result.latest_version}`
+    }
+    renderChangelogList(updateAvailableChangelog, result.changelog)
+    if (updateAvailableProgressArea) updateAvailableProgressArea.classList.add('hidden')
+    if (updateAvailableActions) updateAvailableActions.style.display = 'flex'
+    if (updateAvailableNowBtn) updateAvailableNowBtn.disabled = false
+    if (updateAvailableLaterBtn) updateAvailableLaterBtn.disabled = false
+    if (updateAvailableModal) updateAvailableModal.classList.remove('hidden')
+  } catch (err) {
+    console.warn('자동 업데이트 확인 실패:', err)
+  }
+}
+
+// 직전 재시작으로 버전이 바뀌었다면(=방금 업데이트 적용됨) 변경 로그와 함께
+// "업데이트 완료" 안내를 1회만 보여준다. 팝업을 실제로 띄웠는지(true/false)를
+// 반환해, 호출부가 "새 업데이트 확인" 팝업과 동시에 겹쳐 뜨지 않게 조율한다.
+async function checkPostUpdateNoticeOnce() {
+  try {
+    const notice = await getPostUpdateNoticeAPI()
+    if (currentVersionLabel && notice.version) {
+      currentVersionLabel.textContent = `현재 버전: ${notice.version}`
+    }
+    if (!notice.show) return false
+
+    if (updateCompleteVersionLine) {
+      updateCompleteVersionLine.textContent = `버전 ${notice.version}로 업데이트되었습니다.`
+    }
+    renderChangelogList(updateCompleteChangelog, notice.changelog)
+    if (updateCompleteModal) updateCompleteModal.classList.remove('hidden')
+    return true
+  } catch (err) {
+    console.warn('업데이트 완료 안내 조회 실패:', err)
+    return false
+  }
 }
 
 // 로컬 캐시 비우기

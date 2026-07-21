@@ -87,7 +87,17 @@ def init_db():
             cursor.execute("ALTER TABLE documents ADD COLUMN is_deleted INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
-            
+
+        # 6. app_meta 테이블 (자동 업데이트 확인 주기/마지막 확인 시각/마지막으로
+        #    "업데이트 완료" 알림을 보여준 버전 등, 자주 바뀌는 앱 내부 상태를
+        #    저장하는 범용 key-value 테이블)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """)
+
         conn.commit()
         
     # 기본 관리자 계정 초기 생성
@@ -379,5 +389,26 @@ def db_update_document_metadata(doc_id: str, metadata: dict) -> None:
         cursor.execute(
             "UPDATE documents SET metadata = ? WHERE id = ?",
             (meta_str, doc_id)
+        )
+        conn.commit()
+
+
+# ── 앱 내부 상태 (app_meta) ───────────────────────────────────────────────────
+
+def db_get_meta(key: str) -> Optional[str]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_meta WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else None
+
+
+def db_set_meta(key: str, value: str) -> None:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value)
         )
         conn.commit()
