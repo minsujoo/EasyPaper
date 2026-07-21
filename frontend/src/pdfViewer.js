@@ -14,6 +14,15 @@ let currentScale = 1.5
 let pageObserver = null
 let pageVisibilityObserver = null
 let visiblePageHeights = {}
+// renderScrollView가 호출될 때마다(문서 전환, 줌 변경) 증가하는 세대 카운터.
+// pdf-page-wrapper DOM 노드는 문서를 바꿔도 새로 만들지 않고 재사용하는데,
+// 이전 문서/줌에 대한 _renderPage 호출이 비동기 대기 중일 때 사용자가 빠르게
+// 다른 문서를 열면, 그 이전 렌더링이 뒤늦게 끝나면서 이미 새 문서용으로
+// 재사용된 wrapper에 옛 canvas/textLayer를 덮어써버리는 경쟁 조건이 있었다.
+// 각 _renderPage 호출이 시작 시점의 세대를 기억해뒀다가, DOM을 건드리기 전에
+// 현재 세대와 비교해서 다르면(그 사이 새로 renderScrollView가 호출됐다면)
+// 조용히 중단한다.
+let renderGeneration = 0
 
 async function loadPDFJS() {
   if (pdfjsLib) return pdfjsLib
@@ -39,6 +48,8 @@ export async function loadPDF(url) {
 export async function renderScrollView(container, zoom, { onPageVisible } = {}) {
   if (!pdfDoc) return
   currentScale = zoom
+  renderGeneration++
+  const myGeneration = renderGeneration
 
   if (pageObserver) { pageObserver.disconnect(); pageObserver = null }
 
@@ -88,7 +99,7 @@ export async function renderScrollView(container, zoom, { onPageVisible } = {}) 
       if (entry.isIntersecting) {
         if (!rendered.has(pageNum)) {
           rendered.add(pageNum)
-          _renderPage(entry.target, pageNum)
+          _renderPage(entry.target, pageNum, myGeneration)
         }
       }
     })
@@ -137,7 +148,7 @@ export async function renderScrollView(container, zoom, { onPageVisible } = {}) 
       const targetWrapper = container.querySelector(`.pdf-page-wrapper[data-page="${pNum}"]`)
       if (targetWrapper) {
         rendered.add(pNum)
-        _renderPage(targetWrapper, pNum)
+        _renderPage(targetWrapper, pNum, myGeneration)
       }
     }
   }
@@ -148,12 +159,14 @@ export async function renderScrollView(container, zoom, { onPageVisible } = {}) 
   })
 }
 
-async function _renderPage(wrapper, pageNum) {
+async function _renderPage(wrapper, pageNum, generation) {
+  if (generation !== renderGeneration) return
   const inner = wrapper.querySelector('.pdf-page-inner')
   inner.innerHTML = ''
 
   try {
     const page = await pdfDoc.getPage(pageNum)
+    if (generation !== renderGeneration) return
     const viewport = page.getViewport({ scale: currentScale })
     const dpr = window.devicePixelRatio || 1
 
@@ -186,6 +199,7 @@ async function _renderPage(wrapper, pageNum) {
 
     // 캔버스 렌더링 (먼저 실행)
     await page.render({ canvasContext: ctx, viewport }).promise
+    if (generation !== renderGeneration) return
 
     // 텍스트 레이어 렌더링
     try {
@@ -220,7 +234,7 @@ async function _renderPage(wrapper, pageNum) {
       }
 
       // 텍스트 레이어 렌더 완료 콜백 호출
-      if (window.onTextLayerRendered) {
+      if (generation === renderGeneration && window.onTextLayerRendered) {
         window.onTextLayerRendered(textLayerDiv, pageNum)
       }
     } catch (e) {
@@ -228,6 +242,7 @@ async function _renderPage(wrapper, pageNum) {
     }
 
   } catch (e) {
+    if (generation !== renderGeneration) return
     inner.innerHTML = `<div class="page-render-error">페이지 ${pageNum} 오류</div>`
     console.error(`Render p.${pageNum}:`, e)
   }
