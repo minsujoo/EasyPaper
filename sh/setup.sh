@@ -3,6 +3,9 @@
 
 set -e
 
+# 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 sh/ 하위에 있음)
+cd "$(dirname "$0")/.."
+
 echo "========================================="
 echo "⚙️  EasyPaper Auto Setup & Installation Script"
 echo "========================================="
@@ -36,9 +39,9 @@ echo "========================================="
 echo "✅ EasyPaper Setup Complete!"
 echo "========================================="
 echo "To start the development servers concurrently, run:"
-echo "   ./start-dev.sh"
+echo "   ./sh/start-dev.sh"
 echo ""
-echo "To run the production-ready FastAPI server serving both frontend & backend, run:"
-echo "   cd backend && .venv/bin/python main.py"
+echo "To run the production-ready server serving both frontend & backend, run:"
+echo "   ./sh/start.sh"
 echo "   Then open: http://localhost:8000"
 echo "========================================="

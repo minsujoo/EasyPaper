@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+REM 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 bat\ 하위에 있음)
+cd /d "%~dp0.."
 
 echo =========================================
 echo EasyPaper Auto Setup ^& Installation Script
@@ -76,10 +77,10 @@ echo =========================================
 echo EasyPaper Setup Complete!
 echo =========================================
 echo To start the development servers concurrently, run:
-echo    start-dev.bat
+echo    bat\start-dev.bat
 echo.
 echo To run the production-ready server serving both frontend ^& backend, run:
-echo    start.bat
+echo    bat\start.bat
 echo    Then open: http://localhost:8000
 echo =========================================
 echo.

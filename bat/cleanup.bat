@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+REM 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 bat\ 하위에 있음)
+cd /d "%~dp0.."
 
 echo =========================================
 echo EasyPaper Uninstall ^& Clean up Script
