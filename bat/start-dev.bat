@@ -1,10 +1,10 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 if not exist "backend\.venv" (
-    echo Error: Python virtual environment not found. Please run setup.bat first.
+    echo Error: Python virtual environment not found. Please run bat\setup.bat first.
     echo.
     pause
     exit /b 1
@@ -12,10 +12,10 @@ if not exist "backend\.venv" (
 
 echo EasyPaper development servers starting...
 
-cd /d "%~dp0backend"
+cd /d "%~dp0..\backend"
 start "EasyPaper Backend" cmd /k .venv\Scripts\python.exe main.py
 
-cd /d "%~dp0frontend"
+cd /d "%~dp0..\frontend"
 start "EasyPaper Frontend" cmd /k npm run dev
 
 echo.
