@@ -504,13 +504,89 @@ async def pull_model_stream(model_name: str, current_user: str = Depends(get_cur
     )
 
 
+def _is_running_under_systemd() -> bool:
+    """이 프로세스가 systemd 유닛으로 실행 중인지 확인합니다.
+
+    systemd는 v232부터 자신이 띄운 모든 프로세스에 유닛 실행마다 고유한
+    INVOCATION_ID 환경변수를 심어준다 - 이 프로젝트의 easypaper.service도
+    ExecStart로 직접 python main.py를 실행하므로 이 값이 신뢰할 수 있는
+    판별 근거가 된다.
+    """
+    import os
+    return bool(os.environ.get("INVOCATION_ID"))
+
+
+async def _restart_server_process(project_dir: str):
+    """서버를 재시작합니다. Linux에서 systemd로 실행 중이면 systemctl로, 그 외의
+    모든 경우(Windows/macOS, 또는 scripts/sh/start.sh·scripts\\bat\\start.bat로
+    터미널에서 직접 실행한 Linux)에는 스스로 새 프로세스를 미리 띄워두고
+    자신은 종료하는 방식으로 재시작합니다.
+
+    예전에는 `sudo systemctl restart easypaper`만 무조건 실행했는데, 이는
+    Linux + systemd 조합에서만 동작하는 명령이다. Windows에는 systemctl/sudo
+    자체가 없고, macOS는 systemd가 없어 커맨드 자체가 즉시 실패한다. 게다가
+    이 호출은 "쏘고 잊는"(fire-and-forget) 백그라운드 태스크라 실패해도
+    사용자에게는 "업데이트 성공"이라고 응답이 나간 뒤라 아무도 알아채지
+    못하고, 실제로는 서버가 예전 코드로 계속 돌아가는 상태로 남았다.
+    """
+    import asyncio
+    import os
+    import platform
+    import shutil
+    import subprocess
+    import sys
+
+    await asyncio.sleep(1.0)
+
+    if platform.system() == "Linux" and _is_running_under_systemd() and shutil.which("systemctl"):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "sudo", "systemctl", "restart", "easypaper",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            await proc.communicate()
+            return
+        except Exception as e:
+            print(f"[system_update] systemctl restart 실패, 자체 재시작으로 대체: {e}", flush=True)
+
+    # systemd가 아닌 환경 - 같은 명령으로 새 프로세스를 미리(포트가 풀릴 시간을
+    # 두고) 띄워둔 뒤 현재 프로세스를 종료해 사실상 스스로를 재시작한다.
+    backend_dir = os.path.join(project_dir, "backend")
+    python_exe = sys.executable
+    delay_launch_script = (
+        "import subprocess, sys, time\n"
+        "time.sleep(3)\n"
+        f"subprocess.Popen([{python_exe!r}, 'main.py'], cwd={backend_dir!r})\n"
+    )
+
+    popen_kwargs = {"cwd": backend_dir}
+    if platform.system() == "Windows":
+        popen_kwargs["creationflags"] = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    try:
+        subprocess.Popen([python_exe, "-c", delay_launch_script], **popen_kwargs)
+    except Exception as e:
+        print(f"[system_update] 자체 재시작 프로세스 실행 실패: {e}", flush=True)
+        return
+
+    await asyncio.sleep(0.3)
+    # 새 프로세스가 이미 대기 중이므로, 현재 프로세스는 정리 절차 없이 즉시
+    # 종료해 리스닝 중인 포트를 최대한 빨리 비워준다.
+    os._exit(0)
+
+
 @router.post("/settings/update")
 async def system_update(current_user: str = Depends(get_current_user)):
-    """깃허브 최신 커밋을 풀(pull) 받고, 프론트엔드를 빌드한 뒤 systemd 서비스를 재기동합니다."""
+    """깃허브 최신 커밋을 풀(pull) 받고, 프론트엔드를 빌드한 뒤 서버를 재기동합니다."""
     import subprocess
     import asyncio
     import os
-    
+
     try:
         # 프로젝트 루트 디렉토리 찾기
         project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -550,17 +626,8 @@ async def system_update(current_user: str = Depends(get_current_user)):
                         "message": f"프론트엔드 빌드 실패: {build_stderr.decode('utf-8', errors='replace')}"
                     }
         
-        # 3. 비동기로 1초 후에 systemd 서비스 재시작 명령을 백그라운드로 실행
-        async def restart_server():
-            await asyncio.sleep(1.0)
-            proc = await asyncio.create_subprocess_exec(
-                "sudo", "systemctl", "restart", "easypaper",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            await proc.communicate()
-            
-        asyncio.create_task(restart_server())
+        # 3. 비동기로 1초 후에 서버 재시작 (OS/실행 방식에 맞춰 자동 판단)
+        asyncio.create_task(_restart_server_process(project_dir))
         
         return {
             "ok": True,
