@@ -3136,6 +3136,13 @@ async function loadDocumentImages(docId) {
 }
 
 async function openFromLibrary(doc, shouldPushState = true) {
+  // 이전 문서에서 진행 중이던 채팅 스트림이 있으면 반드시 먼저 취소한다.
+  // 이 함수는 popstate/hashchange 라우팅(handleRouting)에서 resetState()를
+  // 거치지 않고 직접 호출될 수 있어서, 취소하지 않으면 이전 문서의 스트림
+  // 응답이 뒤늦게 도착해 방금 초기화한 새 문서의 state.chatHistory/DOM에
+  // 섞여 들어가는 경쟁 조건이 있었다.
+  if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
+
   if (shouldPushState) {
     history.pushState({ screen: 'viewer', docId: doc.id }, '', `#viewer?id=${doc.id}`)
   }
