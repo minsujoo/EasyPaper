@@ -2449,6 +2449,12 @@ const UPDATE_CHECK_INTERVAL_MS = {
   weekly: 7 * 24 * 60 * 60 * 1000,
 }
 
+// 버전 해시 자체는 그대로 두고, 화면에는 날짜를 함께 보여줘 더 읽기 쉽게 함
+function formatVersionLabel(sha, date) {
+  if (!sha) return ''
+  return date ? `${date} · ${sha}` : sha
+}
+
 function renderChangelogList(ulEl, changelog) {
   if (!ulEl) return
   if (!changelog || changelog.length === 0) {
@@ -2574,12 +2580,12 @@ async function maybeAutoCheckForUpdate() {
 
     const result = await checkForUpdateAPI()
     if (currentVersionLabel && result.current_version) {
-      currentVersionLabel.textContent = `현재 버전: ${result.current_version}`
+      currentVersionLabel.textContent = `현재 버전: ${formatVersionLabel(result.current_version, result.current_version_date)}`
     }
     if (!result.ok || !result.update_available) return
 
     if (updateAvailableVersionLine) {
-      updateAvailableVersionLine.textContent = `${result.current_version} → ${result.latest_version}`
+      updateAvailableVersionLine.textContent = `${formatVersionLabel(result.current_version, result.current_version_date)} → ${formatVersionLabel(result.latest_version, result.latest_version_date)}`
     }
     renderChangelogList(updateAvailableChangelog, result.changelog)
     if (updateAvailableProgressArea) updateAvailableProgressArea.classList.add('hidden')
@@ -2599,12 +2605,12 @@ async function checkPostUpdateNoticeOnce() {
   try {
     const notice = await getPostUpdateNoticeAPI()
     if (currentVersionLabel && notice.version) {
-      currentVersionLabel.textContent = `현재 버전: ${notice.version}`
+      currentVersionLabel.textContent = `현재 버전: ${formatVersionLabel(notice.version, notice.version_date)}`
     }
     if (!notice.show) return false
 
     if (updateCompleteVersionLine) {
-      updateCompleteVersionLine.textContent = `버전 ${notice.version}로 업데이트되었습니다.`
+      updateCompleteVersionLine.textContent = `버전 ${formatVersionLabel(notice.version, notice.version_date)}로 업데이트되었습니다.`
     }
     renderChangelogList(updateCompleteChangelog, notice.changelog)
     if (updateCompleteModal) updateCompleteModal.classList.remove('hidden')
