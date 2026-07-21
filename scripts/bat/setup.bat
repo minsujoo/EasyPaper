@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 REM 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 scripts\bat\ 하위에 있음)
 cd /d "%~dp0..\.."
@@ -8,30 +8,51 @@ echo =========================================
 echo EasyPaper Auto Setup ^& Installation Script
 echo =========================================
 
+REM 1단계: 'python'이 PATH에서 바로 정상 동작하는지 확인.
+REM Windows Store 앱 실행 별칭 스텁이면 실제로는 아무 것도 하지 않으므로 걸러낸다.
+set "PYTHON_EXE="
 where python 2>nul | findstr /i "WindowsApps" >nul
-if not errorlevel 1 (
-    echo Error: 'python' currently points to the Windows Store app-execution-alias
-    echo stub, not a real Python installation ^(this stub only prints "Python" and
-    echo exits without doing anything^).
+if errorlevel 1 (
+    python --version >nul 2>nul
+    if not errorlevel 1 set "PYTHON_EXE=python"
+)
+
+REM 2단계: bare 'python'을 못 쓰면, 더블클릭 실행 시 activate되지 않는 Miniforge,
+REM Anaconda, Miniconda의 흔한 설치 경로들을 직접 찾아본다. 설치되어 있기만 하면
+REM activate 여부와 무관하게 전체 경로로 바로 실행 가능하다.
+if not defined PYTHON_EXE (
+    echo    'python' 명령을 바로 쓸 수 없어 Miniforge/Anaconda/Miniconda 설치를 찾는 중...
+    for %%P in (
+        "%USERPROFILE%\miniforge3\python.exe"
+        "%USERPROFILE%\anaconda3\python.exe"
+        "%USERPROFILE%\miniconda3\python.exe"
+        "%LOCALAPPDATA%\miniforge3\python.exe"
+        "%PROGRAMDATA%\miniforge3\python.exe"
+        "%PROGRAMDATA%\Anaconda3\python.exe"
+        "%PROGRAMDATA%\Miniconda3\python.exe"
+    ) do (
+        if not defined PYTHON_EXE (
+            if exist %%P (
+                set "PYTHON_EXE=%%P"
+                echo    Found: %%P
+            )
+        )
+    )
+)
+
+if not defined PYTHON_EXE (
+    echo Error: 'python' command not found, and no Miniforge/Anaconda/Miniconda
+    echo installation was found in the usual locations either.
     echo.
-    echo If you installed Python via Miniforge/Anaconda/Miniconda: run this script
-    echo from an "Anaconda Prompt" / "Miniforge Prompt" ^(where the base environment
-    echo is already activated^) instead of double-clicking it from Explorer.
+    echo Please install Python 3.8+ from https://www.python.org/downloads/
+    echo and make sure to check "Add python.exe to PATH" during installation.
     echo.
-    echo Otherwise, disable the fake alias at:
-    echo   Settings ^> Apps ^> Advanced app settings ^> App execution aliases
-    echo   ^(turn off "python.exe" / "python3.exe"^)
+    echo If you use Miniforge/Anaconda/Miniconda under a different path, run this
+    echo script from an "Anaconda Prompt" / "Miniforge Prompt" instead.
     goto :error
 )
 
-python --version >nul 2>nul
-if errorlevel 1 (
-    echo Error: 'python' command not found.
-    echo Please install Python 3.8+ from https://www.python.org/downloads/
-    echo and make sure to check "Add python.exe to PATH" during installation.
-    echo ^(If you use Miniforge/Anaconda, run this from an Anaconda/Miniforge Prompt.^)
-    goto :error
-)
+echo    Using Python: !PYTHON_EXE!
 
 where npm >nul 2>nul
 if errorlevel 1 (
@@ -45,7 +66,7 @@ cd backend
 
 if not exist ".venv" (
     echo    Creating Python virtual environment ^(.venv^)...
-    python -m venv .venv
+    "!PYTHON_EXE!" -m venv .venv
     if errorlevel 1 goto :error
 )
 
