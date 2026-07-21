@@ -19,9 +19,23 @@ from config import (
     get_gemini_api_key,
     get_claude_api_key,
     get_translation_prompt_template,
-    update_translation_prompt_template
+    update_translation_prompt_template,
+    get_agy_path,
+    get_claude_code_path,
+    get_codex_path,
 )
 from services.llm_client import check_ollama_health
+
+
+async def _stream_subprocess_lines(proc):
+    """서브프로세스의 stdout을 한 줄씩 비동기로 yield합니다 (설치 스크립트 진행 로그 스트리밍용)."""
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        text = line.decode("utf-8", errors="replace").rstrip()
+        if text:
+            yield text
 
 router = APIRouter()
 
@@ -213,11 +227,17 @@ async def ollama_status(current_user: str = Depends(get_current_user)):
 
 @router.get("/settings/install-ollama")
 async def install_ollama_stream(current_user: str = Depends(get_current_user)):
-    """공식 설치 스크립트(https://ollama.com/install.sh)를 실행해 이 서버에 Ollama를
-    설치하고 진행 상황을 스트리밍합니다. 원격 호스트를 가리키고 있거나 이미 설치된
+    """이 서버의 운영체제에 맞는 방법으로 Ollama를 설치하고 진행 상황을 스트리밍합니다.
+    Linux는 공식 설치 스크립트, macOS는 Homebrew(있는 경우), Windows는 공식 설치
+    프로그램을 내려받아 무인 설치합니다. 원격 호스트를 가리키고 있거나 이미 설치된
     경우에는 실행하지 않습니다."""
     import asyncio
+    import os
+    import platform
     import shutil
+    import tempfile
+
+    system = platform.system()  # 'Linux' | 'Darwin' | 'Windows'
 
     async def event_stream():
         if not is_ollama_host_local():
@@ -228,26 +248,71 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
             return
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                "curl -fsSL https://ollama.com/install.sh | sh",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                # sudo가 비밀번호를 요구하면 무한 대기하지 않고 즉시 실패하도록 stdin을 막는다
-                stdin=asyncio.subprocess.DEVNULL,
-            )
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                if text:
+            if system == "Linux":
+                proc = await asyncio.create_subprocess_shell(
+                    "curl -fsSL https://ollama.com/install.sh | sh",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    # sudo가 비밀번호를 요구하면 무한 대기하지 않고 즉시 실패하도록 stdin을 막는다
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                async for text in _stream_subprocess_lines(proc):
                     yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+                await proc.wait()
+                if proc.returncode == 0 and shutil.which("ollama"):
+                    yield f"data: {json.dumps({'status': 'success'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'설치 스크립트가 오류 코드 {proc.returncode}로 종료되었습니다. sudo 권한이 필요할 수 있습니다.'})}\n\n"
 
-            await proc.wait()
-            if proc.returncode == 0 and shutil.which("ollama"):
-                yield f"data: {json.dumps({'status': 'success'})}\n\n"
+            elif system == "Darwin":
+                if not shutil.which("brew"):
+                    yield f"data: {json.dumps({'status': 'error', 'message': 'Homebrew가 설치되어 있지 않아 이 서버에서 자동 설치할 수 없습니다. https://ollama.com/download/mac 에서 직접 다운로드해 설치해주세요.'})}\n\n"
+                    return
+                yield f"data: {json.dumps({'status': 'progress', 'line': 'Homebrew로 Ollama를 설치합니다 (brew install ollama)...'})}\n\n"
+                proc = await asyncio.create_subprocess_shell(
+                    "brew install ollama",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                async for text in _stream_subprocess_lines(proc):
+                    yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+                await proc.wait()
+                if proc.returncode == 0 and shutil.which("ollama"):
+                    yield f"data: {json.dumps({'status': 'success'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'brew install이 오류 코드 {proc.returncode}로 종료되었습니다.'})}\n\n"
+
+            elif system == "Windows":
+                yield f"data: {json.dumps({'status': 'progress', 'line': 'Ollama 설치 프로그램을 다운로드합니다...'})}\n\n"
+                installer_path = os.path.join(tempfile.gettempdir(), "OllamaSetup.exe")
+                try:
+                    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+                        async with client.stream("GET", "https://ollama.com/download/OllamaSetup.exe") as resp:
+                            resp.raise_for_status()
+                            with open(installer_path, "wb") as f:
+                                async for chunk in resp.aiter_bytes():
+                                    f.write(chunk)
+                except Exception as e:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'설치 프로그램 다운로드 실패: {e}. https://ollama.com/download/windows 에서 직접 다운로드해주세요.'})}\n\n"
+                    return
+
+                yield f"data: {json.dumps({'status': 'progress', 'line': '다운로드 완료. 자동으로 설치를 진행합니다...'})}\n\n"
+                proc = await asyncio.create_subprocess_exec(
+                    installer_path, "/VERYSILENT", "/NORESTART",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                async for text in _stream_subprocess_lines(proc):
+                    yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+                await proc.wait()
+                if proc.returncode == 0 and shutil.which("ollama"):
+                    yield f"data: {json.dumps({'status': 'success'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'설치 프로그램이 종료 코드 {proc.returncode}로 끝났습니다. https://ollama.com/download/windows 에서 직접 설치해주세요.'})}\n\n"
             else:
-                yield f"data: {json.dumps({'status': 'error', 'message': f'설치 스크립트가 오류 코드 {proc.returncode}로 종료되었습니다. sudo 권한이 필요할 수 있습니다.'})}\n\n"
+                yield f"data: {json.dumps({'status': 'error', 'message': f'지원하지 않는 운영체제({system})입니다. https://ollama.com/download 에서 직접 설치해주세요.'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
@@ -260,6 +325,68 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
             "Connection": "keep-alive",
         }
     )
+
+
+def _make_npm_cli_install_endpoint(package_name: str, path_getter, already_installed_message: str):
+    """claude_code/codex처럼 npm 전역 패키지로 배포되는 CLI를 설치하는 SSE 스트림을 만듭니다.
+    Node.js/npm은 세 OS 모두 이미 EasyPaper의 필수 요구사항이라, 셸을 통한
+    `npm install -g <package>` 한 줄로 플랫폼 분기 없이 동일하게 동작합니다."""
+    async def stream(current_user: str = Depends(get_current_user)):
+        import asyncio
+        import os
+        import shutil
+
+        async def event_stream():
+            cli_path = path_getter()
+            if os.path.exists(cli_path) or shutil.which(cli_path):
+                yield f"data: {json.dumps({'status': 'error', 'message': already_installed_message})}\n\n"
+                return
+            if not shutil.which("npm"):
+                npm_missing_message = "'npm' 명령을 찾을 수 없습니다. Node.js가 설치되어 있는지 확인해주세요."
+                yield f"data: {json.dumps({'status': 'error', 'message': npm_missing_message})}\n\n"
+                return
+
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    f"npm install -g {package_name}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                async for text in _stream_subprocess_lines(proc):
+                    yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+                await proc.wait()
+                if proc.returncode == 0:
+                    yield f"data: {json.dumps({'status': 'success'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'설치가 오류 코드 {proc.returncode}로 종료되었습니다.'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            }
+        )
+
+    return stream
+
+
+router.add_api_route(
+    "/settings/install-claude-code",
+    _make_npm_cli_install_endpoint("@anthropic-ai/claude-code", get_claude_code_path, "Claude Code CLI가 이미 설치되어 있습니다."),
+    methods=["GET"],
+)
+
+router.add_api_route(
+    "/settings/install-codex",
+    _make_npm_cli_install_endpoint("@openai/codex", get_codex_path, "Codex CLI가 이미 설치되어 있습니다."),
+    methods=["GET"],
+)
 
 
 @router.get("/settings/pull-model")

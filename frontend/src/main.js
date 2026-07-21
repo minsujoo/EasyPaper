@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 import { icon } from './icons.js'
@@ -85,6 +85,21 @@ const changeCurrentPassword = $('change-current-password')
 const changeNewUsername     = $('change-new-username')
 const changeNewPassword     = $('change-new-password')
 const changeNewPasswordConfirm = $('change-new-password-confirm')
+
+// 첫 실행 온보딩 모달
+const onboardingModal        = $('onboarding-modal')
+const onboardingCloseBtn     = $('onboarding-close-btn')
+const onboardingSkipBtn      = $('onboarding-skip-btn')
+const onboardingDetecting    = $('onboarding-detecting')
+const onboardingDetected     = $('onboarding-detected')
+const onboardingDetectedList = $('onboarding-detected-list')
+const onboardingInstall      = $('onboarding-install')
+const onboardingInstallOllamaBtn     = $('onboarding-install-ollama-btn')
+const onboardingInstallClaudeCodeBtn = $('onboarding-install-claude-code-btn')
+const onboardingInstallCodexBtn      = $('onboarding-install-codex-btn')
+const onboardingInstallProgressArea  = $('onboarding-install-progress-area')
+const onboardingInstallStatus        = $('onboarding-install-status')
+const onboardingInstallLog           = $('onboarding-install-log')
 
 // 탭 버튼 및 컨텐츠 영역
 const tabBtns           = document.querySelectorAll('.tab-btn')
@@ -1349,6 +1364,7 @@ async function checkAuthentication() {
     }
     await loadLibraryCount()
     await refreshSystemSettings()
+    maybeShowOnboarding()
   } else {
     showLogin()
   }
@@ -7813,4 +7829,149 @@ if (viewerScrollContainer) {
     })
   })
 }
+
+// ── 첫 실행 시 AI 엔진 자동 감지 / 설치 안내 온보딩 ──────────────────
+const ONBOARDING_SEEN_KEY = 'easypaper_onboarding_seen'
+
+function maybeShowOnboarding() {
+  if (!onboardingModal) return
+  if (localStorage.getItem(ONBOARDING_SEEN_KEY) === '1') return
+  openOnboarding()
+}
+
+function openOnboarding() {
+  onboardingModal.classList.remove('hidden')
+  onboardingDetecting.classList.remove('hidden')
+  onboardingDetected.classList.add('hidden')
+  onboardingInstall.classList.add('hidden')
+  detectAndRenderOnboarding()
+}
+
+function closeOnboarding() {
+  onboardingModal.classList.add('hidden')
+  localStorage.setItem(ONBOARDING_SEEN_KEY, '1')
+}
+
+if (onboardingCloseBtn) onboardingCloseBtn.addEventListener('click', closeOnboarding)
+if (onboardingSkipBtn) onboardingSkipBtn.addEventListener('click', closeOnboarding)
+if (onboardingModal) {
+  onboardingModal.addEventListener('click', (e) => {
+    if (e.target === onboardingModal) closeOnboarding()
+  })
+}
+
+async function detectAndRenderOnboarding() {
+  let sys, cli
+  try {
+    [sys, cli] = await Promise.all([
+      getSystemSettingsAPI(),
+      fetchCliAvailability().catch(() => ({ antigravity: false, claude_code: false, codex: false })),
+    ])
+  } catch (err) {
+    console.warn('온보딩 감지 실패:', err)
+    closeOnboarding()
+    return
+  }
+
+  const detected = []
+  if (sys.available_models && sys.available_models.length > 0) {
+    detected.push({ provider: 'ollama', label: 'Ollama (로컬)', sub: sys.available_models[0], model: sys.available_models[0] })
+  }
+  if (cli.claude_code) {
+    detected.push({ provider: 'claude_code', label: 'Claude Code', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'claude_code').models[0].value })
+  }
+  if (cli.codex) {
+    detected.push({ provider: 'codex', label: 'Codex', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'codex').models[0].value })
+  }
+  if (cli.antigravity) {
+    detected.push({ provider: 'antigravity', label: 'Antigravity', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'antigravity').models[0].value })
+  }
+  if (sys.openai_api_key) {
+    detected.push({ provider: 'openai', label: 'OpenAI', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'openai').models[0].value })
+  }
+  if (sys.gemini_api_key) {
+    detected.push({ provider: 'gemini', label: 'Gemini', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'gemini')?.models[0]?.value || '' })
+  }
+  if (sys.claude_api_key) {
+    detected.push({ provider: 'claude', label: 'Anthropic Claude', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'claude').models[0].value })
+  }
+
+  onboardingDetecting.classList.add('hidden')
+
+  if (detected.length > 0) {
+    onboardingDetected.classList.remove('hidden')
+    onboardingInstall.classList.add('hidden')
+    onboardingDetectedList.innerHTML = detected.map((d, i) => `
+      <button type="button" class="onboarding-detected-btn" data-idx="${i}">
+        <span>${escapeHtml(d.label)}</span>
+        <span class="onboarding-detected-sub">${escapeHtml(d.sub)}</span>
+      </button>
+    `).join('')
+    onboardingDetectedList.querySelectorAll('.onboarding-detected-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const d = detected[Number(btn.dataset.idx)]
+        btn.disabled = true
+        try {
+          await saveSystemSettingsAPI({
+            ollama_host: sys.ollama_host,
+            trans_provider: d.provider,
+            trans_model: d.model,
+            chat_provider: d.provider,
+            chat_model: d.model,
+            openai_api_key: sys.openai_api_key,
+            gemini_api_key: sys.gemini_api_key,
+            claude_api_key: sys.claude_api_key,
+            translation_prompt_template: sys.translation_prompt_template,
+          })
+          showToast(`${d.label}을(를) 기본 AI 엔진으로 설정했습니다.`, 'success')
+          closeOnboarding()
+        } catch (err) {
+          showToast(err.message || '설정 저장 실패', 'error')
+          btn.disabled = false
+        }
+      })
+    })
+  } else {
+    onboardingDetected.classList.add('hidden')
+    onboardingInstall.classList.remove('hidden')
+  }
+}
+
+function wireOnboardingInstallBtn(btn, streamFn, label) {
+  if (!btn) return
+  btn.addEventListener('click', () => {
+    btn.disabled = true
+    const originalText = btn.textContent
+    btn.textContent = '설치 중...'
+    onboardingInstallProgressArea.classList.remove('hidden')
+    onboardingInstallStatus.textContent = `${label} 설치 진행 중...`
+    onboardingInstallLog.textContent = ''
+
+    streamFn(
+      (data) => {
+        if (data.line) {
+          onboardingInstallLog.textContent += data.line + '\n'
+          onboardingInstallLog.scrollTop = onboardingInstallLog.scrollHeight
+        }
+      },
+      async () => {
+        showToast(`${label} 설치가 완료되었습니다!`, 'success')
+        btn.disabled = false
+        btn.textContent = originalText
+        onboardingInstallProgressArea.classList.add('hidden')
+        await detectAndRenderOnboarding()
+      },
+      (err) => {
+        showToast(`${label} 설치 실패: ${err.message}`, 'error')
+        onboardingInstallStatus.textContent = err.message
+        btn.disabled = false
+        btn.textContent = originalText
+      }
+    )
+  })
+}
+
+wireOnboardingInstallBtn(onboardingInstallOllamaBtn, streamInstallOllamaAPI, 'Ollama')
+wireOnboardingInstallBtn(onboardingInstallClaudeCodeBtn, streamInstallClaudeCodeAPI, 'Claude Code CLI')
+wireOnboardingInstallBtn(onboardingInstallCodexBtn, streamInstallCodexAPI, 'Codex CLI')
 
