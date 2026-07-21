@@ -29,14 +29,32 @@ from services.llm_client import check_ollama_health
 
 
 async def _stream_subprocess_lines(proc):
-    """서브프로세스의 stdout을 한 줄씩 비동기로 yield합니다 (설치 스크립트 진행 로그 스트리밍용)."""
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        text = line.decode("utf-8", errors="replace").rstrip()
-        if text:
-            yield text
+    """서브프로세스의 stdout을 한 줄씩 비동기로 yield합니다 (설치 스크립트 진행 로그 스트리밍용).
+
+    클라이언트가 SSE 연결을 중간에 끊으면(설치 진행 중 브라우저 탭을 닫는 등)
+    FastAPI/Starlette가 이 async generator를 GeneratorExit로 강제 종료하는데,
+    그 시점에 설치 서브프로세스가 아직 살아있으면 아무도 기다려주지 않는
+    좀비/유령 프로세스로 남는다. finally에서 아직 살아있으면 항상 죽이고
+    회수해, 취소된 설치가 반복될 때마다 프로세스가 계속 쌓이지 않게 한다.
+    """
+    try:
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                yield text
+    finally:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
 
 router = APIRouter()
 
