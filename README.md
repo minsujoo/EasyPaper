@@ -22,8 +22,9 @@ EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으�
 
 ## 빠른 시작
 
-명령어 세 줄로 바로 실행이 가능합니다.
+명령어 세 줄로 바로 실행이 가능합니다. macOS·Linux는 `.sh`, Windows는 `.ps1` 스크립트를 사용하세요.
 
+**macOS / Linux**
 ```bash
 # 1. 저장소 클론
 git clone https://github.com/orion-gz/EasyPaper.git
@@ -37,11 +38,27 @@ cd EasyPaper
 ./start.sh
 ```
 
+**Windows (PowerShell)**
+```powershell
+# 1. 저장소 클론
+git clone https://github.com/orion-gz/EasyPaper.git
+cd EasyPaper
+
+# 2. 설치 스크립트 실행
+# (Python 가상환경 생성, 의존성 패키지 설치, .env 파일 생성, 프론트엔드 빌드 포함)
+.\setup.ps1
+
+# 3. 서버 시작
+.\start.ps1
+```
+> 스크립트 실행이 `실행할 수 없습니다` 등의 오류로 차단된다면, PowerShell을 관리자 권한으로 열고 아래 명령을 한 번 실행한 뒤 다시 시도하세요: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
 서버 구동 후 브라우저에서 `http://localhost:8000` 에 접속합니다.
 
-설치 및 생성된 모든 가상 환경과 빌드 데이터, systemd 서비스를 완전히 지우고 원복하려면 다음 삭제 스크립트를 실행합니다:
+설치 및 생성된 모든 가상 환경과 빌드 데이터, systemd 서비스(Linux)를 완전히 지우고 원복하려면 다음 삭제 스크립트를 실행합니다:
 ```bash
-./cleanup.sh
+./cleanup.sh      # macOS / Linux
+.\cleanup.ps1     # Windows
 ```
 
 ---
