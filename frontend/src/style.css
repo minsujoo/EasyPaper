@@ -1865,6 +1865,27 @@ body.light-theme .pdf-annotation-underline {
   font-size: 11px;
 }
 
+.onboarding-install-row button.onboarding-install-done {
+  background: var(--success) !important;
+  color: #fff !important;
+  opacity: 1 !important;
+  cursor: default;
+}
+
+/* ── 설정 > 모델 선택기의 "사용 가능" 칩 ── */
+.picker-available-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
 .onboarding-detected-btn {
   display: flex;
   align-items: center;
