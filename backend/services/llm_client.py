@@ -21,6 +21,57 @@ from config import (
 )
 
 
+# CLI(Claude Code/Codex/Antigravity) 서브프로세스 출력이 이 시간(초) 동안
+# 한 번도 들어오지 않으면 멈춘 것으로 판단한다. claude_code/codex는 이
+# 호출을 문서(session_id)당 asyncio.Lock으로 감싸는데, 타임아웃 없이
+# 무한정 기다리면 CLI가 인증 프롬프트 대기·네트워크 stall 등으로 멈췄을 때
+# 그 락을 영원히 붙잡아 해당 문서의 번역/채팅/인사이트 호출이 서버
+# 재시작 전까지 전부 막히는 문제가 있었다.
+CLI_STALL_TIMEOUT_SECONDS = 120
+# stdout이 이미 EOF로 닫힌 뒤에는 프로세스가 곧 종료되어야 정상이므로,
+# wait()에는 훨씬 짧은 타임아웃만 준다.
+CLI_EXIT_TIMEOUT_SECONDS = 10
+
+
+async def _kill_process_safely(process):
+    """멈춘 것으로 판단된 CLI 서브프로세스를 강제 종료하고 좀비로 남지 않도록 회수한다."""
+    try:
+        process.kill()
+    except Exception:
+        pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except Exception:
+        pass
+
+
+async def _read_chunk_with_timeout(process, size: int = 1024, label: str = "CLI"):
+    """process.stdout.read()에 정체 타임아웃을 적용. 타임아웃 시 프로세스를 죽이고 예외를 던진다."""
+    try:
+        return await asyncio.wait_for(process.stdout.read(size), timeout=CLI_STALL_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        await _kill_process_safely(process)
+        raise RuntimeError(f"{label} 응답이 {CLI_STALL_TIMEOUT_SECONDS}초 이상 없어 중단했습니다(멈춘 것으로 판단).")
+
+
+async def _readline_with_timeout(process, label: str = "CLI"):
+    """process.stdout.readline()에 정체 타임아웃을 적용. 타임아웃 시 프로세스를 죽이고 예외를 던진다."""
+    try:
+        return await asyncio.wait_for(process.stdout.readline(), timeout=CLI_STALL_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        await _kill_process_safely(process)
+        raise RuntimeError(f"{label} 응답이 {CLI_STALL_TIMEOUT_SECONDS}초 이상 없어 중단했습니다(멈춘 것으로 판단).")
+
+
+async def _wait_with_timeout(process, label: str = "CLI"):
+    """stdout이 닫힌 뒤 프로세스 종료를 짧게만 기다리고, 안 끝나면 강제 종료한다."""
+    try:
+        await asyncio.wait_for(process.wait(), timeout=CLI_EXIT_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        await _kill_process_safely(process)
+        raise RuntimeError(f"{label} 프로세스가 출력 종료 후에도 {CLI_EXIT_TIMEOUT_SECONDS}초 이상 종료되지 않아 강제 종료했습니다.")
+
+
 async def stream_translation(
     text: str,
     target_lang: str = "한국어",
@@ -906,7 +957,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 produced_output = False
 
                 while True:
-                    chunk = await process.stdout.read(1024)
+                    chunk = await _read_chunk_with_timeout(process, label="Claude Code CLI")
                     if not chunk:
                         break
                     decoded = decoder.decode(chunk)
@@ -919,7 +970,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     produced_output = True
                     yield final_decoded
 
-                await process.wait()
+                await _wait_with_timeout(process, label="Claude Code CLI")
 
                 if process.returncode == 0:
                     # provider_switched였을 때만이 아니라 매번 기록해야 한다 - 그래야
@@ -1062,7 +1113,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                 message_parts = []
 
                 while True:
-                    line = await process.stdout.readline()
+                    line = await _readline_with_timeout(process, label="Codex CLI")
                     if not line:
                         break
                     line = line.strip()
@@ -1082,7 +1133,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                             if text:
                                 message_parts.append(text)
 
-                await process.wait()
+                await _wait_with_timeout(process, label="Codex CLI")
                 final_text = "".join(message_parts)
 
                 if process.returncode == 0 and final_text:
@@ -1349,7 +1400,14 @@ async def stream_antigravity(
                     )
                     # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
                     # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
-                    await init_proc.communicate()
+                    # 이 호출은 문서(session_id)당 락 아래서 실행되므로, agy가 멈추면
+                    # (예: 인증 프롬프트 대기) 타임아웃 없이는 그 문서의 세션 초기화가
+                    # 서버 재시작 전까지 영원히 막히게 된다.
+                    try:
+                        await asyncio.wait_for(init_proc.communicate(), timeout=CLI_STALL_TIMEOUT_SECONDS)
+                    except asyncio.TimeoutError:
+                        await _kill_process_safely(init_proc)
+                        raise RuntimeError(f"Antigravity 세션 초기화가 {CLI_STALL_TIMEOUT_SECONDS}초 이상 응답이 없어 중단했습니다.")
 
                     if os.path.exists(temp_log_path):
                         with open(temp_log_path, "r", encoding="utf-8") as lf:
@@ -1409,7 +1467,7 @@ async def stream_antigravity(
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         while True:
-            chunk = await process.stdout.read(1024)
+            chunk = await _read_chunk_with_timeout(process, label="Antigravity CLI")
             if not chunk:
                 break
             decoded = decoder.decode(chunk)
@@ -1420,7 +1478,7 @@ async def stream_antigravity(
         if final_decoded:
             yield final_decoded
 
-        await process.wait()
+        await _wait_with_timeout(process, label="Antigravity CLI")
 
         # stderr 코드가 0이 아닌 경우 실패로 처리한다. 예전에는 로그만 남기고
         # 넘어가서 호출부가 빈 결과를 "정상 번역 완료"로 착각해 캐시에 영구
