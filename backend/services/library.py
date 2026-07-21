@@ -2,7 +2,8 @@ import os
 import shutil
 import json
 from typing import Optional, List
-from config import LIBRARY_DIR
+from config import LIBRARY_DIR, UPLOAD_DIR
+from services.cache import clear_session_cache
 from services.db import (
     db_save_document,
     db_get_document,
@@ -195,14 +196,35 @@ def delete_chat_sessions(doc_id: str) -> None:
 
 
 def permanently_delete_document(doc_id: str) -> bool:
-    """라이브러리에서 문서 파일 및 데이터베이스 레코드를 영구히 삭제합니다."""
+    """라이브러리에서 문서 파일 및 데이터베이스 레코드를 영구히 삭제합니다.
+
+    doc_id는 업로드 당시의 session_id와 동일한 값이다 - 업로드 시
+    UPLOAD_DIR/{doc_id}/document.pdf에 원본이 저장되고, 라이브러리에 저장될
+    때 LIBRARY_DIR/{doc_id}/document.pdf로 "복사"만 될 뿐 원본은 그대로
+    남는다. 예전에는 LIBRARY_DIR만 지우고 UPLOAD_DIR의 원본과 CACHE_DIR의
+    페이지별 번역 캐시 파일은 전혀 지우지 않아, 문서를 영구 삭제해도 그
+    파일들이 디스크에 계속 쌓이는 문제가 있었다.
+    """
     doc_dir = os.path.join(LIBRARY_DIR, doc_id)
+    upload_dir = os.path.join(UPLOAD_DIR, doc_id)
+
     # 1. 채팅 세션 삭제
     delete_chat_sessions(doc_id)
-    # 2. 파일 삭제
+    # 2. 라이브러리 보관 파일 삭제 (PDF 사본, 커버 이미지, MD 등)
     if os.path.exists(doc_dir):
         shutil.rmtree(doc_dir, ignore_errors=True)
-    # 3. DB 삭제
+    # 3. 업로드 당시 원본 파일 삭제
+    if os.path.exists(upload_dir):
+        shutil.rmtree(upload_dir, ignore_errors=True)
+    # 4. 페이지별 번역 캐시 파일 삭제
+    clear_session_cache(doc_id)
+    # 5. 메모리에 남아있는 활성 업로드 세션도 정리 (있다면)
+    try:
+        from routers.upload import sessions
+        sessions.pop(doc_id, None)
+    except Exception:
+        pass
+    # 6. DB 삭제
     return db_delete_document(doc_id)
 
 def soft_delete_document(doc_id: str) -> bool:
