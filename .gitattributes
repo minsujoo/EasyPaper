@@ -2,6 +2,9 @@
 # core.autocrlf=true 환경에서 CRLF로 변환되면 "$'\r': command not found" 같은 오류가 발생합니다.
 *.sh text eol=lf
 
+# 배치 파일은 반대로 Windows 표준인 CRLF 개행을 항상 사용해야 cmd.exe에서 안전하게 동작합니다.
+*.bat text eol=crlf
+
 # 이미지 등 바이너리 파일은 개행 변환 대상에서 제외합니다.
 *.png binary
 *.jpg binary

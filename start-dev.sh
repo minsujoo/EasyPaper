@@ -8,15 +8,7 @@ echo "🚀 EasyPaper 개발 서버 시작..."
 # 백엔드 시작
 echo "📡 FastAPI 백엔드 시작 중 (포트 8000)..."
 cd "$(dirname "$0")/backend"
-
-# venv 내부 경로는 OS에 따라 다름 (macOS/Linux: .venv/bin, Windows: .venv/Scripts)
-if [ -f ".venv/bin/python" ]; then
-    VENV_PYTHON=".venv/bin/python"
-else
-    VENV_PYTHON=".venv/Scripts/python.exe"
-fi
-
-"$VENV_PYTHON" main.py &
+.venv/bin/python main.py &
 BACKEND_PID=$!
 echo "   백엔드 PID: $BACKEND_PID"
 
