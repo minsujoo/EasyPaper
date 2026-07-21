@@ -16,8 +16,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-C2m9sea2.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BOZFuJeu.css">
+  <script type="module" crossorigin src="/assets/index-4lw3PBS-.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CCQbojZA.css">
 </head>
 <body>
 
@@ -303,7 +303,7 @@
         <button id="onboarding-close-btn" class="close-btn">&times;</button>
       </div>
 
-      <div style="padding: 24px;">
+      <div style="padding: 24px; max-height: 70vh; overflow-y: auto;">
         <!-- 상태 1: 감지 중 -->
         <div id="onboarding-detecting" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0;">
           <div class="spinner" style="width: 28px; height: 28px; border-width: 3px;"></div>
@@ -316,9 +316,9 @@
           <div id="onboarding-detected-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </div>
 
-        <!-- 상태 3: 감지된 엔진 없음 - 설치 안내 -->
+        <!-- 상태 3: 설치 안내 (다른 엔진이 이미 감지된 경우에도 항상 표시) -->
         <div id="onboarding-install" class="hidden">
-          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.</p>
+          <p id="onboarding-install-intro" style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.</p>
 
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div class="onboarding-install-row">
@@ -328,6 +328,25 @@
               </div>
               <button type="button" id="onboarding-install-ollama-btn" class="btn btn-primary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
             </div>
+
+            <!-- Ollama 설치 완료 후 다음 단계: 실제로 쓸 모델을 다운로드해야 함 -->
+            <div id="onboarding-ollama-next-step" class="hidden" style="padding: 12px 14px; background: var(--control-accent-soft); border: 1px solid var(--control-accent); border-radius: var(--radius-md);">
+              <div style="font-size: 12.5px; font-weight: 700; color: var(--control-accent-text); margin-bottom: 8px;">다음 단계: 사용할 모델을 다운로드해주세요</div>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+                <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="qwen3.5:9b" style="padding: 5px 10px; font-size: 11.5px;">Qwen 3.5 9B</button>
+                <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="llama3.1:8b" style="padding: 5px 10px; font-size: 11.5px;">Llama 3.1 8B</button>
+              </div>
+              <div id="onboarding-pull-progress-area" class="hidden">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                  <span id="onboarding-pull-status-text" style="color: var(--text-secondary);">대기 중...</span>
+                  <span id="onboarding-pull-pct-text" style="font-weight: 700; color: var(--control-accent-text);">0%</span>
+                </div>
+                <div class="progress-bar-wrap" style="height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                  <div id="onboarding-pull-progress-bar" style="width: 0%; height: 100%; background: var(--control-accent); transition: width 0.2s;"></div>
+                </div>
+              </div>
+            </div>
+
             <div class="onboarding-install-row">
               <div class="onboarding-install-row-label">
                 <strong>Claude Code</strong>

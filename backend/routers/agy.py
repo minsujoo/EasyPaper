@@ -25,11 +25,8 @@ async def get_agy_usage():
 @router.get("/agy/models")
 async def get_agy_models():
     """agy models 명령으로 실제 지원 모델 목록 반환"""
-    import os
     from config import get_agy_path, get_agy_env, windows_safe_exec_args
     agy_path = get_agy_path()
-    if not os.path.exists(agy_path):
-        agy_path = "agy"
     try:
         proc = await asyncio.create_subprocess_exec(
             *windows_safe_exec_args([agy_path, "models"]),

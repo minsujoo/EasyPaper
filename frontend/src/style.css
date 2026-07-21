@@ -1872,6 +1872,19 @@ body.light-theme .pdf-annotation-underline {
   cursor: default;
 }
 
+/* 설치 완료 후 새로 나타난 "선택 가능한 엔진" 목록으로 시선을 유도하는 강조 효과 */
+@keyframes onboarding-attention-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+  30% { box-shadow: 0 0 0 3px var(--control-accent-soft); }
+}
+.onboarding-attention-pulse {
+  border-radius: var(--radius-md);
+  animation: onboarding-attention-pulse 1.6s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-attention-pulse { animation: none; box-shadow: 0 0 0 3px var(--control-accent-soft); }
+}
+
 /* ── 설정 > 모델 선택기의 "사용 가능" 칩 ── */
 .picker-available-chip {
   display: inline-flex;
