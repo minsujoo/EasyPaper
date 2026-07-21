@@ -22,8 +22,9 @@ EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으�
 
 ## 빠른 시작
 
-명령어 세 줄로 바로 실행이 가능합니다. macOS·Linux·Windows 모두 동일한 스크립트를 사용합니다.
+명령어 세 줄로 바로 실행이 가능합니다. macOS·Linux는 `.sh`, Windows는 `.bat` 스크립트를 사용하세요.
 
+**macOS / Linux**
 ```bash
 # 1. 저장소 클론
 git clone https://github.com/orion-gz/EasyPaper.git
@@ -37,19 +38,22 @@ cd EasyPaper
 ./start.sh
 ```
 
-> **Windows에서 실행하는 경우:** `git clone` 시 이미 설치된 **Git Bash**(Git for Windows 기본 포함)에서 위 명령을 그대로 실행하면 됩니다. 별도의 스크립트나 셸이 필요하지 않으며, 파이썬 가상환경 내부 경로(`bin/` vs `Scripts/`) 차이는 스크립트가 자동으로 감지해서 처리합니다.
->
-> 만약 `setup.sh: line 3: $'\r': command not found` 같은 오류가 발생한다면, 클론 당시 Git의 `core.autocrlf` 설정으로 인해 스크립트 파일이 Windows 줄바꿈(CRLF)으로 변환되어 저장된 것입니다(현재 저장소에는 이를 방지하는 `.gitattributes`가 포함되어 있어 새로 클론하면 발생하지 않습니다). 이미 클론한 상태라면 저장소를 새로 클론하거나, 기존 폴더에서 다음 명령으로 파일을 다시 체크아웃하세요:
-> ```bash
-> git rm --cached -r .
-> git reset --hard
-> ```
+**Windows**
+
+`setup.bat` 파일을 더블클릭하거나(또는 명령 프롬프트에서 실행), 완료 후 `start.bat`을 실행하면 됩니다.
+```bat
+git clone https://github.com/orion-gz/EasyPaper.git
+cd EasyPaper
+setup.bat
+start.bat
+```
 
 서버 구동 후 브라우저에서 `http://localhost:8000` 에 접속합니다.
 
 설치 및 생성된 모든 가상 환경과 빌드 데이터, systemd 서비스(Linux)를 완전히 지우고 원복하려면 다음 삭제 스크립트를 실행합니다:
 ```bash
-./cleanup.sh
+./cleanup.sh      # macOS / Linux
+cleanup.bat       # Windows
 ```
 
 ---
