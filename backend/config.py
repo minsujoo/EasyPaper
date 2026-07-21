@@ -286,11 +286,25 @@ def get_codex_path() -> str:
     return _resolve_cli_path(CODEX_PATH, "codex")
 
 def get_agy_env() -> dict:
+    """CLI(Claude Code/Codex/Antigravity) 서브프로세스에 넘길 환경 변수를 만든다.
+
+    일부 실행 환경(예: 로그인 셸을 거치지 않는 서비스/데몬으로 백엔드를 띄운 경우)에서는
+    HOME/USER가 비어 있을 수 있는데, 예전에는 이 값을 이 프로젝트를 개발한 서버 전용
+    경로(/home/ubuntu)로 하드코딩해 다른 환경(특히 macOS)에서는 존재하지 않는 디렉터리를
+    가리키게 됐다. macOS의 posix_spawn은 존재하지 않는 디렉터리를 만나면 ENOENT 대신
+    [Errno 45] Operation not supported를 던지는 경우가 있어, CLI 실행이 알 수 없는 에러로
+    실패하는 원인이 됐다. os.path.expanduser("~")/getpass로 실제 현재 사용자의 홈 디렉터리를
+    구해 어떤 OS/계정에서도 항상 존재하는 경로를 쓰도록 수정.
+    """
     env = os.environ.copy()
     if "HOME" not in env or not env["HOME"]:
-        env["HOME"] = "/home/ubuntu"
+        env["HOME"] = os.path.expanduser("~")
     if "USER" not in env or not env["USER"]:
-        env["USER"] = "ubuntu"
+        try:
+            import getpass
+            env["USER"] = getpass.getuser()
+        except Exception:
+            pass
     return env
 
 # ── Dynamic Translation Prompt Template ─────────────────

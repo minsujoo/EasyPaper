@@ -181,12 +181,12 @@ def delete_chat_sessions(doc_id: str) -> None:
     if conv_id:
         try:
             # conversations/<conv_id>.db 파일 삭제
-            db_path = f"/home/ubuntu/.gemini/antigravity-cli/conversations/{conv_id}.db"
+            db_path = os.path.expanduser(f"~/.gemini/antigravity-cli/conversations/{conv_id}.db")
             if os.path.exists(db_path):
                 os.remove(db_path)
                 print(f"[delete_chat_sessions] Deleted Antigravity conversation db: {db_path}")
             # brain/<conv_id>/ 디렉터리 삭제
-            brain_dir = f"/home/ubuntu/.gemini/antigravity-cli/brain/{conv_id}"
+            brain_dir = os.path.expanduser(f"~/.gemini/antigravity-cli/brain/{conv_id}")
             if os.path.exists(brain_dir):
                 shutil.rmtree(brain_dir, ignore_errors=True)
                 print(f"[delete_chat_sessions] Deleted Antigravity brain directory: {brain_dir}")
