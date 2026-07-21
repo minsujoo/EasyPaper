@@ -94,6 +94,7 @@ const onboardingDetecting    = $('onboarding-detecting')
 const onboardingDetected     = $('onboarding-detected')
 const onboardingDetectedList = $('onboarding-detected-list')
 const onboardingInstall      = $('onboarding-install')
+const onboardingInstallIntro = $('onboarding-install-intro')
 const onboardingInstallOllamaBtn     = $('onboarding-install-ollama-btn')
 const onboardingInstallClaudeCodeBtn = $('onboarding-install-claude-code-btn')
 const onboardingInstallCodexBtn      = $('onboarding-install-codex-btn')
@@ -101,6 +102,11 @@ const onboardingInstallAntigravityBtn = $('onboarding-install-antigravity-btn')
 const onboardingInstallProgressArea  = $('onboarding-install-progress-area')
 const onboardingInstallStatus        = $('onboarding-install-status')
 const onboardingInstallLog           = $('onboarding-install-log')
+const onboardingOllamaNextStep       = $('onboarding-ollama-next-step')
+const onboardingPullProgressArea     = $('onboarding-pull-progress-area')
+const onboardingPullStatusText       = $('onboarding-pull-status-text')
+const onboardingPullPctText          = $('onboarding-pull-pct-text')
+const onboardingPullProgressBar      = $('onboarding-pull-progress-bar')
 
 // 탭 버튼 및 컨텐츠 영역
 const tabBtns           = document.querySelectorAll('.tab-btn')
@@ -7891,12 +7897,28 @@ if (onboardingModal) {
   })
 }
 
+// 설치 버튼 하나를 "설치 가능" 또는 "✓ 설치됨" 상태로 표시.
+// 방금 설치 액션이 성공해 이미 "설치됨" 표시 중인 버튼은, 재감지 결과가 아직 그 사실을
+// 못 따라잡았더라도(예: Ollama 모델 감지 전) 되돌리지 않는다.
+function setOnboardingRowInstalledState(btn, isInstalled) {
+  if (!btn) return
+  if (isInstalled) {
+    btn.disabled = true
+    btn.textContent = '✓ 설치됨'
+    btn.classList.add('onboarding-install-done')
+  } else if (!btn.classList.contains('onboarding-install-done')) {
+    btn.disabled = false
+    btn.textContent = '설치'
+  }
+}
+
 async function detectAndRenderOnboarding() {
-  let sys, cli
+  let sys, cli, ollamaStatus
   try {
-    [sys, cli] = await Promise.all([
+    [sys, cli, ollamaStatus] = await Promise.all([
       getSystemSettingsAPI(),
       fetchCliAvailability().catch(() => ({ antigravity: false, claude_code: false, codex: false })),
+      getOllamaStatusAPI().catch(() => ({ installed: false })),
     ])
   } catch (err) {
     console.warn('온보딩 감지 실패:', err)
@@ -7929,9 +7951,9 @@ async function detectAndRenderOnboarding() {
 
   onboardingDetecting.classList.add('hidden')
 
+  // 1. 지금 바로 선택 가능한 엔진이 있으면 목록으로 표시
   if (detected.length > 0) {
     onboardingDetected.classList.remove('hidden')
-    onboardingInstall.classList.add('hidden')
     onboardingDetectedList.innerHTML = detected.map((d, i) => `
       <button type="button" class="onboarding-detected-btn" data-idx="${i}">
         <span>${escapeHtml(d.label)}</span>
@@ -7964,8 +7986,35 @@ async function detectAndRenderOnboarding() {
     })
   } else {
     onboardingDetected.classList.add('hidden')
-    onboardingInstall.classList.remove('hidden')
   }
+
+  // 2. 설치 섹션은 이미 다른 엔진이 감지된 경우에도 항상 표시 - Ollama가 있어도
+  //    Claude Code 등 다른 CLI를 추가로 설치할 수 있어야 함
+  onboardingInstall.classList.remove('hidden')
+  if (onboardingInstallIntro) {
+    onboardingInstallIntro.textContent = detected.length > 0
+      ? '추가로 설치할 수 있는 AI 엔진입니다.'
+      : '사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.'
+  }
+  setOnboardingRowInstalledState(onboardingInstallOllamaBtn, !!ollamaStatus.installed)
+  setOnboardingRowInstalledState(onboardingInstallClaudeCodeBtn, !!cli.claude_code)
+  setOnboardingRowInstalledState(onboardingInstallCodexBtn, !!cli.codex)
+  setOnboardingRowInstalledState(onboardingInstallAntigravityBtn, !!cli.antigravity)
+
+  // Ollama는 바이너리만 설치되고 아직 모델이 없으면 "다음 단계"로 모델
+  // 다운로드를 바로 이 화면에서 안내 (설정 화면까지 따로 찾아가지 않아도 되게)
+  const ollamaNeedsModel = !!ollamaStatus.installed && !(sys.available_models && sys.available_models.length > 0)
+  if (onboardingOllamaNextStep) {
+    onboardingOllamaNextStep.classList.toggle('hidden', !ollamaNeedsModel)
+  }
+}
+
+// 새로 선택 가능해진 엔진 목록으로 시선을 유도 (스크롤 + 잠깐 테두리 강조)
+function highlightOnboardingDetected() {
+  if (!onboardingDetected || onboardingDetected.classList.contains('hidden')) return
+  onboardingDetected.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  onboardingDetected.classList.add('onboarding-attention-pulse')
+  setTimeout(() => onboardingDetected.classList.remove('onboarding-attention-pulse'), 1600)
 }
 
 function wireOnboardingInstallBtn(btn, streamFn, label) {
@@ -7992,14 +8041,15 @@ function wireOnboardingInstallBtn(btn, streamFn, label) {
         btn.textContent = '✓ 설치됨'
         btn.classList.add('onboarding-install-done')
         onboardingInstallStatus.textContent = label === 'Ollama'
-          ? 'Ollama 설치 완료! 모델은 설정 > 모델 설정에서 다운로드할 수 있습니다.'
-          : `${label} 설치 완료!`
-        showToast(`${label} 설치가 완료되었습니다!`, 'success')
+          ? 'Ollama 설치 완료! 다음 단계 - 아래에서 사용할 모델을 다운로드해주세요.'
+          : `${label} 설치 완료! 터미널에서 로그인을 마치면 위에서 바로 선택할 수 있습니다.`
+        showToast(`${label} 설치가 완료되었습니다! 다음 단계를 확인해주세요.`, 'success')
         // 방금 완료된 상태를 잠깐 보여준 뒤, 다른 엔진이 이미 함께 감지됐다면
-        // 선택 화면으로 자연스럽게 넘어감 (설치만 된 Ollama처럼 모델이 아직
-        // 없는 경우는 이 설치 섹션에 그대로 남아 "✓ 설치됨" 표시가 유지됨)
+        // 선택 화면으로 시선을 유도함 (설치만 된 Ollama처럼 모델이 아직
+        // 없는 경우는 이 설치 섹션에 남아 "다음 단계: 모델 다운로드" 안내가 나타남)
         await new Promise(resolve => setTimeout(resolve, 900))
         await detectAndRenderOnboarding()
+        highlightOnboardingDetected()
       },
       (err) => {
         showToast(`${label} 설치 실패: ${err.message}`, 'error')
@@ -8015,4 +8065,41 @@ wireOnboardingInstallBtn(onboardingInstallOllamaBtn, streamInstallOllamaAPI, 'Ol
 wireOnboardingInstallBtn(onboardingInstallClaudeCodeBtn, streamInstallClaudeCodeAPI, 'Claude Code CLI')
 wireOnboardingInstallBtn(onboardingInstallCodexBtn, streamInstallCodexAPI, 'Codex CLI')
 wireOnboardingInstallBtn(onboardingInstallAntigravityBtn, streamInstallAntigravityAPI, 'Antigravity CLI')
+
+// Ollama "다음 단계" 추천 모델 원클릭 다운로드
+document.querySelectorAll('.onboarding-pull-model-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const modelName = btn.dataset.model
+    document.querySelectorAll('.onboarding-pull-model-btn').forEach(b => { b.disabled = true })
+    onboardingPullProgressArea.classList.remove('hidden')
+    onboardingPullStatusText.textContent = '다운로드 준비 중...'
+    onboardingPullPctText.textContent = '0%'
+    onboardingPullProgressBar.style.width = '0%'
+    showToast(`${modelName} 모델 다운로드를 시작합니다. 시간이 걸릴 수 있습니다.`, 'info')
+
+    streamPullModelAPI(
+      modelName,
+      (data) => {
+        if (data.status) onboardingPullStatusText.textContent = data.status
+        if (data.total && data.completed) {
+          const pct = Math.round((data.completed / data.total) * 100) || 0
+          onboardingPullProgressBar.style.width = `${pct}%`
+          onboardingPullPctText.textContent = `${pct}%`
+        }
+      },
+      async () => {
+        showToast(`${modelName} 모델 다운로드가 완료되었습니다!`, 'success')
+        document.querySelectorAll('.onboarding-pull-model-btn').forEach(b => { b.disabled = false })
+        onboardingPullProgressArea.classList.add('hidden')
+        await detectAndRenderOnboarding()
+        highlightOnboardingDetected()
+      },
+      (err) => {
+        showToast(`${modelName} 모델 다운로드 실패: ${err.message}`, 'error')
+        document.querySelectorAll('.onboarding-pull-model-btn').forEach(b => { b.disabled = false })
+        onboardingPullStatusText.textContent = err.message
+      }
+    )
+  })
+})
 

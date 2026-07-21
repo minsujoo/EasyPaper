@@ -255,14 +255,35 @@ def get_app_host() -> str:
 def get_app_port() -> int:
     return APP_PORT
 
+def _resolve_cli_path(configured_path: str, bare_command: str) -> str:
+    """설정된 CLI 경로가 실제로 존재하면 그대로 쓰고, 없으면 PATH에서 명령
+    이름으로 직접 찾는다.
+
+    AGY_PATH/CLAUDE_CODE_PATH/CODEX_PATH의 기본값은 이 프로젝트를 개발한
+    서버 환경 기준의 고정 경로(/home/ubuntu/.local/bin/...)라, 다른 사용자
+    계정이나 macOS/Windows 등 다른 환경에서는 애초에 존재하지 않는 경로다.
+    이 경우 자동 감지가 항상 실패해 실제로는 정상 설치되어 있는 CLI도
+    "미설치"로 오판하게 된다. 설정된 경로가 없으면 PATH 검색으로 대체하고,
+    거기서도 못 찾으면 bare 명령 이름을 그대로 반환해 최소한 셸(PATH) 기반
+    실행이라도 시도해볼 수 있게 한다.
+    """
+    import os
+    import shutil
+    if configured_path and os.path.exists(configured_path):
+        return configured_path
+    found = shutil.which(bare_command)
+    if found:
+        return found
+    return bare_command
+
 def get_agy_path() -> str:
-    return AGY_PATH
+    return _resolve_cli_path(AGY_PATH, "agy")
 
 def get_claude_code_path() -> str:
-    return CLAUDE_CODE_PATH
+    return _resolve_cli_path(CLAUDE_CODE_PATH, "claude")
 
 def get_codex_path() -> str:
-    return CODEX_PATH
+    return _resolve_cli_path(CODEX_PATH, "codex")
 
 def get_agy_env() -> dict:
     env = os.environ.copy()
