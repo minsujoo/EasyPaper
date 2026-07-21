@@ -267,7 +267,13 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
         job["error"] = str(e)
         _save_job(session_id, job)
     finally:
-        _running_tasks.pop(session_id, None)
+        # 취소된 이전 잡(Restart로 대체된 구 태스크)이 뒤늦게 여기 도달하면,
+        # 이미 새로 등록된 최신 태스크의 항목을 그냥 pop(key)로 지워버려서
+        # cancel_job()이나 진행 상태 확인이 "실행 중인 잡 없음"으로 잘못
+        # 판단하게 되는 문제가 있었다. 지금 _running_tasks에 등록된 태스크가
+        # 정확히 "나 자신"일 때만 제거한다.
+        if _running_tasks.get(session_id) is asyncio.current_task():
+            _running_tasks.pop(session_id, None)
 
 
 async def _translate_page(
