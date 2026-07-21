@@ -945,10 +945,17 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     continue
 
                 print(f"[Claude Code CLI Error] code={process.returncode} stderr={stderr_out}")
-                return
+                # 실패를 조용히 삼키고 그냥 return하면, 호출부는 빈 결과를 "정상
+                # 번역 완료"로 착각해 빈 문자열을 캐시에 영구 저장해버린다.
+                # 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직(에러 응답,
+                # failed_pages 기록 등)이 실제로 작동하게 한다.
+                raise RuntimeError(
+                    f"Claude Code CLI 실행 실패 (code={process.returncode}): "
+                    f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
+                )
             except Exception as e:
                 print(f"[Claude Code CLI Exec Error] {e}")
-                return
+                raise
 
 
 _codex_session_locks = {}
@@ -1101,10 +1108,17 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                     continue
 
                 print(f"[Codex CLI Error] code={process.returncode} stderr={stderr_out}")
-                return
+                # 실패를 조용히 삼키고 그냥 return하면, 호출부는 빈 결과를 "정상
+                # 번역 완료"로 착각해 빈 문자열을 캐시에 영구 저장해버린다.
+                # 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직(에러 응답,
+                # failed_pages 기록 등)이 실제로 작동하게 한다.
+                raise RuntimeError(
+                    f"Codex CLI 실행 실패 (code={process.returncode}): "
+                    f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
+                )
             except Exception as e:
                 print(f"[Codex CLI Exec Error] {e}")
-                return
+                raise
 
 
 def _ai_session_meta_path(session_id: str) -> str:
@@ -1408,13 +1422,25 @@ async def stream_antigravity(
 
         await process.wait()
 
-        # stderr 코드가 0이 아닌 경우 stderr 내용을 로그
+        # stderr 코드가 0이 아닌 경우 실패로 처리한다. 예전에는 로그만 남기고
+        # 넘어가서 호출부가 빈 결과를 "정상 번역 완료"로 착각해 캐시에 영구
+        # 저장해버렸다. 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직
+        # (에러 응답, failed_pages 기록 등)이 실제로 작동하게 한다.
         if process.returncode and process.returncode != 0:
-            stderr_out = await process.stderr.read()
-            print(f"[Antigravity stderr]: {stderr_out.decode('utf-8', errors='ignore')[:500]}", flush=True)
+            stderr_out = (await process.stderr.read()).decode("utf-8", errors="replace")
+            print(f"[Antigravity CLI Error] code={process.returncode} stderr={stderr_out[:500]}", flush=True)
+            raise RuntimeError(
+                f"Antigravity CLI 실행 실패 (code={process.returncode}): "
+                f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
+            )
 
     except Exception as e:
-        yield f"\n[Antigravity CLI 실행 에러: {str(e)}]"
+        # 에러 문자열을 그대로 yield하면 그 문자열 자체가 번역/분류 결과인 것처럼
+        # 캐시에 영구 저장되는 버그가 있었다(실제로 "[Antigravity CLI 실행
+        # 에러: ...]"라는 문자열이 논문 카테고리로 분류된 사례가 있었음).
+        # 반드시 예외로 전파해 호출부가 실패로 인식하게 해야 한다.
+        print(f"[Antigravity CLI Exec Error] {e}", flush=True)
+        raise
 
 from typing import List
 
