@@ -294,6 +294,70 @@
     </button>
   </div>
 
+  <!-- 첫 실행 시 AI 엔진 자동 감지 / 설치 안내 모달 -->
+  <div id="onboarding-modal" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>AI 엔진 설정</h2>
+        <button id="onboarding-close-btn" class="close-btn">&times;</button>
+      </div>
+
+      <div style="padding: 24px;">
+        <!-- 상태 1: 감지 중 -->
+        <div id="onboarding-detecting" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0;">
+          <div class="spinner" style="width: 28px; height: 28px; border-width: 3px;"></div>
+          <p style="font-size: 13.5px; color: var(--text-secondary);">설치된 AI 엔진을 확인하고 있어요...</p>
+        </div>
+
+        <!-- 상태 2: 감지된 엔진 목록 -->
+        <div id="onboarding-detected" class="hidden">
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">다음 AI 엔진이 감지되었습니다. 번역과 채팅에 사용할 엔진을 선택해주세요.</p>
+          <div id="onboarding-detected-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
+
+        <!-- 상태 3: 감지된 엔진 없음 - 설치 안내 -->
+        <div id="onboarding-install" class="hidden">
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.</p>
+
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="onboarding-install-row">
+              <div class="onboarding-install-row-label">
+                <strong>Ollama</strong>
+                <span>로컬에서 무료로 실행되는 오픈소스 모델</span>
+              </div>
+              <button type="button" id="onboarding-install-ollama-btn" class="btn btn-primary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
+            </div>
+            <div class="onboarding-install-row">
+              <div class="onboarding-install-row-label">
+                <strong>Claude Code</strong>
+                <span>Anthropic 계정 로그인 필요 (설치 후 터미널에서 <code>claude</code> 실행)</span>
+              </div>
+              <button type="button" id="onboarding-install-claude-code-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
+            </div>
+            <div class="onboarding-install-row">
+              <div class="onboarding-install-row-label">
+                <strong>Codex</strong>
+                <span>OpenAI 계정 로그인 필요 (설치 후 터미널에서 <code>codex login</code> 실행)</span>
+              </div>
+              <button type="button" id="onboarding-install-codex-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
+            </div>
+          </div>
+
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 14px; line-height: 1.6;">Antigravity CLI(<code>agy</code>)가 이미 설치·로그인되어 있다면 자동으로 감지됩니다. 아직 없다면 공식 배포처를 통해 설치해주세요.</p>
+
+          <div id="onboarding-install-progress-area" class="hidden" style="margin-top: 14px; background: var(--bg-elevated); border: 1px solid var(--border-strong); padding: 12px; border-radius: var(--radius-md);">
+            <div id="onboarding-install-status" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">설치 진행 중...</div>
+            <div id="onboarding-install-log" style="max-height: 140px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; line-height: 1.5;"></div>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 18px;">
+          <button type="button" id="onboarding-skip-btn" style="background: none; border: none; color: var(--text-muted); font-size: 12.5px; cursor: pointer; text-decoration: underline;">나중에 설정하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- EasyPaper 통합 설정 모달 -->
   <div id="settings-modal" class="modal-overlay hidden">
     <div class="modal-content" style="max-width: 500px;">

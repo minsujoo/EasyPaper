@@ -41,7 +41,7 @@ export async function checkHealth() {
 }
 
 export async function fetchCliAvailability() {
-  const res = await fetch(`${API_BASE}/translate/availability`)
+  const res = await fetch(`${API_BASE}/availability`)
   if (!res.ok) throw new Error('CLI 상태 조회 실패')
   return res.json()
 }
@@ -360,16 +360,16 @@ export async function getOllamaStatusAPI() {
 }
 
 /**
- * 이 서버(localhost)에 Ollama를 설치하고 진행 상황을 스트리밍합니다.
+ * CLI 엔진 설치 SSE 스트림을 구독하는 공통 헬퍼.
  */
-export function streamInstallOllamaAPI(onProgress, onDone, onError) {
-  const eventSource = new EventSource(`${API_BASE}/settings/install-ollama`)
+function _streamInstallCliAPI(endpoint, defaultErrorMessage, onProgress, onDone, onError) {
+  const eventSource = new EventSource(`${API_BASE}${endpoint}`)
 
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
       if (data.status === 'error') {
-        onError(new Error(data.message || 'Ollama 설치 실패'))
+        onError(new Error(data.message || defaultErrorMessage))
         eventSource.close()
       } else if (data.status === 'success') {
         onDone()
@@ -378,7 +378,7 @@ export function streamInstallOllamaAPI(onProgress, onDone, onError) {
         onProgress(data)
       }
     } catch (err) {
-      console.warn('Install ollama message parse error:', err)
+      console.warn('Install stream message parse error:', err)
     }
   }
 
@@ -388,6 +388,27 @@ export function streamInstallOllamaAPI(onProgress, onDone, onError) {
   }
 
   return () => eventSource.close()
+}
+
+/**
+ * 이 서버(localhost)에 Ollama를 설치하고 진행 상황을 스트리밍합니다.
+ */
+export function streamInstallOllamaAPI(onProgress, onDone, onError) {
+  return _streamInstallCliAPI('/settings/install-ollama', 'Ollama 설치 실패', onProgress, onDone, onError)
+}
+
+/**
+ * 이 서버에 Claude Code CLI를 npm으로 설치하고 진행 상황을 스트리밍합니다.
+ */
+export function streamInstallClaudeCodeAPI(onProgress, onDone, onError) {
+  return _streamInstallCliAPI('/settings/install-claude-code', 'Claude Code CLI 설치 실패', onProgress, onDone, onError)
+}
+
+/**
+ * 이 서버에 Codex CLI를 npm으로 설치하고 진행 상황을 스트리밍합니다.
+ */
+export function streamInstallCodexAPI(onProgress, onDone, onError) {
+  return _streamInstallCliAPI('/settings/install-codex', 'Codex CLI 설치 실패', onProgress, onDone, onError)
 }
 
 /**
