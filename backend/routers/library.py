@@ -14,6 +14,20 @@ router = APIRouter()
 
 from typing import Optional
 
+
+def _require_owned_document(doc_id: str, current_user: str, doc: Optional[dict] = None) -> dict:
+    """문서가 존재하고 현재 로그인한 사용자 소유인지 확인한다.
+
+    다른 사용자의 문서는 존재 여부조차 알려주지 않도록, 존재하지 않는 경우와
+    동일하게 404로 응답한다(문서는 있지만 권한이 없다는 403은 doc_id가
+    실제로 존재한다는 사실 자체를 노출하게 됨).
+    """
+    if doc is None:
+        doc = get_document(doc_id)
+    if not doc or doc.get("username") != current_user:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    return doc
+
 @router.get("/library")
 async def get_library(
     target_lang: Optional[str] = None,
@@ -57,12 +71,12 @@ async def get_library_document(
     style: Optional[str] = None,
     ignore_math: Optional[bool] = None,
     ignore_table: Optional[bool] = None,
-    ignore_refs: Optional[bool] = None
+    ignore_refs: Optional[bool] = None,
+    current_user: str = Depends(get_current_user)
 ):
     """특정 문서의 메타데이터와 번역 완료 페이지 목록을 반환합니다."""
     doc = get_document(doc_id, target_lang, style, ignore_math, ignore_table, ignore_refs)
-    if not doc:
-        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    _require_owned_document(doc_id, current_user, doc)
     return doc
 
 
@@ -74,9 +88,11 @@ async def get_library_translation(
     style: Optional[str] = None,
     ignore_math: Optional[bool] = None,
     ignore_table: Optional[bool] = None,
-    ignore_refs: Optional[bool] = None
+    ignore_refs: Optional[bool] = None,
+    current_user: str = Depends(get_current_user)
 ):
     """라이브러리에서 특정 페이지 번역을 가져옵니다."""
+    _require_owned_document(doc_id, current_user)
     suffix = ""
     if target_lang is not None and style is not None:
         suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
@@ -106,9 +122,11 @@ async def update_library_translation(
     style: Optional[str] = None,
     ignore_math: Optional[bool] = None,
     ignore_table: Optional[bool] = None,
-    ignore_refs: Optional[bool] = None
+    ignore_refs: Optional[bool] = None,
+    current_user: str = Depends(get_current_user)
 ):
     """라이브러리의 특정 페이지 번역 데이터를 수정하여 캐시 및 DB에 저장합니다."""
+    _require_owned_document(doc_id, current_user)
     suffix = ""
     if target_lang is not None and style is not None:
         suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
@@ -131,8 +149,9 @@ async def update_library_translation(
 
 
 @router.get("/library/{doc_id}/pdf")
-async def get_library_pdf(doc_id: str):
+async def get_library_pdf(doc_id: str, current_user: str = Depends(get_current_user)):
     """라이브러리 PDF 파일을 서빙합니다."""
+    _require_owned_document(doc_id, current_user)
     pdf_path = get_pdf_path(doc_id)
     if not pdf_path:
         raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
@@ -140,8 +159,9 @@ async def get_library_pdf(doc_id: str):
 
 
 @router.get("/library/{doc_id}/cover")
-async def get_library_cover(doc_id: str):
+async def get_library_cover(doc_id: str, current_user: str = Depends(get_current_user)):
     """라이브러리 카드 미리보기용 1페이지 상단(제목+abstract) 캡쳐 이미지를 서빙합니다."""
+    _require_owned_document(doc_id, current_user)
     cover_path = get_cover_path(doc_id)
     if not cover_path:
         raise HTTPException(status_code=404, detail="미리보기 이미지를 생성할 수 없습니다.")
@@ -149,34 +169,38 @@ async def get_library_cover(doc_id: str):
 
 
 @router.delete("/library/{doc_id}")
-async def delete_library_document(doc_id: str):
+async def delete_library_document(doc_id: str, current_user: str = Depends(get_current_user)):
     """라이브러리 문서를 휴지통으로 이동(Soft Delete)합니다."""
+    _require_owned_document(doc_id, current_user)
     if not soft_delete_document(doc_id):
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     return {"message": "문서가 휴지통으로 이동되었습니다."}
 
 @router.post("/library/{doc_id}/restore")
-async def restore_library_document(doc_id: str):
+async def restore_library_document(doc_id: str, current_user: str = Depends(get_current_user)):
     """휴지통에서 문서를 복원합니다."""
+    _require_owned_document(doc_id, current_user)
     if not restore_document(doc_id):
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     return {"message": "문서가 성공적으로 복원되었습니다."}
 
 @router.delete("/library/{doc_id}/permanent")
-async def delete_library_document_permanently(doc_id: str):
+async def delete_library_document_permanently(doc_id: str, current_user: str = Depends(get_current_user)):
     """라이브러리에서 문서를 영구히 삭제(Hard Delete)합니다."""
+    _require_owned_document(doc_id, current_user)
     if not permanently_delete_document(doc_id):
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     return {"message": "문서가 영구적으로 삭제되었습니다."}
 
 
 @router.get("/library/{doc_id}/images")
-async def get_library_document_images(doc_id: str):
+async def get_library_document_images(doc_id: str, current_user: str = Depends(get_current_user)):
     """특정 문서의 모든 페이지에서 이미지/Figure 좌표 정보(백분율) 목록을 반환합니다."""
+    _require_owned_document(doc_id, current_user)
     pdf_path = get_pdf_path(doc_id)
     if not pdf_path:
         raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
-    
+
     try:
         from services.pdf_parser import extract_pdf_images
         images = extract_pdf_images(pdf_path)
@@ -192,12 +216,8 @@ async def update_doc_metadata(
     current_user: str = Depends(get_current_user)
 ):
     """문서의 메타데이터(예: 제목 등)를 업데이트합니다."""
-    doc = get_document(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    if doc.get("username") != current_user:
-        raise HTTPException(status_code=403, detail="권한이 없습니다.")
-    
+    doc = _require_owned_document(doc_id, current_user)
+
     meta = doc.get("metadata") or {}
     meta.update(payload)
     
