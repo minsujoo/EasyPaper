@@ -23,6 +23,7 @@ from config import (
     get_agy_path,
     get_claude_code_path,
     get_codex_path,
+    find_ollama_binary,
 )
 from services.llm_client import check_ollama_health
 
@@ -216,9 +217,7 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
 @router.get("/settings/ollama-status")
 async def ollama_status(current_user: str = Depends(get_current_user)):
     """Ollama CLI가 이 서버에 설치되어 있는지, 설정된 호스트가 로컬인지 확인합니다."""
-    import os
-    import shutil
-    installed = bool(shutil.which("ollama") or os.path.exists("/usr/local/bin/ollama"))
+    installed = bool(find_ollama_binary())
     return {
         "installed": installed,
         "is_local": is_ollama_host_local(),
@@ -243,7 +242,7 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
         if not is_ollama_host_local():
             yield f"data: {json.dumps({'status': 'error', 'message': 'Ollama 호스트가 이 서버(localhost)가 아니어서 여기서 설치할 수 없습니다.'})}\n\n"
             return
-        if shutil.which("ollama"):
+        if find_ollama_binary():
             yield f"data: {json.dumps({'status': 'error', 'message': 'Ollama가 이미 설치되어 있습니다.'})}\n\n"
             return
 
@@ -259,7 +258,7 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
                 async for text in _stream_subprocess_lines(proc):
                     yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
                 await proc.wait()
-                if proc.returncode == 0 and shutil.which("ollama"):
+                if proc.returncode == 0 and find_ollama_binary():
                     yield f"data: {json.dumps({'status': 'success'})}\n\n"
                 else:
                     yield f"data: {json.dumps({'status': 'error', 'message': f'설치 스크립트가 오류 코드 {proc.returncode}로 종료되었습니다. sudo 권한이 필요할 수 있습니다.'})}\n\n"
@@ -278,7 +277,7 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
                 async for text in _stream_subprocess_lines(proc):
                     yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
                 await proc.wait()
-                if proc.returncode == 0 and shutil.which("ollama"):
+                if proc.returncode == 0 and find_ollama_binary():
                     yield f"data: {json.dumps({'status': 'success'})}\n\n"
                 else:
                     yield f"data: {json.dumps({'status': 'error', 'message': f'brew install이 오류 코드 {proc.returncode}로 종료되었습니다.'})}\n\n"
@@ -307,7 +306,7 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
                 async for text in _stream_subprocess_lines(proc):
                     yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
                 await proc.wait()
-                if proc.returncode == 0 and shutil.which("ollama"):
+                if proc.returncode == 0 and find_ollama_binary():
                     yield f"data: {json.dumps({'status': 'success'})}\n\n"
                 else:
                     yield f"data: {json.dumps({'status': 'error', 'message': f'설치 프로그램이 종료 코드 {proc.returncode}로 끝났습니다. https://ollama.com/download/windows 에서 직접 설치해주세요.'})}\n\n"

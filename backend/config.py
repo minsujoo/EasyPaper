@@ -39,6 +39,41 @@ def is_ollama_host_local() -> bool:
         return False
     return hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
 
+
+def find_ollama_binary():
+    # 반환값: 찾은 ollama 실행 파일의 경로(str) 또는 못 찾았을 때 None
+    """이 서버에 Ollama CLI가 설치되어 있는지 확인합니다.
+
+    shutil.which("ollama")는 현재 프로세스가 시작될 때 캡처된 PATH만 보므로,
+    (특히 Windows에서) 설치 스크립트가 레지스트리의 PATH를 갱신해도 이미 떠있는
+    백엔드 프로세스에는 반영되지 않아 방금 설치했거나 이미 정상 동작 중인
+    Ollama를 "미설치"로 오판하는 문제가 있었다. PATH 조회에 실패하면 OS별로
+    흔히 설치되는 실제 경로들을 직접 확인해 이 문제를 우회한다.
+    """
+    import os
+    import platform
+    import shutil
+
+    found = shutil.which("ollama")
+    if found:
+        return found
+
+    system = platform.system()
+    candidates = []
+    if system == "Windows":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            candidates.append(os.path.join(localappdata, "Programs", "Ollama", "ollama.exe"))
+    elif system == "Darwin":
+        candidates += ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]
+    else:
+        candidates += ["/usr/local/bin/ollama", "/usr/bin/ollama"]
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return None
+
 def get_trans_provider() -> str:
     return TRANS_PROVIDER
 

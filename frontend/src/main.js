@@ -1590,8 +1590,24 @@ class ProviderModelPicker {
       const baseClean = baseValue.split(':')[0].toLowerCase()
       return instClean === baseClean
     }
-    
+
+    // 지금 바로 사용 가능한(=키가 있거나, CLI가 감지됐거나, 모델이 받아져 있는) 공급자인지 여부
+    const isProviderAvailable = (providerId) => {
+      if (providerId === 'antigravity') return state.cliAvailability?.antigravity === true
+      if (providerId === 'claude_code') return state.cliAvailability?.claude_code === true
+      if (providerId === 'codex') return state.cliAvailability?.codex === true
+      if (providerId === 'ollama') return downloaded.length > 0
+      if (providerId === 'openai') return hasOpenAIKey
+      if (providerId === 'gemini') return hasGeminiKey
+      if (providerId === 'claude') return hasClaudeKey
+      return false
+    }
+
     let config = PROVIDER_CONFIG.filter(p => {
+      // 뷰어/채팅 등 컴팩트 선택기에서는 사용 불가능한 CLI 공급자를 목록에서 아예 숨겨
+      // 목록을 짧게 유지한다. 설정 화면에서는 아직 설정 전인 공급자도 볼 수 있어야
+      // 하므로 숨기지 않고 아래에서 정렬 + "사용가능" 칩으로만 구분한다.
+      if (!this.compact) return true
       if (p.id === 'antigravity') return state.cliAvailability?.antigravity !== false
       if (p.id === 'claude_code') return state.cliAvailability?.claude_code !== false
       if (p.id === 'codex') return state.cliAvailability?.codex !== false
@@ -1654,6 +1670,11 @@ class ProviderModelPicker {
         if (p.id === 'claude' && !hasClaudeKey) return { ...p, models: [] }
         return p
       }).filter(p => p.models.length > 0)
+    } else {
+      // 설정 화면: 지금 바로 사용 가능한 공급자를 먼저 나열 (그룹 내 상대 순서는 유지)
+      config = config
+        .map(p => ({ ...p, available: isProviderAvailable(p.id) }))
+        .sort((a, b) => (b.available - a.available))
     }
 
     config.forEach((prov, i) => {
@@ -1667,7 +1688,8 @@ class ProviderModelPicker {
 
       const header = document.createElement('div')
       header.className = 'picker-group-header'
-      header.innerHTML = `<span class="g-icon">${prov.icon}</span><span>${prov.label}</span>`
+      const availableChipHtml = prov.available ? `<span class="picker-available-chip">사용가능</span>` : ''
+      header.innerHTML = `<span class="g-icon">${prov.icon}</span><span>${prov.label}</span>${availableChipHtml}`
       group.appendChild(header)
 
       const models = prov.models.length > 0 ? prov.models : [{ value: '', label: '모델 없음' }]
@@ -1934,9 +1956,17 @@ function updateSettingsUIVisibility() {
 async function refreshSystemSettings() {
   try {
     const sys = await getSystemSettingsAPI()
-    
+
     state.availableOllamaModels = sys.available_models || []
-    
+
+    // CLI 기반 엔진(Antigravity/Claude Code/Codex)의 실제 설치 여부를 반영 -
+    // 이전에는 이 값이 한 번도 갱신되지 않아 항상 기본값(전부 사용 가능)으로 남아있었음
+    try {
+      state.cliAvailability = await fetchCliAvailability()
+    } catch (err) {
+      console.warn('CLI 가용성 조회 실패:', err)
+    }
+
     settingOllamaHost.value = sys.ollama_host || ''
     settingOpenAIKey.value = sys.openai_api_key || ''
     settingGeminiKey.value = sys.gemini_api_key || ''
@@ -7940,10 +7970,11 @@ async function detectAndRenderOnboarding() {
 
 function wireOnboardingInstallBtn(btn, streamFn, label) {
   if (!btn) return
+  const originalText = btn.textContent
   btn.addEventListener('click', () => {
     btn.disabled = true
-    const originalText = btn.textContent
     btn.textContent = '설치 중...'
+    btn.classList.remove('onboarding-install-done')
     onboardingInstallProgressArea.classList.remove('hidden')
     onboardingInstallStatus.textContent = `${label} 설치 진행 중...`
     onboardingInstallLog.textContent = ''
@@ -7956,10 +7987,18 @@ function wireOnboardingInstallBtn(btn, streamFn, label) {
         }
       },
       async () => {
+        // 버튼에 "설치됨" 상태를 영구적으로 남겨 완료 여부를 눈으로 바로 확인할 수 있게 함
+        // (예전에는 원래 텍스트로 바로 되돌려버려서 설치가 끝나도 아무 표시가 남지 않았음)
+        btn.textContent = '✓ 설치됨'
+        btn.classList.add('onboarding-install-done')
+        onboardingInstallStatus.textContent = label === 'Ollama'
+          ? 'Ollama 설치 완료! 모델은 설정 > 모델 설정에서 다운로드할 수 있습니다.'
+          : `${label} 설치 완료!`
         showToast(`${label} 설치가 완료되었습니다!`, 'success')
-        btn.disabled = false
-        btn.textContent = originalText
-        onboardingInstallProgressArea.classList.add('hidden')
+        // 방금 완료된 상태를 잠깐 보여준 뒤, 다른 엔진이 이미 함께 감지됐다면
+        // 선택 화면으로 자연스럽게 넘어감 (설치만 된 Ollama처럼 모델이 아직
+        // 없는 경우는 이 설치 섹션에 그대로 남아 "✓ 설치됨" 표시가 유지됨)
+        await new Promise(resolve => setTimeout(resolve, 900))
         await detectAndRenderOnboarding()
       },
       (err) => {
