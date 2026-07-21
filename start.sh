@@ -17,5 +17,12 @@ if [ ! -f ".env" ]; then
     echo "⚠️  Warning: .env 파일이 존재하지 않아 기본값으로 시작합니다."
 fi
 
+# venv 내부 경로는 OS에 따라 다름 (macOS/Linux: .venv/bin, Windows: .venv/Scripts)
+if [ -f ".venv/bin/python" ]; then
+    VENV_PYTHON=".venv/bin/python"
+else
+    VENV_PYTHON=".venv/Scripts/python.exe"
+fi
+
 # Run backend which also serves the compiled frontend dist
-exec .venv/bin/python main.py
+exec "$VENV_PYTHON" main.py
