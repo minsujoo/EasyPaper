@@ -7,7 +7,7 @@ echo "🚀 EasyPaper 개발 서버 시작..."
 
 # 백엔드 시작
 echo "📡 FastAPI 백엔드 시작 중 (포트 8000)..."
-cd "$(dirname "$0")/../backend"
+cd "$(dirname "$0")/../../backend"
 .venv/bin/python main.py &
 BACKEND_PID=$!
 echo "   백엔드 PID: $BACKEND_PID"
@@ -17,7 +17,7 @@ sleep 2
 
 # 프론트엔드 시작
 echo "🌐 Vite 프론트엔드 시작 중 (포트 5173)..."
-cd "$(dirname "$0")/../frontend"
+cd "$(dirname "$0")/../../frontend"
 npm run dev &
 FRONTEND_PID=$!
 echo "   프론트엔드 PID: $FRONTEND_PID"
