@@ -5,6 +5,8 @@ cd /d "%~dp0backend"
 
 if not exist ".venv" (
     echo Error: Python virtual environment not found. Please run setup.bat first.
+    echo.
+    pause
     exit /b 1
 )
 
@@ -13,3 +15,10 @@ if not exist ".env" (
 )
 
 .venv\Scripts\python.exe main.py
+
+if errorlevel 1 (
+    echo.
+    echo EasyPaper exited with an error. See the message above.
+    echo.
+    pause
+)

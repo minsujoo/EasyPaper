@@ -7,6 +7,21 @@ echo =========================================
 echo EasyPaper Auto Setup ^& Installation Script
 echo =========================================
 
+where python >nul 2>nul
+if errorlevel 1 (
+    echo Error: 'python' command not found.
+    echo Please install Python 3.8+ from https://www.python.org/downloads/
+    echo and make sure to check "Add python.exe to PATH" during installation.
+    goto :error
+)
+
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo Error: 'npm' command not found.
+    echo Please install Node.js 16+ from https://nodejs.org/ ^(npm is included^).
+    goto :error
+)
+
 echo 1. Setting up Backend...
 cd backend
 
@@ -50,9 +65,13 @@ echo To run the production-ready server serving both frontend ^& backend, run:
 echo    start.bat
 echo    Then open: http://localhost:8000
 echo =========================================
+echo.
+pause
 goto :eof
 
 :error
 echo.
 echo Setup failed. Please check the error message above.
+echo.
+pause
 exit /b 1

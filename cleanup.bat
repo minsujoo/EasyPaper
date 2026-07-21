@@ -48,3 +48,5 @@ if /i "%REPLY%"=="y" (
 echo =========================================
 echo EasyPaper Clean up Complete!
 echo =========================================
+echo.
+pause

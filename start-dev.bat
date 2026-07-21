@@ -1,6 +1,15 @@
 @echo off
 setlocal
 
+cd /d "%~dp0"
+
+if not exist "backend\.venv" (
+    echo Error: Python virtual environment not found. Please run setup.bat first.
+    echo.
+    pause
+    exit /b 1
+)
+
 echo EasyPaper development servers starting...
 
 cd /d "%~dp0backend"
@@ -17,3 +26,5 @@ echo    API Docs:    http://localhost:8000/docs
 echo.
 echo Backend and frontend are each running in their own window.
 echo Close those windows (or Ctrl+C inside them) to stop the servers.
+echo.
+pause
