@@ -3,6 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import logging
+
+from logging_config import setup_logging
+setup_logging()
+logger = logging.getLogger(__name__)
 
 from config import CORS_ORIGINS, UPLOAD_DIR, APP_HOST, APP_PORT
 from routers import upload, translate, chat

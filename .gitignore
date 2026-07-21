@@ -373,3 +373,6 @@ pyrightconfig.json
 frontend/playwright-report/
 frontend/test-results/
 frontend/blob-report/
+
+# EasyPaper 로그 파일
+backend/logs/
