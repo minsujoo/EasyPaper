@@ -1,10 +1,10 @@
 @echo off
 setlocal
 
-cd /d "%~dp0..\backend"
+cd /d "%~dp0..\..\backend"
 
 if not exist ".venv" (
-    echo Error: Python virtual environment not found. Please run bat\setup.bat first.
+    echo Error: Python virtual environment not found. Please run scripts\bat\setup.bat first.
     echo.
     pause
     exit /b 1

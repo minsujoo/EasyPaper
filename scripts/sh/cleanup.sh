@@ -3,8 +3,8 @@
 
 set -e
 
-# 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 sh/ 하위에 있음)
-cd "$(dirname "$0")/.."
+# 저장소 루트 기준으로 동작하도록 이동 (이 스크립트는 scripts/sh/ 하위에 있음)
+cd "$(dirname "$0")/../.."
 
 echo "========================================="
 echo "🧹 EasyPaper Uninstall & Clean up Script"

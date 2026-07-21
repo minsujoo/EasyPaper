@@ -22,7 +22,7 @@ EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으�
 
 ## 빠른 시작
 
-명령어 세 줄로 바로 실행이 가능합니다. macOS·Linux용 스크립트는 `sh/`, Windows용 스크립트는 `bat/` 폴더에 모여 있습니다.
+설치와 실행에 필요한 모든 스크립트는 `scripts/` 폴더에 모여 있습니다 — macOS·Linux용은 `scripts/sh/`, Windows용은 `scripts/bat/`에 있습니다.
 
 **macOS / Linux**
 ```bash
@@ -32,28 +32,28 @@ cd EasyPaper
 
 # 2. 설치 스크립트 실행
 # (Python 가상환경 생성, 의존성 패키지 설치, .env 파일 생성, 프론트엔드 빌드 포함)
-./sh/setup.sh
+./scripts/sh/setup.sh
 
 # 3. 서버 시작
-./sh/start.sh
+./scripts/sh/start.sh
 ```
 
 **Windows**
 
-`bat\setup.bat` 파일을 더블클릭하거나(또는 명령 프롬프트에서 실행), 완료 후 `bat\start.bat`을 실행하면 됩니다.
+`scripts\bat\setup.bat` 파일을 더블클릭하거나(또는 명령 프롬프트에서 실행), 완료 후 `scripts\bat\start.bat`을 실행하면 됩니다.
 ```bat
 git clone https://github.com/orion-gz/EasyPaper.git
 cd EasyPaper
-bat\setup.bat
-bat\start.bat
+scripts\bat\setup.bat
+scripts\bat\start.bat
 ```
 
 서버 구동 후 브라우저에서 `http://localhost:8000` 에 접속합니다.
 
 설치 및 생성된 모든 가상 환경과 빌드 데이터, systemd 서비스(Linux)를 완전히 지우고 원복하려면 다음 삭제 스크립트를 실행합니다:
 ```bash
-./sh/cleanup.sh      # macOS / Linux
-bat\cleanup.bat      # Windows
+./scripts/sh/cleanup.sh      # macOS / Linux
+scripts\bat\cleanup.bat      # Windows
 ```
 
 ---
