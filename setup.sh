@@ -23,8 +23,16 @@ if [ ! -d ".venv" ]; then
     echo "   Creating Python virtual environment (.venv)..."
     "$PYTHON_BIN" -m venv .venv
 fi
+
+# venv 내부 경로는 OS에 따라 다름 (macOS/Linux: .venv/bin, Windows: .venv/Scripts)
+if [ -f ".venv/bin/pip" ]; then
+    VENV_PIP=".venv/bin/pip"
+else
+    VENV_PIP=".venv/Scripts/pip.exe"
+fi
+
 echo "   Installing backend dependencies..."
-.venv/bin/pip install -r requirements.txt
+"$VENV_PIP" install -r requirements.txt
 
 if [ ! -f ".env" ]; then
     echo "   Creating configuration file (.env from template)..."
@@ -47,7 +55,7 @@ echo "========================================="
 echo "To start the development servers concurrently, run:"
 echo "   ./start-dev.sh"
 echo ""
-echo "To run the production-ready FastAPI server serving both frontend & backend, run:"
-echo "   cd backend && .venv/bin/python main.py"
+echo "To run the production-ready server serving both frontend & backend, run:"
+echo "   ./start.sh"
 echo "   Then open: http://localhost:8000"
 echo "========================================="
