@@ -518,8 +518,9 @@ async def system_update(current_user: str = Depends(get_current_user)):
             frontend_dir = os.path.join(project_dir, "frontend")
             if os.path.exists(frontend_dir):
                 # npm install && npm run build
+                from config import windows_safe_exec_args
                 build_proc = await asyncio.create_subprocess_exec(
-                    "npm", "run", "build",
+                    *windows_safe_exec_args(["npm", "run", "build"]),
                     cwd=frontend_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE

@@ -40,6 +40,23 @@ def is_ollama_host_local() -> bool:
     return hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
 
 
+def windows_safe_exec_args(cmd):
+    """CLI 서브프로세스 실행용 argv를 만듭니다.
+
+    claude/codex/agy는 npm 등을 통해 설치되면 Windows에서 실제 실행 파일이
+    아니라 .cmd/.bat 래퍼 스크립트로 배포되는 경우가 많다. asyncio의
+    create_subprocess_exec(shell=False)는 Windows의 CreateProcess를 그대로
+    쓰는데, 이 API는 .cmd/.bat 파일을 이미지로 인식하지 못해 실제로는 정상
+    설치되어 있어도 "[WinError 2] 지정된 파일을 찾을 수 없습니다" 오류로
+    실행 자체가 실패한다. Windows에서는 cmd.exe를 경유해 PATHEXT 확장자
+    검색·해석을 맡기는 방식으로 이를 우회한다 (macOS/Linux는 기존과 동일).
+    """
+    import platform
+    if platform.system() == "Windows":
+        return ["cmd", "/c"] + list(cmd)
+    return list(cmd)
+
+
 def find_ollama_binary():
     # 반환값: 찾은 ollama 실행 파일의 경로(str) 또는 못 찾았을 때 None
     """이 서버에 Ollama CLI가 설치되어 있는지 확인합니다.
