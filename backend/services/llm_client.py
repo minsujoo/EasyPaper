@@ -16,7 +16,8 @@ from config import (
     get_claude_code_path,
     get_codex_path,
     get_translation_prompt_template,
-    get_project_root
+    get_project_root,
+    windows_safe_exec_args as _exec_args,
 )
 
 
@@ -889,7 +890,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
             cmd = base_cmd + session_flag
             try:
                 process = await asyncio.create_subprocess_exec(
-                    *cmd,
+                    *_exec_args(cmd),
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -1038,7 +1039,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
             cmd = build_cmd(thread_id)
             try:
                 process = await asyncio.create_subprocess_exec(
-                    *cmd,
+                    *_exec_args(cmd),
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -1326,7 +1327,7 @@ async def stream_antigravity(
 
                 try:
                     init_proc = await asyncio.create_subprocess_exec(
-                        *init_cmd,
+                        *_exec_args(init_cmd),
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         env=get_agy_env(),
@@ -1383,7 +1384,7 @@ async def stream_antigravity(
 
     try:
         process = await asyncio.create_subprocess_exec(
-            *cmd,
+            *_exec_args(cmd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=get_agy_env(),
