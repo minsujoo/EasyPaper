@@ -4881,8 +4881,11 @@ document.addEventListener('mouseup', (e) => {
       
       const isTextLayer = container && container.nodeType === 1 && container.closest('.textLayer')
       const isTransContent = container && container.nodeType === 1 && container.closest('.trans-page-content')
+      // AI가 답변한 채팅 메시지(assistant)에서 선택한 내용도 인용해 후속 질문을
+      // 할 수 있도록, 사용자 자신의 메시지는 제외하고 assistant 말풍선만 대상으로 함
+      const isChatAssistantMsg = container && container.nodeType === 1 && container.closest('.chat-message.assistant .message-bubble')
 
-      if (!isTextLayer && !isTransContent) {
+      if (!isTextLayer && !isTransContent && !isChatAssistantMsg) {
         hideSelectionMenu()
         return
       }
