@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import json
+import logging
 from typing import AsyncGenerator
 from config import (
     get_ollama_host,
@@ -19,6 +20,8 @@ from config import (
     get_project_root,
     windows_safe_exec_args as _exec_args,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # CLI(Claude Code/Codex/Antigravity) 서브프로세스 출력이 이 시간(초) 동안
@@ -1013,7 +1016,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     session_flag = ["--session-id", session_id]
                     continue
 
-                print(f"[Claude Code CLI Error] code={process.returncode} stderr={stderr_out}")
+                logger.error(f"Claude Code CLI 실패: code={process.returncode} stderr={stderr_out}")
                 # 실패를 조용히 삼키고 그냥 return하면, 호출부는 빈 결과를 "정상
                 # 번역 완료"로 착각해 빈 문자열을 캐시에 영구 저장해버린다.
                 # 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직(에러 응답,
@@ -1023,7 +1026,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
                 )
             except Exception as e:
-                print(f"[Claude Code CLI Exec Error] {e}")
+                logger.error(f"Claude Code CLI 실행 예외: {e}")
                 raise
 
 
@@ -1177,7 +1180,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                     thread_id = None
                     continue
 
-                print(f"[Codex CLI Error] code={process.returncode} stderr={stderr_out}")
+                logger.error(f"Codex CLI 실패: code={process.returncode} stderr={stderr_out}")
                 # 실패를 조용히 삼키고 그냥 return하면, 호출부는 빈 결과를 "정상
                 # 번역 완료"로 착각해 빈 문자열을 캐시에 영구 저장해버린다.
                 # 예외를 던져서 라우터/job 쪽의 기존 실패 처리 로직(에러 응답,
@@ -1187,7 +1190,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                     f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
                 )
             except Exception as e:
-                print(f"[Codex CLI Exec Error] {e}")
+                logger.error(f"Codex CLI 실행 예외: {e}")
                 raise
 
 
@@ -1242,7 +1245,7 @@ def save_ai_session_meta(session_id: str, provider: str, conversation_id: str = 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception as e:
-        print(f"[save_ai_session_meta Error] {e}")
+        logger.error(f"save_ai_session_meta 실패: {e}")
 
 def _chat_context_already_sent(session_id: str, provider: str) -> bool:
     """이 문서(session_id)의 현재 provider 네이티브 세션에 이미 채팅 풀 컨텍스트
@@ -1273,7 +1276,7 @@ def _mark_chat_context_sent(session_id: str, provider: str) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(existing, f)
     except Exception as e:
-        print(f"[_mark_chat_context_sent Error] {e}")
+        logger.error(f"_mark_chat_context_sent 실패: {e}")
 
 # 하위 호환: 기존 conversation_id.txt만 남아있는 문서를 위한 폴백 판독
 def get_mapped_conversation_id(session_id: str) -> str:
@@ -1435,14 +1438,14 @@ async def stream_antigravity(
                         if match:
                             new_conv_id = match.group(1)
                             save_ai_session_meta(session_id, provider="antigravity", conversation_id=new_conv_id)
-                            print(f"[stream_antigravity] Initialized session {session_id} to Antigravity conversation {new_conv_id}", flush=True)
+                            logger.info(f"[stream_antigravity] 세션 {session_id} -> Antigravity 대화 {new_conv_id} 초기화 완료")
                             target_conv_id = new_conv_id
                         else:
-                            print(f"[stream_antigravity] Failed to find conversation ID in init log", flush=True)
+                            logger.warning("[stream_antigravity] 초기화 로그에서 대화 ID를 찾지 못함")
                     else:
-                        print(f"[stream_antigravity] Log file was never created at {temp_log_path}", flush=True)
+                        logger.warning(f"[stream_antigravity] 로그 파일이 생성되지 않음: {temp_log_path}")
                 except Exception as ie:
-                    print(f"[stream_antigravity] Session initialization error: {ie}", flush=True)
+                    logger.warning(f"[stream_antigravity] 세션 초기화 오류: {ie}")
                 finally:
                     if os.path.exists(temp_log_path):
                         try:
@@ -1506,7 +1509,7 @@ async def stream_antigravity(
         # (에러 응답, failed_pages 기록 등)이 실제로 작동하게 한다.
         if process.returncode and process.returncode != 0:
             stderr_out = await _finish_stderr_drain(stderr_task)
-            print(f"[Antigravity CLI Error] code={process.returncode} stderr={stderr_out[:500]}", flush=True)
+            logger.error(f"Antigravity CLI 실패: code={process.returncode} stderr={stderr_out[:500]}")
             raise RuntimeError(
                 f"Antigravity CLI 실행 실패 (code={process.returncode}): "
                 f"{stderr_out.strip()[:500] or '알 수 없는 오류'}"
@@ -1517,7 +1520,7 @@ async def stream_antigravity(
         # 캐시에 영구 저장되는 버그가 있었다(실제로 "[Antigravity CLI 실행
         # 에러: ...]"라는 문자열이 논문 카테고리로 분류된 사례가 있었음).
         # 반드시 예외로 전파해 호출부가 실패로 인식하게 해야 한다.
-        print(f"[Antigravity CLI Exec Error] {e}", flush=True)
+        logger.error(f"Antigravity CLI 실행 예외: {e}")
         raise
 
 from typing import List
@@ -1573,7 +1576,7 @@ Category Tags:"""
                     data = response.json()
                     tokens.append(data.get("message", {}).get("content", ""))
     except Exception as e:
-        print(f"Classification failed: {e}")
+        logger.warning(f"논문 카테고리 분류 실패: {e}")
         return []
 
     result = "".join(tokens).strip()
