@@ -376,3 +376,6 @@ frontend/blob-report/
 
 # EasyPaper 로그 파일
 backend/logs/
+
+# EasyPaper 데이터 백업 아카이브
+backups/

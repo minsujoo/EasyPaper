@@ -139,6 +139,26 @@ npm run test:e2e
 
 ---
 
+## 데이터 백업 및 복원
+
+DB(`easypaper.db`) + 논문 라이브러리(`library/`) + 업로드 원본(`uploads/`)을 타임스탬프가 찍힌 압축 파일로 `backups/`에 저장합니다. 재생성 가능한 `cache/`는 백업 대상에서 제외됩니다. 기본적으로 최신 10개만 보관하고 오래된 백업은 자동으로 정리됩니다(`EASYPAPER_BACKUP_KEEP` 환경변수로 조절 가능).
+
+**macOS / Linux**
+```bash
+./scripts/sh/backup.sh
+./scripts/sh/restore.sh backups/easypaper_backup_20260101_120000.tar.gz
+```
+
+**Windows**
+```bat
+scripts\bat\backup.bat
+scripts\bat\restore.bat backups\easypaper_backup_20260101_120000.zip
+```
+
+주기적으로 자동 백업하려면 `backup.sh`/`backup.bat`을 각 OS의 스케줄러(Linux/macOS는 `cron`, Windows는 작업 스케줄러)에 등록하세요.
+
+---
+
 ## 상시 구동 — systemd 서비스 등록 (선택 사항)
 
 Linux 서버에서 EasyPaper를 백그라운드 데몬으로 상시 실행하려면 제공된 `easypaper.service` 파일을 활용하세요.
