@@ -188,7 +188,52 @@ APP_USERNAME = os.getenv("APP_USERNAME", "admin")
 DEFAULT_PASSWORD_HASH = "0102030405060708090a0b0c0d0e0f10:c8c17b1c61732cde577461e36b682deab2dda5cd72797d2517526dfcbc39d6b3"
 APP_PASSWORD_HASH = os.getenv("APP_PASSWORD_HASH", DEFAULT_PASSWORD_HASH)
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
-SECRET_KEY = os.getenv("SECRET_KEY", "easypaper_secret_key_change_me_in_production_1234567890")
+
+# 모든 설치본이 동일한 고정 문자열을 SECRET_KEY로 공유하면, 이 리포지토리를
+# 본 사람은 누구나 그 값으로 세션 토큰(HMAC 서명)을 위조해 로그인 없이도
+# 관리자 세션을 만들 수 있다 - 비밀번호를 바꿔도 세션 서명 키와는 무관해
+# 막히지 않는다. .env에 값이 없거나 예전에 쓰이던 고정 기본값 그대로면,
+# 안전한 난수 키를 새로 만들어 .env에 영구 저장한다(재시작마다 새로 만들면
+# 기존 로그인이 매번 끊기므로 반드시 영속화가 필요함).
+_INSECURE_DEFAULT_SECRET_KEYS = {
+    "",
+    "easypaper_secret_key_change_me_in_production_1234567890",
+}
+
+def _persist_secret_key_to_env(new_key: str):
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_path):
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(f"SECRET_KEY={new_key}\n")
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    new_lines = []
+    found = False
+    for line in lines:
+        if line.strip().startswith("SECRET_KEY="):
+            new_lines.append(f"SECRET_KEY={new_key}\n")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"SECRET_KEY={new_key}\n")
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+def _get_or_create_secret_key() -> str:
+    existing = os.getenv("SECRET_KEY", "")
+    if existing not in _INSECURE_DEFAULT_SECRET_KEYS:
+        return existing
+    import secrets
+    new_key = secrets.token_hex(32)
+    try:
+        _persist_secret_key_to_env(new_key)
+    except Exception:
+        pass
+    return new_key
+
+SECRET_KEY = _get_or_create_secret_key()
 
 def get_app_username() -> str:
     return APP_USERNAME
