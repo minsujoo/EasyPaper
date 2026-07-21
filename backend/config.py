@@ -20,7 +20,13 @@ CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
 LIBRARY_DIR = os.getenv("LIBRARY_DIR", "./library")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 PROJECT_ROOT = os.getenv("PROJECT_ROOT", "")
-if not PROJECT_ROOT:
+# .env.example에 이 프로젝트를 개발한 서버 전용 절대경로가 예시로 박혀 있어서,
+# 사용자가 .env.example을 그대로 복사해 .env를 만들면 자기 기기에는 존재하지
+# 않는 PROJECT_ROOT를 그대로 신뢰하게 된다. 이 값은 CLI(Claude Code/Codex/
+# Antigravity) 서브프로세스의 cwd로 바로 쓰이기 때문에, 존재하지 않는 경로면
+# 서브프로세스 실행 자체가 [Errno 2] No such file or directory로 즉시 실패한다.
+# 실제로 존재하는 디렉터리인지 검증하고, 아니면 코드 위치 기준으로 다시 계산한다.
+if not PROJECT_ROOT or not os.path.isdir(PROJECT_ROOT):
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_project_root() -> str:
