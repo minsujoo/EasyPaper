@@ -64,13 +64,18 @@ def _get_antigravity_cloud_quota(retry=True) -> dict:
         from config import get_agy_path, get_agy_env
     except ImportError:
         def get_agy_path():
-            return os.getenv("AGY_PATH", "/home/ubuntu/.local/bin/agy")
+            import shutil
+            return shutil.which("agy") or "agy"
         def get_agy_env():
             env = os.environ.copy()
             if "HOME" not in env or not env["HOME"]:
-                env["HOME"] = "/home/ubuntu"
+                env["HOME"] = os.path.expanduser("~")
             if "USER" not in env or not env["USER"]:
-                env["USER"] = "ubuntu"
+                try:
+                    import getpass
+                    env["USER"] = getpass.getuser()
+                except Exception:
+                    pass
             return env
 
     token_path = os.path.expanduser("~/.gemini/antigravity-cli/antigravity-oauth-token")
