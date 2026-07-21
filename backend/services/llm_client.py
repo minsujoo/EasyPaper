@@ -605,11 +605,9 @@ async def stream_chat(
             yield token
         return
     elif provider == "antigravity":
-        try:
-            from services.usage_tracker import record_call
-            record_call("chat")
-        except Exception:
-            pass
+        # 사용량 기록(record_call)은 stream_antigravity 내부에서 usage_label에
+        # 맞춰 이미 처리한다 - 여기서 한 번 더 기록하면 채팅 1회가 2번으로
+        # 집계되는 이중 카운트 버그가 있었다.
         # agy CLI가 자체적으로 --conversation 세션 내에 이전 대화 히스토리(우리가 보낸
         # 논문 원문+가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번
         # 보냈다면 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만
@@ -629,11 +627,9 @@ async def stream_chat(
             _mark_chat_context_sent(session_id, "antigravity")
         return
     elif provider == "claude_code":
-        try:
-            from services.usage_tracker import record_call
-            record_call("chat")
-        except Exception:
-            pass
+        # 사용량 기록(record_call)은 stream_claude_code 내부에서 usage_label에
+        # 맞춰 이미 처리한다 - 여기서 한 번 더 기록하면 채팅 1회가 2번으로
+        # 집계되는 이중 카운트 버그가 있었다.
         # claude CLI가 자체적으로 --resume 세션 내에 이전 대화 히스토리(논문 원문+
         # 가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번 보냈다면
         # 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만 붙이고
@@ -653,11 +649,9 @@ async def stream_chat(
             _mark_chat_context_sent(session_id, "claude_code")
         return
     elif provider == "codex":
-        try:
-            from services.usage_tracker import record_call
-            record_call("chat")
-        except Exception:
-            pass
+        # 사용량 기록(record_call)은 stream_codex 내부에서 usage_label에 맞춰
+        # 이미 처리한다 - 여기서 한 번 더 기록하면 채팅 1회가 2번으로 집계되는
+        # 이중 카운트 버그가 있었다.
         # codex CLI가 자체적으로 resume 세션(thread) 내에 이전 대화 히스토리(논문 원문+
         # 가이드라인 포함)를 그대로 갖고 있으므로, 같은 세션에 이미 한 번 보냈다면
         # 매 질문마다 논문 원문 전체를 다시 붙일 필요가 없다 - 최초 1회만 붙이고
