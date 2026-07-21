@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
 import { icon } from './icons.js'
@@ -97,6 +97,7 @@ const onboardingInstall      = $('onboarding-install')
 const onboardingInstallOllamaBtn     = $('onboarding-install-ollama-btn')
 const onboardingInstallClaudeCodeBtn = $('onboarding-install-claude-code-btn')
 const onboardingInstallCodexBtn      = $('onboarding-install-codex-btn')
+const onboardingInstallAntigravityBtn = $('onboarding-install-antigravity-btn')
 const onboardingInstallProgressArea  = $('onboarding-install-progress-area')
 const onboardingInstallStatus        = $('onboarding-install-status')
 const onboardingInstallLog           = $('onboarding-install-log')
@@ -7974,4 +7975,5 @@ function wireOnboardingInstallBtn(btn, streamFn, label) {
 wireOnboardingInstallBtn(onboardingInstallOllamaBtn, streamInstallOllamaAPI, 'Ollama')
 wireOnboardingInstallBtn(onboardingInstallClaudeCodeBtn, streamInstallClaudeCodeAPI, 'Claude Code CLI')
 wireOnboardingInstallBtn(onboardingInstallCodexBtn, streamInstallCodexAPI, 'Codex CLI')
+wireOnboardingInstallBtn(onboardingInstallAntigravityBtn, streamInstallAntigravityAPI, 'Antigravity CLI')
 
