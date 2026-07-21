@@ -185,9 +185,25 @@ def update_system_settings(
 
 # Authentication settings
 APP_USERNAME = os.getenv("APP_USERNAME", "admin")
+# 이 해시는 모든 EasyPaper 설치본이 동일하게 공유하는 공개된 기본값(비밀번호
+# "admin")이다. 리포지토리 자체가 공개돼 있어 사실상 이미 알려진 값이나
+# 마찬가지라, 오프라인 크래킹 대상이라기보다 "설정을 아직 안 바꾼 상태"임을
+# 곧바로 알 수 있는 지표에 가깝다. 첫 실행 UX(아이디: admin, 비밀번호: admin
+# 으로 로그인 후 설정에서 변경)를 그대로 유지하기 위해 값 자체는 바꾸지
+# 않되, 이 기본값 그대로 운영 중이면 서버 시작 시 매번 눈에 띄게 경고한다.
 DEFAULT_PASSWORD_HASH = "0102030405060708090a0b0c0d0e0f10:c8c17b1c61732cde577461e36b682deab2dda5cd72797d2517526dfcbc39d6b3"
 APP_PASSWORD_HASH = os.getenv("APP_PASSWORD_HASH", DEFAULT_PASSWORD_HASH)
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+
+if APP_PASSWORD_HASH == DEFAULT_PASSWORD_HASH:
+    print(
+        "\n" + "!" * 70 +
+        "\n[보안 경고] 기본 관리자 계정(admin / admin)을 그대로 사용 중입니다.\n"
+        "이 값은 EasyPaper를 설치한 모든 사용자가 동일하게 공유하는 공개된\n"
+        "기본값이라, 외부에서 접근 가능한 환경이라면 즉시 로그인 후 설정\n"
+        "화면에서 아이디/비밀번호를 변경해주세요.\n"
+        + "!" * 70 + "\n"
+    )
 
 # 모든 설치본이 동일한 고정 문자열을 SECRET_KEY로 공유하면, 이 리포지토리를
 # 본 사람은 누구나 그 값으로 세션 토큰(HMAC 서명)을 위조해 로그인 없이도
