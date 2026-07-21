@@ -412,6 +412,13 @@ export function streamInstallCodexAPI(onProgress, onDone, onError) {
 }
 
 /**
+ * 이 서버에 Antigravity CLI(agy)를 공식 설치 스크립트로 설치하고 진행 상황을 스트리밍합니다.
+ */
+export function streamInstallAntigravityAPI(onProgress, onDone, onError) {
+  return _streamInstallCliAPI('/settings/install-antigravity', 'Antigravity CLI 설치 실패', onProgress, onDone, onError)
+}
+
+/**
  * Ollama 서버에 새로운 모델 다운로드를 요청하고 상태를 스트리밍합니다.
  */
 export function streamPullModelAPI(modelName, onStatus, onDone, onError) {

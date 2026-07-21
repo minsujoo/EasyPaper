@@ -389,6 +389,65 @@ router.add_api_route(
 )
 
 
+@router.get("/settings/install-antigravity")
+async def install_antigravity_stream(current_user: str = Depends(get_current_user)):
+    """공식 설치 스크립트(https://antigravity.google/cli)로 이 서버에 Antigravity CLI(agy)를
+    설치하고 진행 상황을 스트리밍합니다."""
+    import asyncio
+    import os
+    import platform
+    import shutil
+
+    system = platform.system()  # 'Linux' | 'Darwin' | 'Windows'
+
+    async def event_stream():
+        agy_path = get_agy_path()
+        if os.path.exists(agy_path) or shutil.which(agy_path) or shutil.which("agy"):
+            yield f"data: {json.dumps({'status': 'error', 'message': 'Antigravity CLI가 이미 설치되어 있습니다.'})}\n\n"
+            return
+
+        if system == "Windows":
+            # cmd.exe용 공식 설치 스크립트를 %TEMP%에 받아 실행 후 정리한다.
+            command = (
+                'curl -fsSL https://antigravity.google/cli/install.cmd -o "%TEMP%\\antigravity_install.cmd" '
+                '&& call "%TEMP%\\antigravity_install.cmd" '
+                '&& del "%TEMP%\\antigravity_install.cmd"'
+            )
+        else:
+            # macOS와 Linux는 동일한 공식 셸 스크립트를 사용한다.
+            command = "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                stdin=asyncio.subprocess.DEVNULL,
+            )
+            async for text in _stream_subprocess_lines(proc):
+                yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
+            await proc.wait()
+
+            agy_path_after = get_agy_path()
+            installed = os.path.exists(agy_path_after) or shutil.which(agy_path_after) or shutil.which("agy")
+            if proc.returncode == 0 and installed:
+                yield f"data: {json.dumps({'status': 'success'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'status': 'error', 'message': f'설치 스크립트가 오류 코드 {proc.returncode}로 종료되었습니다.'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
+
+
 @router.get("/settings/pull-model")
 async def pull_model_stream(model_name: str, current_user: str = Depends(get_current_user)):
     """Ollama 서버에 새로운 모델 다운로드를 요청하고 진행 상황을 스트리밍합니다."""
