@@ -309,58 +309,72 @@
           <p style="font-size: 13.5px; color: var(--text-secondary);">설치된 AI 엔진을 확인하고 있어요...</p>
         </div>
 
-        <!-- 상태 2: 감지된 엔진 목록 -->
+        <!-- 상태 2: 감지된 엔진 목록 (선택 후 "다음"으로 진행) -->
         <div id="onboarding-detected" class="hidden">
           <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">다음 AI 엔진이 감지되었습니다. 번역과 채팅에 사용할 엔진을 선택해주세요.</p>
           <div id="onboarding-detected-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          <div style="text-align: right; margin-top: 14px;">
+            <button type="button" id="onboarding-next-btn" class="btn btn-primary" disabled style="padding: 9px 20px; font-size: 13px;">다음</button>
+          </div>
         </div>
 
-        <!-- 상태 3: 설치 안내 (다른 엔진이 이미 감지된 경우에도 항상 표시) -->
+        <!-- 상태 3: 선택한 엔진의 모델 선택 -->
+        <div id="onboarding-model-select" class="hidden">
+          <button type="button" id="onboarding-back-btn" style="background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 0; margin-bottom: 10px; display: flex; align-items: center; gap: 4px;">← 뒤로</button>
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.6;"><strong id="onboarding-model-select-provider" style="color: var(--text-primary);"></strong>에서 사용할 모델을 선택해주세요.</p>
+
+          <div id="onboarding-model-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto;"></div>
+
+          <!-- Ollama 전용: 다른 모델을 새로 받고 싶을 때 -->
+          <div id="onboarding-model-pull-section" class="hidden" style="margin-top: 14px; padding: 12px 14px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">다른 모델 다운로드</div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+              <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="qwen3.5:9b" style="padding: 5px 10px; font-size: 11.5px;">Qwen 3.5 9B</button>
+              <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="llama3.1:8b" style="padding: 5px 10px; font-size: 11.5px;">Llama 3.1 8B</button>
+            </div>
+            <div id="onboarding-pull-progress-area" class="hidden">
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                <span id="onboarding-pull-status-text" style="color: var(--text-secondary);">대기 중...</span>
+                <span id="onboarding-pull-pct-text" style="font-weight: 700; color: var(--control-accent-text);">0%</span>
+              </div>
+              <div class="progress-bar-wrap" style="height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                <div id="onboarding-pull-progress-bar" style="width: 0%; height: 100%; background: var(--control-accent); transition: width 0.2s;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="text-align: right; margin-top: 14px;">
+            <button type="button" id="onboarding-confirm-btn" class="btn btn-primary" disabled style="padding: 9px 20px; font-size: 13px;">확인</button>
+          </div>
+        </div>
+
+        <!-- 상태 4: 설치 안내 (이미 감지된 엔진은 목록에서 제외, 다른 엔진이 감지된 경우에도 표시) -->
         <div id="onboarding-install" class="hidden">
           <p id="onboarding-install-intro" style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.</p>
 
           <div style="display: flex; flex-direction: column; gap: 10px;">
-            <div class="onboarding-install-row">
+            <div class="onboarding-install-row" data-provider="ollama">
               <div class="onboarding-install-row-label">
                 <strong>Ollama</strong>
                 <span>로컬에서 무료로 실행되는 오픈소스 모델</span>
               </div>
               <button type="button" id="onboarding-install-ollama-btn" class="btn btn-primary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
             </div>
-
-            <!-- Ollama 설치 완료 후 다음 단계: 실제로 쓸 모델을 다운로드해야 함 -->
-            <div id="onboarding-ollama-next-step" class="hidden" style="padding: 12px 14px; background: var(--control-accent-soft); border: 1px solid var(--control-accent); border-radius: var(--radius-md);">
-              <div style="font-size: 12.5px; font-weight: 700; color: var(--control-accent-text); margin-bottom: 8px;">다음 단계: 사용할 모델을 다운로드해주세요</div>
-              <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
-                <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="qwen3.5:9b" style="padding: 5px 10px; font-size: 11.5px;">Qwen 3.5 9B</button>
-                <button type="button" class="btn btn-secondary onboarding-pull-model-btn" data-model="llama3.1:8b" style="padding: 5px 10px; font-size: 11.5px;">Llama 3.1 8B</button>
-              </div>
-              <div id="onboarding-pull-progress-area" class="hidden">
-                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                  <span id="onboarding-pull-status-text" style="color: var(--text-secondary);">대기 중...</span>
-                  <span id="onboarding-pull-pct-text" style="font-weight: 700; color: var(--control-accent-text);">0%</span>
-                </div>
-                <div class="progress-bar-wrap" style="height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
-                  <div id="onboarding-pull-progress-bar" style="width: 0%; height: 100%; background: var(--control-accent); transition: width 0.2s;"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="onboarding-install-row">
+            <div class="onboarding-install-row" data-provider="claude_code">
               <div class="onboarding-install-row-label">
                 <strong>Claude Code</strong>
                 <span>Anthropic 계정 로그인 필요 (설치 후 터미널에서 <code>claude</code> 실행)</span>
               </div>
               <button type="button" id="onboarding-install-claude-code-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
             </div>
-            <div class="onboarding-install-row">
+            <div class="onboarding-install-row" data-provider="codex">
               <div class="onboarding-install-row-label">
                 <strong>Codex</strong>
                 <span>OpenAI 계정 로그인 필요 (설치 후 터미널에서 <code>codex login</code> 실행)</span>
               </div>
               <button type="button" id="onboarding-install-codex-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12.5px; white-space: nowrap;">설치</button>
             </div>
-            <div class="onboarding-install-row">
+            <div class="onboarding-install-row" data-provider="antigravity">
               <div class="onboarding-install-row-label">
                 <strong>Antigravity</strong>
                 <span>Google 계정 로그인 필요 (설치 후 터미널에서 <code>agy</code> 실행)</span>

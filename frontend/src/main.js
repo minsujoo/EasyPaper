@@ -93,6 +93,13 @@ const onboardingSkipBtn      = $('onboarding-skip-btn')
 const onboardingDetecting    = $('onboarding-detecting')
 const onboardingDetected     = $('onboarding-detected')
 const onboardingDetectedList = $('onboarding-detected-list')
+const onboardingNextBtn      = $('onboarding-next-btn')
+const onboardingModelSelect  = $('onboarding-model-select')
+const onboardingBackBtn      = $('onboarding-back-btn')
+const onboardingModelSelectProvider = $('onboarding-model-select-provider')
+const onboardingModelList    = $('onboarding-model-list')
+const onboardingModelPullSection    = $('onboarding-model-pull-section')
+const onboardingConfirmBtn   = $('onboarding-confirm-btn')
 const onboardingInstall      = $('onboarding-install')
 const onboardingInstallIntro = $('onboarding-install-intro')
 const onboardingInstallOllamaBtn     = $('onboarding-install-ollama-btn')
@@ -102,7 +109,6 @@ const onboardingInstallAntigravityBtn = $('onboarding-install-antigravity-btn')
 const onboardingInstallProgressArea  = $('onboarding-install-progress-area')
 const onboardingInstallStatus        = $('onboarding-install-status')
 const onboardingInstallLog           = $('onboarding-install-log')
-const onboardingOllamaNextStep       = $('onboarding-ollama-next-step')
 const onboardingPullProgressArea     = $('onboarding-pull-progress-area')
 const onboardingPullStatusText       = $('onboarding-pull-status-text')
 const onboardingPullPctText          = $('onboarding-pull-pct-text')
@@ -7876,11 +7882,27 @@ function maybeShowOnboarding() {
   openOnboarding()
 }
 
+// 감지 결과와 마법사 진행 상태(감지됨 선택 → 모델 선택 → 확인)를 함께 보관
+const onboardingState = {
+  sys: null, cli: null, ollamaStatus: null,
+  detected: [], selectedDetectedIdx: null,
+  currentEntry: null, selectedModel: null,
+  step: 'detecting',
+}
+
+// 온보딩 4단계(감지 중 / 감지됨 선택 / 모델 선택 / 설치 안내) 중 하나로 전환.
+// 감지됨·설치 섹션은 "모델 선택" 단계에서는 별도 화면처럼 숨겨 선택에 집중하게 함
+function showOnboardingStep(step) {
+  onboardingState.step = step
+  onboardingDetecting.classList.toggle('hidden', step !== 'detecting')
+  onboardingDetected.classList.toggle('hidden', !(step === 'detected' && onboardingState.detected.length > 0))
+  if (onboardingModelSelect) onboardingModelSelect.classList.toggle('hidden', step !== 'model-select')
+  onboardingInstall.classList.toggle('hidden', step === 'detecting' || step === 'model-select')
+}
+
 function openOnboarding() {
   onboardingModal.classList.remove('hidden')
-  onboardingDetecting.classList.remove('hidden')
-  onboardingDetected.classList.add('hidden')
-  onboardingInstall.classList.add('hidden')
+  showOnboardingStep('detecting')
   detectAndRenderOnboarding()
 }
 
@@ -7926,34 +7948,45 @@ async function detectAndRenderOnboarding() {
     return
   }
 
+  onboardingState.sys = sys
+  onboardingState.cli = cli
+  onboardingState.ollamaStatus = ollamaStatus
+
   const detected = []
-  if (sys.available_models && sys.available_models.length > 0) {
-    detected.push({ provider: 'ollama', label: 'Ollama (로컬)', sub: sys.available_models[0], model: sys.available_models[0] })
+  // Ollama는 바이너리만 설치되어 있어도(아직 모델이 없어도) 감지 목록에 넣어,
+  // "다음" 버튼으로 이어지는 모델 선택 단계에서 바로 모델을 받게 함
+  if (ollamaStatus.installed) {
+    const models = sys.available_models || []
+    detected.push({
+      provider: 'ollama',
+      label: 'Ollama (로컬)',
+      sub: models.length > 0 ? `${models[0]}${models.length > 1 ? ` 외 ${models.length - 1}개` : ''}` : '설치됨 · 모델 다운로드 필요',
+    })
   }
   if (cli.claude_code) {
-    detected.push({ provider: 'claude_code', label: 'Claude Code', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'claude_code').models[0].value })
+    detected.push({ provider: 'claude_code', label: 'Claude Code', sub: 'CLI 감지됨' })
   }
   if (cli.codex) {
-    detected.push({ provider: 'codex', label: 'Codex', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'codex').models[0].value })
+    detected.push({ provider: 'codex', label: 'Codex', sub: 'CLI 감지됨' })
   }
   if (cli.antigravity) {
-    detected.push({ provider: 'antigravity', label: 'Antigravity', sub: 'CLI 감지됨', model: PROVIDER_CONFIG.find(p => p.id === 'antigravity').models[0].value })
+    detected.push({ provider: 'antigravity', label: 'Antigravity', sub: 'CLI 감지됨' })
   }
   if (sys.openai_api_key) {
-    detected.push({ provider: 'openai', label: 'OpenAI', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'openai').models[0].value })
+    detected.push({ provider: 'openai', label: 'OpenAI', sub: 'API 키 설정됨' })
   }
   if (sys.gemini_api_key) {
-    detected.push({ provider: 'gemini', label: 'Gemini', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'gemini')?.models[0]?.value || '' })
+    detected.push({ provider: 'gemini', label: 'Gemini', sub: 'API 키 설정됨' })
   }
   if (sys.claude_api_key) {
-    detected.push({ provider: 'claude', label: 'Anthropic Claude', sub: 'API 키 설정됨', model: PROVIDER_CONFIG.find(p => p.id === 'claude').models[0].value })
+    detected.push({ provider: 'claude', label: 'Anthropic Claude', sub: 'API 키 설정됨' })
   }
+  onboardingState.detected = detected
+  onboardingState.selectedDetectedIdx = null
+  if (onboardingNextBtn) onboardingNextBtn.disabled = true
 
-  onboardingDetecting.classList.add('hidden')
-
-  // 1. 지금 바로 선택 가능한 엔진이 있으면 목록으로 표시
+  // 1. 감지된 엔진은 바로 저장하지 않고, 선택 → "다음"으로 모델 선택 단계로 이동
   if (detected.length > 0) {
-    onboardingDetected.classList.remove('hidden')
     onboardingDetectedList.innerHTML = detected.map((d, i) => `
       <button type="button" class="onboarding-detected-btn" data-idx="${i}">
         <span>${escapeHtml(d.label)}</span>
@@ -7961,52 +7994,32 @@ async function detectAndRenderOnboarding() {
       </button>
     `).join('')
     onboardingDetectedList.querySelectorAll('.onboarding-detected-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const d = detected[Number(btn.dataset.idx)]
-        btn.disabled = true
-        try {
-          await saveSystemSettingsAPI({
-            ollama_host: sys.ollama_host,
-            trans_provider: d.provider,
-            trans_model: d.model,
-            chat_provider: d.provider,
-            chat_model: d.model,
-            openai_api_key: sys.openai_api_key,
-            gemini_api_key: sys.gemini_api_key,
-            claude_api_key: sys.claude_api_key,
-            translation_prompt_template: sys.translation_prompt_template,
-          })
-          showToast(`${d.label}을(를) 기본 AI 엔진으로 설정했습니다.`, 'success')
-          closeOnboarding()
-        } catch (err) {
-          showToast(err.message || '설정 저장 실패', 'error')
-          btn.disabled = false
-        }
+      btn.addEventListener('click', () => {
+        onboardingDetectedList.querySelectorAll('.onboarding-detected-btn').forEach(b => b.classList.remove('selected'))
+        btn.classList.add('selected')
+        onboardingState.selectedDetectedIdx = Number(btn.dataset.idx)
+        if (onboardingNextBtn) onboardingNextBtn.disabled = false
       })
     })
-  } else {
-    onboardingDetected.classList.add('hidden')
   }
 
-  // 2. 설치 섹션은 이미 다른 엔진이 감지된 경우에도 항상 표시 - Ollama가 있어도
-  //    Claude Code 등 다른 CLI를 추가로 설치할 수 있어야 함
-  onboardingInstall.classList.remove('hidden')
+  // 2. 설치 목록에서는 이미 감지된 엔진의 행을 제거 - Ollama가 감지됐어도
+  //    Claude Code 등 다른 CLI는 여전히 추가로 설치할 수 있어야 함
   if (onboardingInstallIntro) {
     onboardingInstallIntro.textContent = detected.length > 0
       ? '추가로 설치할 수 있는 AI 엔진입니다.'
       : '사용 가능한 AI 엔진이 감지되지 않았습니다. 아래에서 하나를 설치해주세요.'
   }
+  const detectedProviders = new Set(detected.map(d => d.provider))
+  onboardingInstall.querySelectorAll('.onboarding-install-row').forEach((row) => {
+    row.classList.toggle('hidden', detectedProviders.has(row.dataset.provider))
+  })
   setOnboardingRowInstalledState(onboardingInstallOllamaBtn, !!ollamaStatus.installed)
   setOnboardingRowInstalledState(onboardingInstallClaudeCodeBtn, !!cli.claude_code)
   setOnboardingRowInstalledState(onboardingInstallCodexBtn, !!cli.codex)
   setOnboardingRowInstalledState(onboardingInstallAntigravityBtn, !!cli.antigravity)
 
-  // Ollama는 바이너리만 설치되고 아직 모델이 없으면 "다음 단계"로 모델
-  // 다운로드를 바로 이 화면에서 안내 (설정 화면까지 따로 찾아가지 않아도 되게)
-  const ollamaNeedsModel = !!ollamaStatus.installed && !(sys.available_models && sys.available_models.length > 0)
-  if (onboardingOllamaNextStep) {
-    onboardingOllamaNextStep.classList.toggle('hidden', !ollamaNeedsModel)
-  }
+  showOnboardingStep('detected')
 }
 
 // 새로 선택 가능해진 엔진 목록으로 시선을 유도 (스크롤 + 잠깐 테두리 강조)
@@ -8015,6 +8028,98 @@ function highlightOnboardingDetected() {
   onboardingDetected.scrollIntoView({ behavior: 'smooth', block: 'start' })
   onboardingDetected.classList.add('onboarding-attention-pulse')
   setTimeout(() => onboardingDetected.classList.remove('onboarding-attention-pulse'), 1600)
+}
+
+// "다음" 팝업: 선택한 프로바이더에서 사용할 모델을 고르는 단계.
+// Ollama는 이미 받아둔 모델 목록 + 새 모델 다운로드 섹션을, 나머지 CLI/API 프로바이더는
+// PROVIDER_CONFIG에 정의된 모델 목록을 보여준다.
+function renderModelSelectStep(entry) {
+  onboardingState.currentEntry = entry
+  onboardingState.selectedModel = null
+  if (onboardingConfirmBtn) onboardingConfirmBtn.disabled = true
+  if (onboardingModelSelectProvider) onboardingModelSelectProvider.textContent = entry.label
+
+  let models = []
+  if (entry.provider === 'ollama') {
+    models = (onboardingState.sys?.available_models || []).map(m => ({ value: m, label: m }))
+  } else {
+    const cfg = PROVIDER_CONFIG.find(p => p.id === entry.provider)
+    models = cfg ? cfg.models : []
+  }
+
+  if (onboardingModelList) {
+    if (models.length === 0) {
+      onboardingModelList.innerHTML = `<div style="font-size: 12.5px; color: var(--text-secondary); padding: 10px 2px; line-height: 1.6;">아직 다운로드된 모델이 없습니다. 아래에서 모델을 다운로드해주세요.</div>`
+    } else {
+      let lastGroup = null
+      onboardingModelList.innerHTML = models.map((m, i) => {
+        let groupHtml = ''
+        if (m.group && m.group !== lastGroup) {
+          lastGroup = m.group
+          groupHtml = `<div style="font-size: 11px; font-weight: 700; color: var(--text-tertiary); margin: ${i === 0 ? '0' : '10px'} 0 2px 2px;">${escapeHtml(m.group)}</div>`
+        }
+        return `${groupHtml}<button type="button" class="onboarding-detected-btn onboarding-model-btn" data-value="${escapeHtml(m.value)}"><span>${escapeHtml(m.label)}</span></button>`
+      }).join('')
+    }
+    onboardingModelList.querySelectorAll('.onboarding-model-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        onboardingModelList.querySelectorAll('.onboarding-model-btn').forEach(b => b.classList.remove('selected'))
+        btn.classList.add('selected')
+        onboardingState.selectedModel = btn.dataset.value
+        if (onboardingConfirmBtn) onboardingConfirmBtn.disabled = false
+      })
+    })
+    const firstBtn = onboardingModelList.querySelector('.onboarding-model-btn')
+    if (firstBtn) firstBtn.click()
+  }
+
+  if (onboardingModelPullSection) {
+    onboardingModelPullSection.classList.toggle('hidden', entry.provider !== 'ollama')
+  }
+}
+
+if (onboardingNextBtn) {
+  onboardingNextBtn.addEventListener('click', () => {
+    if (onboardingState.selectedDetectedIdx === null) return
+    const entry = onboardingState.detected[onboardingState.selectedDetectedIdx]
+    if (!entry) return
+    renderModelSelectStep(entry)
+    showOnboardingStep('model-select')
+  })
+}
+
+if (onboardingBackBtn) {
+  onboardingBackBtn.addEventListener('click', () => {
+    showOnboardingStep('detected')
+  })
+}
+
+if (onboardingConfirmBtn) {
+  onboardingConfirmBtn.addEventListener('click', async () => {
+    const entry = onboardingState.currentEntry
+    const model = onboardingState.selectedModel
+    if (!entry || !model) return
+    const sys = onboardingState.sys
+    onboardingConfirmBtn.disabled = true
+    try {
+      await saveSystemSettingsAPI({
+        ollama_host: sys.ollama_host,
+        trans_provider: entry.provider,
+        trans_model: model,
+        chat_provider: entry.provider,
+        chat_model: model,
+        openai_api_key: sys.openai_api_key,
+        gemini_api_key: sys.gemini_api_key,
+        claude_api_key: sys.claude_api_key,
+        translation_prompt_template: sys.translation_prompt_template,
+      })
+      showToast(`${entry.label}을(를) 기본 AI 엔진으로 설정했습니다.`, 'success')
+      closeOnboarding()
+    } catch (err) {
+      showToast(err.message || '설정 저장 실패', 'error')
+      onboardingConfirmBtn.disabled = false
+    }
+  })
 }
 
 function wireOnboardingInstallBtn(btn, streamFn, label) {
@@ -8041,12 +8146,10 @@ function wireOnboardingInstallBtn(btn, streamFn, label) {
         btn.textContent = '✓ 설치됨'
         btn.classList.add('onboarding-install-done')
         onboardingInstallStatus.textContent = label === 'Ollama'
-          ? 'Ollama 설치 완료! 다음 단계 - 아래에서 사용할 모델을 다운로드해주세요.'
+          ? 'Ollama 설치 완료! 위 목록에서 Ollama를 선택하고 "다음"을 눌러 모델을 다운로드해주세요.'
           : `${label} 설치 완료! 터미널에서 로그인을 마치면 위에서 바로 선택할 수 있습니다.`
         showToast(`${label} 설치가 완료되었습니다! 다음 단계를 확인해주세요.`, 'success')
-        // 방금 완료된 상태를 잠깐 보여준 뒤, 다른 엔진이 이미 함께 감지됐다면
-        // 선택 화면으로 시선을 유도함 (설치만 된 Ollama처럼 모델이 아직
-        // 없는 경우는 이 설치 섹션에 남아 "다음 단계: 모델 다운로드" 안내가 나타남)
+        // 방금 완료된 상태를 잠깐 보여준 뒤, 새로 감지된 엔진 선택 화면으로 시선을 유도
         await new Promise(resolve => setTimeout(resolve, 900))
         await detectAndRenderOnboarding()
         highlightOnboardingDetected()
@@ -8091,8 +8194,19 @@ document.querySelectorAll('.onboarding-pull-model-btn').forEach((btn) => {
         showToast(`${modelName} 모델 다운로드가 완료되었습니다!`, 'success')
         document.querySelectorAll('.onboarding-pull-model-btn').forEach(b => { b.disabled = false })
         onboardingPullProgressArea.classList.add('hidden')
+        const wasModelSelect = onboardingState.step === 'model-select'
         await detectAndRenderOnboarding()
-        highlightOnboardingDetected()
+        // 모델 선택 화면에서 다운로드한 경우, 감지됨 목록으로 돌아가지 않고
+        // 그 자리에서 방금 받은 모델이 바로 보이도록 모델 선택 화면을 유지/갱신
+        if (wasModelSelect) {
+          const entry = onboardingState.detected.find(d => d.provider === 'ollama')
+          if (entry) {
+            renderModelSelectStep(entry)
+            showOnboardingStep('model-select')
+          }
+        } else {
+          highlightOnboardingDetected()
+        }
       },
       (err) => {
         showToast(`${modelName} 모델 다운로드 실패: ${err.message}`, 'error')
