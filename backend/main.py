@@ -73,10 +73,22 @@ if os.path.exists(FRONTEND_DIST):
     @app.get("/", include_in_schema=False)
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_frontend(full_path: str = ""):
-        """SPA 라우팅 — 모든 경로를 index.html로 폴백 (API 경로 제외)"""
+        """SPA 라우팅 — 모든 경로를 index.html로 폴백 (API 경로 제외, 루트 정적 파일은 직접 서빙)"""
         if full_path.startswith("api"):
             from fastapi import HTTPException
             raise HTTPException(status_code=404)
+
+        if full_path:
+            # os.path.join + isfile만으로는 "../"가 섞인 경로를 걸러내지 못해
+            # dist 밖의 임의 파일을 읽어올 수 있다(Starlette가 대부분의 "../"
+            # 케이스를 라우팅 단계에서 이미 정규화해주긴 하지만, 그 동작에만
+            # 의존하지 않고 실제 해석된 절대경로가 dist 안에 있는지 명시적으로
+            # 검증한다).
+            dist_root = os.path.realpath(FRONTEND_DIST)
+            file_path = os.path.realpath(os.path.join(FRONTEND_DIST, full_path))
+            if file_path.startswith(dist_root + os.sep) and os.path.isfile(file_path):
+                return FileResponse(file_path)
+
         index = os.path.join(FRONTEND_DIST, "index.html")
         return FileResponse(
             index,
