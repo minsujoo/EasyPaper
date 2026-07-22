@@ -1,28 +1,71 @@
-# EasyPaper
+<div align="center">
 
-[변경 이력(Changelog)](./CHANGELOG.md)
+# 📄 EasyPaper
 
-EasyPaper는 학술 PDF 논문을 AI로 번역하고 논문 내용을 기반으로 대화할 수 있는 통합 웹 서비스입니다. 
-논문을 업로드하면 원문 옆에 AI 번역본이 함께 표시되며, 궁금한 내용을 바로 질문할 수 있습니다. 
+**학술 PDF 논문을 AI로 번역하고, 논문 내용을 바탕으로 바로 대화하는 통합 웹 서비스**
 
-본 서비스의 번역 및 어시스턴트 모델로는 로컬 Ollama 모델, 외부 API(Gemini, Claude, OpenAI), 그리고 CLI 기반 엔진(Antigravity, Claude Code, Codex)을 지원합니다.
+[![Last Commit](https://img.shields.io/github/last-commit/orion-gz/EasyPaper?color=4f7cff&label=last%20commit)](https://github.com/orion-gz/EasyPaper/commits/main)
+[![Open Issues](https://img.shields.io/github/issues/orion-gz/EasyPaper?color=4f7cff)](https://github.com/orion-gz/EasyPaper/issues)
+[![Stars](https://img.shields.io/github/stars/orion-gz/EasyPaper?color=4f7cff)](https://github.com/orion-gz/EasyPaper/stargazers)
+[![Changelog](https://img.shields.io/badge/changelog-keep%20a%20changelog-4f7cff)](./CHANGELOG.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-4f7cff.svg)](https://github.com/orion-gz/EasyPaper/pulls)
 
+[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](backend/requirements.txt)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](backend/requirements.txt)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](frontend/package.json)
+[![SQLite](https://img.shields.io/badge/SQLite-DB-003B57?logo=sqlite&logoColor=white)](backend/services/db.py)
+[![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](./Dockerfile)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#-빠른-시작)
 
-## Screenshots
+</div>
+
+<br>
+
+논문을 업로드하면 원문 옆에 AI 번역본이 나란히 표시되고, 궁금한 내용을 그 자리에서 바로 질문할 수 있습니다. 번역·어시스턴트 모델로는 로컬 Ollama, 외부 API(Gemini/Claude/OpenAI), CLI 기반 엔진(Antigravity/Claude Code/Codex)을 모두 지원합니다.
+
+<br>
+
+<p align="center">
+  <img src="./image/viewer1.webp" alt="EasyPaper 듀얼 패널 뷰어 + AI 어시스턴트" width="100%">
+  <sub>원문 · 번역 · AI 채팅을 한 화면에서 — 수식·강조 서식까지 그대로 유지됩니다</sub>
+</p>
+
 <details>
-<summary>이미지 보기</summary>
+<summary><b>스크린샷 더 보기</b> — 라이브러리, 논문 미리보기, 키워드 인사이트</summary>
+<br>
 
-![library1](./image/library1.png)
-![library2](./image/library2.png)
-![viewer1](./image/viewer1.png)
-![viewer2](./image/viewer2.png)
+<table>
+<tr>
+<td width="50%"><img src="./image/library1.webp" alt="내 라이브러리 화면"><br><sub align="center">카테고리 자동 태깅이 적용된 내 라이브러리</sub></td>
+<td width="50%"><img src="./image/library2.webp" alt="논문 미리보기 팝업"><br><sub align="center">클릭 한 번으로 보는 논문 미리보기</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="./image/viewer2.webp" alt="키워드·용어 인사이트 패널"><br><sub align="center">어려운 용어를 짚어주는 키워드·용어 패널</sub></td>
+<td width="50%" valign="middle" align="center"><i>더 많은 기능은 아래 "주요 기능" 참고</i></td>
+</tr>
+</table>
 
 </details>
 
+<br>
+
+## 목차
+
+- [빠른 시작](#-빠른-시작)
+- [주요 기능](#-주요-기능)
+- [필수 요구사항](#-필수-요구사항)
+- [수동 설치 방법](#-수동-설치-방법)
+- [초기 로그인 계정](#-초기-로그인-계정)
+- [테스트](#-테스트)
+- [데이터 백업 및 복원](#-데이터-백업-및-복원)
+- [상시 구동 — systemd 서비스 등록](#-상시-구동--systemd-서비스-등록-선택-사항)
+- [Docker로 실행하기](#-docker로-실행하기)
+- [CLI 기반 AI 엔진](#-cli-기반-ai-엔진-antigravity--claude-code--codex)
 
 ---
 
-## 빠른 시작
+<a id="-빠른-시작"></a>
+## 🚀 빠른 시작
 
 설치와 실행에 필요한 모든 스크립트는 `scripts/` 폴더에 모여 있습니다 — macOS·Linux용은 `scripts/sh/`, Windows용은 `scripts/bat/`에 있습니다.
 
@@ -58,22 +101,28 @@ scripts\bat\start.bat
 scripts\bat\cleanup.bat      # Windows
 ```
 
+> 💡 Docker로 바로 실행하고 싶다면 [Docker로 실행하기](#-docker로-실행하기) 섹션을 참고하세요.
+
 ---
 
-## 주요 기능
+<a id="-주요-기능"></a>
+## ✨ 주요 기능
 
 1. **내 라이브러리** — 라이브러리 화면에 PDF를 드래그 앤 드롭하여 바로 업로드할 수 있으며, 업로드 완료 즉시 백그라운드 번역이 시작됩니다. 카드형/리스트형 보기를 전환할 수 있고, 카테고리 필터로 원하는 논문만 모아볼 수 있습니다.
 2. **AI 카테고리 자동 태깅** — 업로드 후 AI가 논문 초록과 본문을 분석하여 카테고리 태그(예: `VLM`, `VLA`, `GAN`, `CNN`,`Optimizer` 등)를 자동으로 부여합니다.
 3. **정밀한 1:1 문장 매칭 & 스크롤 이동** — 원문 PDF 문장과 번역문 문장 간의 마우스 오버 하이라이트 및 클릭 시 반대편 패널 위치 자동 스크롤(양방향) 기능을 지원합니다. LLM 의미론적 태깅 정렬 방식(Semantic Tag Alignment)을 통해 정밀도 높은 문장 정렬을 제공합니다.
 4. **듀얼 패널 뷰어** — 원본 PDF와 AI 번역 결과를 나란히 보며 읽을 수 있고, 패널 너비를 자유롭게 조절할 수 있습니다.
-5. **AI 채팅 어시스턴트** — 논문 내용을 바탕으로 질문할 수 있으며, 답변 생성 대기 상태의 **선형 프로그레스 바(Linear Loader)**와 **현대적인 알약(Capsule) 디자인 UI**를 제공합니다.
-6. **통합 모델 선택기** — UI 안에서 제공업체와 AI 모델(Ollama, Gemini, Claude, OpenAI, Antigravity, Claude Code, Codex)을 즉시 전환할 수 있습니다. 로컬에 Ollama가 설치되어 있지 않다면 설정 화면에서 원클릭으로 바로 설치할 수 있습니다.
-7. **자유 배치 Floating 메모** — 논문 본문 및 번역문 위에 메모를 자유롭게 배치하여 기록할 수 있습니다. 실시간 Markdown & LaTeX 수식 렌더링, 5색 테마 컬러 피커, 커스텀 삭제 대화상자를 지원합니다.
-8. **테마 색상 커스터마이징** — 설정 화면에서 프리셋 컬러 또는 컬러 피커로 서비스 전체의 강조 색상을 자유롭게 바꿀 수 있으며, 미니멀하고 절제된 다크/라이트 테마를 기본으로 제공합니다.
+5. **AI 채팅 어시스턴트** — 논문 내용을 바탕으로 질문할 수 있으며, 답변 생성 대기 상태의 **선형 프로그레스 바(Linear Loader)**와 **현대적인 알약(Capsule) 디자인 UI**를 제공합니다. 여러 논문을 함께 선택해 비교 질문도 할 수 있습니다.
+6. **참고문헌 링크 연결** — 본문의 번호 인용 표기에 마우스를 올리면 참고문헌 원문과 함께 외부 링크(Semantic Scholar/Google Scholar) 검색 툴팁이 뜹니다.
+7. **라이브러리 전체 검색 & PDF 내보내기** — 파일명·제목·번역된 본문까지 가로지르는 통합 검색과, 번역·하이라이트·밑줄·메모가 그대로 포함된 PDF 내보내기를 지원합니다.
+8. **통합 모델 선택기** — UI 안에서 제공업체와 AI 모델(Ollama, Gemini, Claude, OpenAI, Antigravity, Claude Code, Codex)을 즉시 전환할 수 있습니다. 로컬에 Ollama가 설치되어 있지 않다면 설정 화면에서 원클릭으로 바로 설치할 수 있습니다.
+9. **자유 배치 Floating 메모** — 논문 본문 및 번역문 위에 메모를 자유롭게 배치하여 기록할 수 있습니다. 실시간 Markdown & LaTeX 수식 렌더링, 5색 테마 컬러 피커, 커스텀 삭제 대화상자를 지원합니다.
+10. **테마 색상 커스터마이징** — 설정 화면에서 프리셋 컬러 또는 컬러 피커로 서비스 전체의 강조 색상을 자유롭게 바꿀 수 있으며, 미니멀하고 절제된 다크/라이트 테마를 기본으로 제공합니다.
 
 ---
 
-## 필수 요구사항
+<a id="-필수-요구사항"></a>
+## 📋 필수 요구사항
 
 - **Python 3.8+**
 - **Node.js 16+** & **npm**
@@ -81,7 +130,8 @@ scripts\bat\cleanup.bat      # Windows
 
 ---
 
-## 수동 설치 방법
+<a id="-수동-설치-방법"></a>
+## 🛠️ 수동 설치 방법
 
 스크립트를 사용하지 않고 직접 환경을 구축하려는 경우:
 
@@ -108,7 +158,8 @@ npm run dev # 개발 서버 시작 (http://localhost:5173)
 
 ---
 
-## 초기 로그인 계정
+<a id="-초기-로그인-계정"></a>
+## 🔑 초기 로그인 계정
 
 | 항목 | 값 |
 |------|-----|
@@ -119,7 +170,8 @@ npm run dev # 개발 서버 시작 (http://localhost:5173)
 
 ---
 
-## 테스트
+<a id="-테스트"></a>
+## 🧪 테스트
 
 백엔드 테스트는 pytest로 작성되어 있으며, 실제 프로젝트 데이터(DB/업로드/라이브러리)는 건드리지 않고 임시 디렉터리에서 격리 실행됩니다.
 
@@ -141,7 +193,8 @@ npm run test:e2e
 
 ---
 
-## 데이터 백업 및 복원
+<a id="-데이터-백업-및-복원"></a>
+## 💾 데이터 백업 및 복원
 
 DB(`easypaper.db`) + 논문 라이브러리(`library/`) + 업로드 원본(`uploads/`)을 타임스탬프가 찍힌 압축 파일로 `backups/`에 저장합니다. 재생성 가능한 `cache/`는 백업 대상에서 제외됩니다. 기본적으로 최신 10개만 보관하고 오래된 백업은 자동으로 정리됩니다(`EASYPAPER_BACKUP_KEEP` 환경변수로 조절 가능).
 
@@ -161,7 +214,8 @@ scripts\bat\restore.bat backups\easypaper_backup_20260101_120000.zip
 
 ---
 
-## 상시 구동 — systemd 서비스 등록 (선택 사항)
+<a id="-상시-구동--systemd-서비스-등록-선택-사항"></a>
+## 🖥️ 상시 구동 — systemd 서비스 등록 (선택 사항)
 
 Linux 서버에서 EasyPaper를 백그라운드 데몬으로 상시 실행하려면 제공된 `easypaper.service` 파일을 활용하세요.
 
@@ -182,7 +236,8 @@ sudo journalctl -u easypaper -f
 
 ---
 
-## Docker로 실행하기
+<a id="-docker로-실행하기"></a>
+## 🐳 Docker로 실행하기
 
 Python/Node.js를 직접 설치하지 않고 Docker만으로 실행할 수도 있습니다. 프론트엔드 빌드와 백엔드 실행이 하나의 이미지에 담겨 있으며, 문서 DB·업로드·라이브러리·설정 값은 모두 `/data` 볼륨에 영속화되어 컨테이너를 재생성해도 유지됩니다.
 
@@ -227,10 +282,17 @@ docker compose down -v
 
 ---
 
-## CLI 기반 AI 엔진 (Antigravity / Claude Code / Codex)
+<a id="-cli-기반-ai-엔진-antigravity--claude-code--codex"></a>
+## 🤖 CLI 기반 AI 엔진 (Antigravity / Claude Code / Codex)
 
 EasyPaper는 Google Antigravity(`agy`), Anthropic Claude Code(`claude`), OpenAI Codex(`codex`) CLI를 서브프로세스로 연동하는 전용 LLM Provider를 내장하고 있습니다.
 
 로컬 또는 서버 환경에 해당 CLI 프로그램이 설치되어 로그인까지 완료되어 있다면, EasyPaper가 기동 시 이를 자동으로 감지하여 라이브러리·뷰어의 모델 선택 드롭다운에 해당 공급자를 바로 활성화합니다. 별도의 추가 설정은 필요하지 않습니다.
 
 > CLI 엔진을 사용하지 않는 경우: 설정 화면 또는 `.env`에서 Ollama, Gemini, OpenAI, Claude API 중 원하는 방식으로 자유롭게 사용할 수 있습니다.
+
+---
+
+<div align="center">
+<sub>변경 이력은 <a href="./CHANGELOG.md">CHANGELOG.md</a>에서 확인할 수 있습니다.</sub>
+</div>
