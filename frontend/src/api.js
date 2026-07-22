@@ -534,6 +534,66 @@ export async function getChatHistoryAPI(sessionId) {
 }
 
 /**
+ * 여러 논문을 함께 컨텍스트로 제공해 비교/종합 질문에 답하는 스트리밍 API.
+ * @param {string[]} docIds - 비교할 문서 ID 목록 (2~5개)
+ * @param {Array} messages - [{role: 'user', content: '...'}, ...]
+ */
+export function streamCompareChatAPI(docIds, messages, onToken, onDone, onError) {
+  const controller = new AbortController()
+
+  fetch(`${API_BASE}/chat/compare/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      doc_ids: docIds,
+      messages: messages
+    }),
+    signal: controller.signal
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        try {
+          const err = await res.json()
+          onError(new Error(err.detail || '답변 생성 실패'))
+        } catch {
+          onError(new Error('답변 생성 실패'))
+        }
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        const token = decoder.decode(value, { stream: true })
+        if (token) {
+          onToken(token)
+        }
+      }
+      onDone()
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err)
+      }
+    })
+
+  return () => controller.abort()
+}
+
+/**
+ * 문서 ID 조합에 대한 비교 채팅 히스토리를 반환합니다.
+ */
+export async function getCompareChatHistoryAPI(docIds) {
+  const res = await fetch(`${API_BASE}/chat/compare/history?doc_ids=${encodeURIComponent(docIds.join(','))}`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('채팅 기록 로드 실패')
+  return res.json()
+}
+
+/**
  * Antigravity CLI 사용량 통계 조회
  */
 export async function getAgyUsageAPI() {

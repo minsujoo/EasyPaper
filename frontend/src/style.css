@@ -2429,7 +2429,8 @@ body.light-theme .chat-input-area {
   border-color: var(--accent-mid);
 }
 
-#chat-input {
+#chat-input,
+.chat-input-textarea {
   flex: 1;
   background: transparent;
   border: none;
@@ -4393,6 +4394,174 @@ body.light-theme .citation-marker-box:hover {
 }
 .citation-marker-box.loading {
   cursor: wait;
+}
+
+/* ── 여러 논문 비교 채팅 ── */
+.file-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 100px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--border-strong);
+}
+.file-btn-outline:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-glow);
+}
+.file-btn-outline.active {
+  background: color-mix(in srgb, var(--control-accent) 16%, transparent);
+  color: var(--control-accent);
+  border-color: var(--control-accent);
+}
+.file-btn-outline.compact,
+.file-btn.compact {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+.file-btn.compact:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* 라이브러리 카드/리스트 위의 비교 선택 체크박스 오버레이 - 평소엔 숨겨져 있다가
+   선택 모드(.compare-select-mode)일 때만 나타난다 */
+.doc-card-compare-check {
+  display: none;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--bg-surface);
+  z-index: 4;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: all 0.15s ease;
+}
+.doc-list-row .doc-card-compare-check {
+  position: static;
+  flex-shrink: 0;
+}
+.library-grid.compare-select-mode .doc-card-compare-check {
+  display: flex;
+}
+.doc-card-compare-check.checked {
+  background: var(--control-accent);
+  border-color: var(--control-accent);
+  color: #fff;
+}
+.library-grid.compare-select-mode .doc-card {
+  position: relative;
+}
+.library-grid.compare-select-mode .doc-card .doc-card-title {
+  padding-left: 26px;
+}
+.library-grid.compare-select-mode .doc-card-zone-actions,
+.library-grid.compare-select-mode .doc-icon-actions {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.compare-select-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px 12px 22px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,0.35));
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  z-index: 30;
+}
+#compare-select-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.compare-select-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── 비교 채팅 화면 ── */
+.compare-topbar {
+  height: var(--panel-header-h, 56px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+.compare-topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.compare-doc-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.compare-doc-chip {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 100px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.compare-chat-body {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - var(--panel-header-h, 56px));
+}
+.compare-chat-body .chat-messages {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+}
+.compare-chat-input-area {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  border-top: none;
+  background: transparent;
+}
+.compare-chat-hint {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* 키워드/단어 탭 용어 클릭 시 원문 위치 하이라이트 - 스크롤이 끝난 뒤에 표시되므로

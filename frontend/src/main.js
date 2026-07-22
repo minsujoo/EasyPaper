@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
@@ -176,6 +176,19 @@ const libTabTrash       = $('lib-tab-trash')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 
+const libCompareToggleBtn   = $('lib-compare-toggle-btn')
+const compareSelectBar      = $('compare-select-bar')
+const compareSelectCount    = $('compare-select-count')
+const compareSelectCancelBtn = $('compare-select-cancel-btn')
+const compareSelectStartBtn = $('compare-select-start-btn')
+
+const compareScreen        = $('compare-screen')
+const compareBackBtn       = $('compare-back-btn')
+const compareDocChips      = $('compare-doc-chips')
+const compareChatMessages  = $('compare-chat-messages')
+const compareChatInput     = $('compare-chat-input')
+const compareChatSendBtn   = $('compare-chat-send-btn')
+
 const docPreviewOverlay  = $('doc-preview-overlay')
 const docPreviewClose    = $('doc-preview-close')
 const docPreviewCoverImg = $('doc-preview-cover-img')
@@ -278,6 +291,19 @@ function showViewer() {
   // 글로벌 테마 토글 숨김 (뷰어 상단바 테마 버튼 사용)
   const globalToggle = $('global-theme-toggle')
   if (globalToggle) globalToggle.classList.add('hidden')
+}
+
+function showCompareScreen() {
+  loginScreen.classList.remove('active')
+  libraryScreen.classList.remove('active')
+  viewerScreen.classList.remove('active')
+  if (compareScreen) compareScreen.classList.add('active')
+  // 라이브러리 화면과 동일하게 글로벌 테마/로그아웃/설정 버튼을 표시한다
+  // (비교 화면 자체에는 별도의 테마 버튼이 없음)
+  const globalToggle = $('global-theme-toggle')
+  if (globalToggle) globalToggle.classList.remove('hidden')
+  globalLogoutBtn.classList.remove('hidden')
+  globalSettingsBtn.classList.remove('hidden')
 }
 
 function resetState() {
@@ -2826,7 +2852,7 @@ function updateTabUI(activeTab) {
     }
   }
 
-  // 휴지통 탭인 경우 새 논문 추가 플로팅 버튼을 숨깁니다.
+  // 휴지통 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
   if (libUploadBtn) {
     if (activeTab === 'trash') {
       libUploadBtn.classList.add('hidden')
@@ -2834,7 +2860,11 @@ function updateTabUI(activeTab) {
       libUploadBtn.classList.remove('hidden')
     }
   }
-  
+  if (libCompareToggleBtn) {
+    libCompareToggleBtn.classList.toggle('hidden', activeTab === 'trash')
+  }
+  setCompareSelectMode(false)
+
   renderLibrary()
 }
 
@@ -2898,6 +2928,321 @@ async function showLibraryScreen(shouldPushState = true) {
 
 
 let activeCategoryFilter = 'ALL'
+
+// ── 여러 논문 비교 채팅: 라이브러리 선택 모드 ──────────────
+let compareSelectMode = false
+const compareSelectedDocs = new Map() // doc.id -> doc
+const COMPARE_MAX_DOCS = 5
+const COMPARE_MIN_DOCS = 2
+
+function updateCompareSelectUI() {
+  const count = compareSelectedDocs.size
+  if (compareSelectCount) compareSelectCount.textContent = `${count}/${COMPARE_MAX_DOCS}개 선택됨`
+  if (compareSelectStartBtn) compareSelectStartBtn.disabled = count < COMPARE_MIN_DOCS
+}
+
+function setCompareCheckboxVisual(container, checked) {
+  const box = container.querySelector('.doc-card-compare-check')
+  if (!box) return
+  box.classList.toggle('checked', checked)
+  box.innerHTML = checked
+    ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+    : ''
+}
+
+function toggleDocCompareSelection(container, doc) {
+  const isSelected = compareSelectedDocs.has(doc.id)
+  if (isSelected) {
+    compareSelectedDocs.delete(doc.id)
+    setCompareCheckboxVisual(container, false)
+  } else {
+    if (compareSelectedDocs.size >= COMPARE_MAX_DOCS) {
+      showToast(`최대 ${COMPARE_MAX_DOCS}편까지 선택할 수 있습니다.`, 'warning')
+      return
+    }
+    compareSelectedDocs.set(doc.id, doc)
+    setCompareCheckboxVisual(container, true)
+  }
+  updateCompareSelectUI()
+}
+
+function setCompareSelectMode(enabled) {
+  compareSelectMode = enabled
+  compareSelectedDocs.clear()
+  if (libraryGrid) libraryGrid.classList.toggle('compare-select-mode', enabled)
+  if (libCompareToggleBtn) libCompareToggleBtn.classList.toggle('active', enabled)
+  if (compareSelectBar) compareSelectBar.classList.toggle('hidden', !enabled)
+  document.querySelectorAll('.doc-card-compare-check').forEach(box => {
+    box.classList.remove('checked')
+    box.innerHTML = ''
+  })
+  updateCompareSelectUI()
+}
+
+if (libCompareToggleBtn) {
+  libCompareToggleBtn.addEventListener('click', () => {
+    setCompareSelectMode(!compareSelectMode)
+  })
+}
+
+if (compareSelectCancelBtn) {
+  compareSelectCancelBtn.addEventListener('click', () => setCompareSelectMode(false))
+}
+
+if (compareSelectStartBtn) {
+  compareSelectStartBtn.addEventListener('click', () => {
+    const ids = Array.from(compareSelectedDocs.keys())
+    if (ids.length < COMPARE_MIN_DOCS) return
+    setCompareSelectMode(false)
+    location.hash = `#compare?ids=${ids.map(encodeURIComponent).join(',')}`
+  })
+}
+
+// ── 여러 논문 비교 채팅 화면 ────────────────────────────
+let compareChatState = { docIds: [], docs: [], history: [], activeStream: null, currentText: '' }
+
+function renderCompareChatMessage(role, content, isHtml = false) {
+  const msgEl = document.createElement('div')
+  msgEl.className = `chat-message ${role}`
+
+  const bubbleEl = document.createElement('div')
+  bubbleEl.className = 'message-bubble'
+  if (isHtml) bubbleEl.innerHTML = content
+  else bubbleEl.textContent = content
+  msgEl.appendChild(bubbleEl)
+
+  if (content) appendCompareActionButtons(msgEl, role, content)
+
+  compareChatMessages.appendChild(msgEl)
+  compareChatMessages.scrollTop = compareChatMessages.scrollHeight
+  return msgEl
+}
+
+function appendCompareActionButtons(msgEl, role, content) {
+  if (!content || content.includes('chat-error-text')) return
+  const actionsEl = document.createElement('div')
+  actionsEl.className = 'message-actions'
+  actionsEl.style.display = 'flex'
+  actionsEl.style.gap = '8px'
+  actionsEl.style.marginTop = '4px'
+  actionsEl.style.alignSelf = role === 'user' ? 'flex-end' : 'flex-start'
+
+  const copyBtn = document.createElement('button')
+  copyBtn.className = 'msg-action-btn'
+  copyBtn.innerHTML = `${icon('clipboard', 12, 'style="vertical-align:-2px;margin-right:3px"')}복사`
+  copyBtn.style.background = 'none'
+  copyBtn.style.border = 'none'
+  copyBtn.style.color = 'var(--text-muted)'
+  copyBtn.style.fontSize = '11px'
+  copyBtn.style.cursor = 'pointer'
+  copyBtn.title = '텍스트 복사'
+  copyBtn.addEventListener('click', () => {
+    const text = msgEl.querySelector('.message-bubble').textContent
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('텍스트가 복사되었습니다.', 'success')
+      }).catch(() => showToast('복사 실패', 'error'))
+    }
+  })
+  actionsEl.appendChild(copyBtn)
+  msgEl.appendChild(actionsEl)
+}
+
+function appendCompareTypingIndicator() {
+  const msgEl = document.createElement('div')
+  msgEl.className = 'chat-message assistant temp-typing'
+  const bubbleEl = document.createElement('div')
+  bubbleEl.className = 'message-bubble'
+  bubbleEl.innerHTML = `<div class="typing-container" style="display: flex; align-items: center; gap: 8px;"><span class="typing-text" style="font-size: 12px; color: var(--text-secondary);">AI가 답변을 준비하고 있습니다</span><div class="typing-indicator" style="display: flex; gap: 3px; align-items: center;"><span></span><span></span><span></span></div></div>`
+  msgEl.appendChild(bubbleEl)
+  compareChatMessages.appendChild(msgEl)
+  compareChatMessages.scrollTop = compareChatMessages.scrollHeight
+  return msgEl
+}
+
+function removeCompareTypingIndicator() {
+  compareChatMessages.querySelectorAll('.temp-typing').forEach(el => el.remove())
+}
+
+function updateCompareChatSendBtnIcon(isGenerating) {
+  if (!compareChatSendBtn) return
+  if (isGenerating) {
+    compareChatSendBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2" /></svg>`
+    compareChatSendBtn.title = '답변 생성 중단'
+  } else {
+    compareChatSendBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`
+    compareChatSendBtn.title = '전송'
+  }
+}
+
+function renderCompareGreeting() {
+  const titles = compareChatState.docs
+    .map((d, i) => `${i + 1}. ${escapeHtml((d.metadata && d.metadata.title) ? d.metadata.title : d.filename)}`)
+    .join('<br>')
+  renderCompareChatMessage('assistant',
+    `선택하신 ${compareChatState.docs.length}편의 논문을 비교해서 답변해 드릴게요.<br><br>` +
+    `<strong>비교 대상:</strong><br>${titles}<br><br>` +
+    `<strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong>` +
+    `<ul><li>두 논문의 핵심 방법론 차이가 뭐야?</li><li>실험 결과를 비교했을 때 어느 쪽이 더 우수해?</li><li>공통적으로 다루는 한계점이 있어?</li></ul>`,
+    true)
+}
+
+// location.hash 대입은 브라우저에 따라 popstate와 hashchange를 둘 다 발생시켜,
+// 두 리스너가 각각 handleRouting()을 호출하면서 openCompareScreen이 같은 문서
+// 조합에 대해 중복 실행되는 경쟁 조건이 있었다(인사말 메시지가 두 번 렌더링됨).
+// 첫 호출이 아직 비동기 작업 중일 때 같은 조합의 재진입 호출을 걸러낸다.
+let compareOpeningIdsKey = null
+
+async function openCompareScreen(docs, shouldPushState = true) {
+  const docIds = docs.map(d => d.id)
+  const idsKey = JSON.stringify([...docIds].sort())
+
+  if (compareOpeningIdsKey === idsKey) return
+  if (compareScreen.classList.contains('active') && JSON.stringify([...compareChatState.docIds].sort()) === idsKey) return
+  compareOpeningIdsKey = idsKey
+
+  if (compareChatState.activeStream) { compareChatState.activeStream(); compareChatState.activeStream = null }
+  compareChatState = { docIds, docs, history: [], activeStream: null, currentText: '' }
+
+  if (shouldPushState) {
+    history.pushState({ screen: 'compare', ids: docIds }, '', `#compare?ids=${docIds.map(encodeURIComponent).join(',')}`)
+  }
+
+  if (compareDocChips) {
+    compareDocChips.innerHTML = docs.map(d => {
+      const title = (d.metadata && d.metadata.title) ? d.metadata.title : d.filename
+      return `<span class="compare-doc-chip" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`
+    }).join('')
+  }
+
+  if (compareChatMessages) compareChatMessages.innerHTML = ''
+  showCompareScreen()
+
+  try {
+    const res = await getCompareChatHistoryAPI(docIds)
+    const savedHistory = res.history || []
+    if (savedHistory.length === 0) {
+      renderCompareGreeting()
+    } else {
+      savedHistory.forEach(msg => {
+        renderCompareChatMessage(msg.role, msg.role === 'assistant' ? formatChatHtml(msg.content) : msg.content, msg.role === 'assistant')
+        compareChatState.history.push({ role: msg.role, content: msg.content })
+      })
+    }
+  } catch (err) {
+    console.warn('비교 채팅 기록 로드 실패:', err)
+    renderCompareGreeting()
+  } finally {
+    if (compareOpeningIdsKey === idsKey) compareOpeningIdsKey = null
+  }
+}
+
+async function sendCompareChatMessage() {
+  if (compareChatState.docIds.length < COMPARE_MIN_DOCS) return
+  if (compareChatState.activeStream) return
+
+  const text = compareChatInput.value.trim()
+  if (!text) return
+
+  compareChatInput.value = ''
+  compareChatInput.style.height = 'auto'
+
+  renderCompareChatMessage('user', text)
+  compareChatState.history.push({ role: 'user', content: text })
+
+  appendCompareTypingIndicator()
+  compareChatInput.disabled = true
+  updateCompareChatSendBtnIcon(true)
+
+  let accumulatedText = ''
+  let replyBubble = null
+  let firstToken = true
+  compareChatState.currentText = ''
+
+  compareChatState.activeStream = streamCompareChatAPI(
+    compareChatState.docIds,
+    compareChatState.history,
+    // onToken
+    (token) => {
+      if (firstToken) {
+        if (!token.trim()) return
+        removeCompareTypingIndicator()
+        replyBubble = renderCompareChatMessage('assistant', '', true).querySelector('.message-bubble')
+        firstToken = false
+      }
+      accumulatedText += token
+      compareChatState.currentText = accumulatedText
+      replyBubble.innerHTML = formatChatHtml(accumulatedText)
+      compareChatMessages.scrollTop = compareChatMessages.scrollHeight
+    },
+    // onDone
+    () => {
+      compareChatState.activeStream = null
+      compareChatState.history.push({ role: 'assistant', content: accumulatedText })
+      if (replyBubble) {
+        replyBubble.innerHTML = formatChatHtml(accumulatedText)
+        if (replyBubble.parentElement) appendCompareActionButtons(replyBubble.parentElement, 'assistant', accumulatedText)
+      }
+      compareChatInput.disabled = false
+      updateCompareChatSendBtnIcon(false)
+      compareChatInput.focus()
+    },
+    // onError
+    (err) => {
+      removeCompareTypingIndicator()
+      compareChatState.activeStream = null
+      if (firstToken) {
+        renderCompareChatMessage('assistant', `<span class="chat-error-text">${icon('alertTriangle', 13, 'style="vertical-align:-2px;margin-right:3px"')}답변 중 오류가 발생했습니다: ${escapeHtml(err.message)}</span>`, true)
+      } else if (replyBubble) {
+        replyBubble.innerHTML += `<br><br><span style="color: var(--error);">[오류: ${err.message}]</span>`
+      }
+      compareChatInput.disabled = false
+      updateCompareChatSendBtnIcon(false)
+      compareChatInput.focus()
+    }
+  )
+}
+
+if (compareChatSendBtn) {
+  compareChatSendBtn.addEventListener('click', () => {
+    if (compareChatState.activeStream) {
+      compareChatState.activeStream()
+      compareChatState.activeStream = null
+      removeCompareTypingIndicator()
+      if (compareChatState.currentText) {
+        compareChatState.history.push({ role: 'assistant', content: compareChatState.currentText })
+      } else {
+        compareChatState.history.pop()
+      }
+      showToast('답변 생성이 중단되었습니다.', 'info')
+      compareChatInput.disabled = false
+      updateCompareChatSendBtnIcon(false)
+      compareChatInput.focus()
+    } else {
+      sendCompareChatMessage()
+    }
+  })
+}
+
+if (compareChatInput) {
+  compareChatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendCompareChatMessage()
+    }
+  })
+  compareChatInput.addEventListener('input', () => {
+    compareChatInput.style.height = 'auto'
+    compareChatInput.style.height = `${compareChatInput.scrollHeight}px`
+  })
+}
+
+if (compareBackBtn) {
+  compareBackBtn.addEventListener('click', () => {
+    if (compareChatState.activeStream) { compareChatState.activeStream(); compareChatState.activeStream = null }
+    showLibraryScreen()
+  })
+}
 
 async function renderLibrary() {
   // 탭 전환 등으로 목록을 새로 불러올 때는 검색 상태를 초기화한다 - 검색
@@ -3159,6 +3504,10 @@ function prepareDocItemHtml(doc) {
     dateHtml = `<span class="doc-meta-chip done">완독 ${readDateStr}</span>`
   }
 
+  const compareCheckHtml = state.currentLibraryTab === 'trash' ? '' : `
+    <div class="doc-card-compare-check" data-id="${doc.id}" title="비교할 논문으로 선택"></div>
+  `
+
   const checkBtnHtml = state.currentLibraryTab === 'trash' ? '' : `
     <button class="doc-card-check-btn ${isRead ? 'checked' : ''}" data-id="${doc.id}" title="${isRead ? '읽지 않음으로 표시' : '읽음으로 표시'}">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -3215,12 +3564,21 @@ function prepareDocItemHtml(doc) {
     ctaBtnFullHtml = `<button class="doc-open-btn" data-id="${doc.id}"><span>열기</span>${openIcon}</button>`
   }
 
-  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, ctaBtnFullHtml }
+  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, compareCheckHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, ctaBtnFullHtml }
 }
 
 // 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
 // 클래스명(.doc-card-check-btn, .doc-open-btn 등)만 맞으면 어떤 레이아웃이든 동작한다.
 function wireDocItemEvents(container, doc, displayTitle) {
+  const compareCheck = container.querySelector('.doc-card-compare-check')
+  if (compareCheck) {
+    setCompareCheckboxVisual(container, compareSelectedDocs.has(doc.id))
+    compareCheck.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleDocCompareSelection(container, doc)
+    })
+  }
+
   const checkBtn = container.querySelector('.doc-card-check-btn')
   if (checkBtn) {
     checkBtn.addEventListener('click', async (e) => {
@@ -3370,6 +3728,10 @@ function wireDocItemEvents(container, doc, displayTitle) {
   }
 
   container.addEventListener('click', () => {
+    if (compareSelectMode) {
+      toggleDocCompareSelection(container, doc)
+      return
+    }
     if (state.currentLibraryTab === 'trash') {
       showToast('휴지통에 있는 논문입니다. 복원 후 열 수 있습니다.', 'warning')
       return
@@ -3383,6 +3745,7 @@ function createDocCard(doc) {
   const card = document.createElement('div')
   card.className = 'doc-card'
   card.innerHTML = `
+    ${d.compareCheckHtml}
     <div class="doc-card-zone">
       <div class="doc-card-zone-actions">
         ${d.expandBtnHtml}
@@ -3428,6 +3791,7 @@ function createDocListRow(doc) {
   const row = document.createElement('div')
   row.className = 'doc-list-row'
   row.innerHTML = `
+    ${d.compareCheckHtml}
     ${d.checkBtnHtml}
     <div class="doc-list-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
     ${listTagsHtml}
@@ -8191,6 +8555,25 @@ async function handleRouting() {
           return
         }
       }
+      location.hash = 'library'
+    } else if (hash.startsWith('#compare?ids=')) {
+      const idsParam = hash.split('?ids=')[1]
+      const ids = (idsParam || '').split(',').map(decodeURIComponent).filter(Boolean)
+      if (ids.length >= COMPARE_MIN_DOCS && ids.length <= COMPARE_MAX_DOCS) {
+        if (JSON.stringify(compareChatState.docIds) === JSON.stringify(ids) && compareScreen.classList.contains('active')) {
+          return
+        }
+        try {
+          const docs = await Promise.all(ids.map(id => fetchLibraryDoc(id)))
+          if (docs.every(Boolean)) {
+            await openCompareScreen(docs, false)
+            return
+          }
+        } catch (err) {
+          console.warn('[Router] 비교 문서 로드 실패:', err)
+        }
+      }
+      showToast('비교할 논문 정보를 불러올 수 없습니다.', 'error')
       location.hash = 'library'
     } else {
       console.log("[Router] Routing to Library screen. Viewer active:", viewerScreen.classList.contains('active'), "Library active:", libraryScreen.classList.contains('active'))

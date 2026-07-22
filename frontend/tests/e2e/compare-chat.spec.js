@@ -1,0 +1,79 @@
+import { test, expect } from '@playwright/test'
+import { mockBaseRoutes, gotoApp } from './helpers.js'
+
+// 여러 논문 비교 채팅: 라이브러리에서 2편 이상 선택 -> 비교 채팅 화면 -> 질문/답변 -> 뒤로가기
+test('논문 2편을 선택해 비교 채팅을 시작하고, 질문에 대한 답변을 받을 수 있다', async ({ page }) => {
+  const docs = [
+    { id: 'doc-1', filename: 'transformer.pdf', total_pages: 3, metadata: { title: 'Attention Is All You Need' }, translated_pages: [] },
+    { id: 'doc-2', filename: 'gan.pdf', total_pages: 2, metadata: { title: 'GAN Paper' }, translated_pages: [] },
+    { id: 'doc-3', filename: 'vae.pdf', total_pages: 2, metadata: { title: 'VAE Paper' }, translated_pages: [] },
+  ]
+  await mockBaseRoutes(page, { documents: docs })
+
+  let requestedDocIds = null
+  await page.route('**/api/chat/compare/history*', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ history: [], compare_id: 'cmp_test' }) }))
+  await page.route('**/api/chat/compare/stream', route => {
+    requestedDocIds = route.request().postDataJSON().doc_ids
+    return route.fulfill({ status: 200, contentType: 'text/plain', body: ' 두 논문은 방법론이 다릅니다.' })
+  })
+
+  await gotoApp(page)
+
+  // 선택 모드 진입 전에는 체크박스가 보이지 않는다
+  await expect(page.locator('.doc-card-compare-check').first()).not.toBeVisible()
+
+  await page.click('#lib-compare-toggle-btn')
+  await expect(page.locator('.doc-card-compare-check').first()).toBeVisible()
+
+  const checkboxes = page.locator('.doc-card-compare-check')
+  await checkboxes.nth(0).click()
+  await checkboxes.nth(1).click()
+
+  await expect(page.locator('#compare-select-count')).toHaveText('2/5개 선택됨')
+  await expect(page.locator('#compare-select-start-btn')).toBeEnabled()
+
+  await page.click('#compare-select-start-btn')
+  await expect(page.locator('#compare-screen')).toHaveClass(/active/)
+  await expect(page).toHaveURL(/#compare\?ids=doc-1,doc-2/)
+
+  const chips = page.locator('.compare-doc-chip')
+  await expect(chips).toHaveCount(2)
+  await expect(chips.nth(0)).toHaveText('Attention Is All You Need')
+  await expect(chips.nth(1)).toHaveText('GAN Paper')
+
+  // 인사말에 두 논문이 모두 언급된다 (중복 렌더링되지 않아야 함)
+  await expect(page.locator('#compare-chat-messages .chat-message.assistant')).toHaveCount(1)
+  await expect(page.locator('#compare-chat-messages')).toContainText('Attention Is All You Need')
+  await expect(page.locator('#compare-chat-messages')).toContainText('GAN Paper')
+
+  await page.fill('#compare-chat-input', '두 논문의 차이가 뭐야?')
+  await page.click('#compare-chat-send-btn')
+
+  await expect(page.locator('#compare-chat-messages')).toContainText('두 논문의 차이가 뭐야?')
+  await expect(page.locator('#compare-chat-messages')).toContainText('두 논문은 방법론이 다릅니다.')
+  expect(requestedDocIds).toEqual(['doc-1', 'doc-2'])
+
+  await page.click('#compare-back-btn')
+  await expect(page.locator('#library-screen')).toHaveClass(/active/)
+})
+
+test('선택하지 않은 상태에서는 비교 채팅 시작 버튼이 비활성화된다', async ({ page }) => {
+  const docs = [
+    { id: 'doc-1', filename: 'a.pdf', total_pages: 1, metadata: { title: 'Paper A' }, translated_pages: [] },
+    { id: 'doc-2', filename: 'b.pdf', total_pages: 1, metadata: { title: 'Paper B' }, translated_pages: [] },
+  ]
+  await mockBaseRoutes(page, { documents: docs })
+
+  await gotoApp(page)
+  await page.click('#lib-compare-toggle-btn')
+  await expect(page.locator('#compare-select-start-btn')).toBeDisabled()
+
+  await page.locator('.doc-card-compare-check').first().click()
+  await expect(page.locator('#compare-select-count')).toHaveText('1/5개 선택됨')
+  await expect(page.locator('#compare-select-start-btn')).toBeDisabled()
+
+  await page.click('#compare-select-cancel-btn')
+  await expect(page.locator('#compare-select-bar')).toHaveClass(/hidden/)
+  await expect(page.locator('.doc-card-compare-check').first()).not.toBeVisible()
+})
