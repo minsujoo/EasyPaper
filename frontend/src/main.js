@@ -2905,7 +2905,11 @@ async function renderLibrary() {
   if (librarySearchInput) librarySearchInput.value = ''
   if (librarySearchClearBtn) librarySearchClearBtn.classList.add('hidden')
   if (librarySearchStatus) librarySearchStatus.classList.add('hidden')
-  if (libraryFilterRow) libraryFilterRow.style.display = ''
+  // #library-filter-row의 display:flex는 CSS 클래스가 아닌 인라인 스타일로만
+  // 선언되어 있어서, ''로 지우면(인라인 속성 제거) flex가 아니라 div의 기본값인
+  // block으로 되돌아가 카테고리 태그/보기 전환 버튼이 옆으로 나란히 배치되지
+  // 못하고 세로로 붙어버린다. 반드시 'flex'로 명시적으로 되돌려야 한다.
+  if (libraryFilterRow) libraryFilterRow.style.display = 'flex'
   isLibrarySearchActive = false
 
   libraryGrid.innerHTML = ''
@@ -3083,7 +3087,7 @@ async function runLibrarySearch(query) {
 function exitLibrarySearch() {
   isLibrarySearchActive = false
   if (librarySearchStatus) librarySearchStatus.classList.add('hidden')
-  if (libraryFilterRow) libraryFilterRow.style.display = ''
+  if (libraryFilterRow) libraryFilterRow.style.display = 'flex'
   filterLibraryCards(currentLibraryDocs)
 }
 
