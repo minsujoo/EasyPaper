@@ -70,3 +70,22 @@ def test_library_list_only_returns_own_documents(test_client, isolated_dirs):
     assert res.status_code == 200
     ids = {d["id"] for d in res.json()["documents"]}
     assert ids == {"doc-mine-3"}
+
+
+def test_library_search_only_returns_own_documents(test_client, isolated_dirs):
+    db = isolated_dirs["db"]
+    db.db_save_document("doc-mine-7", "testuser", "shared_topic.pdf", "/x", 1, {"title": "Attention Paper"})
+    db.db_save_document("doc-other-7", "otheruser", "shared_topic2.pdf", "/x", 1, {"title": "Attention Survey"})
+
+    res = test_client.get("/api/library/search", params={"q": "Attention"})
+    assert res.status_code == 200
+    ids = {d["id"] for d in res.json()["documents"]}
+    assert ids == {"doc-mine-7"}
+
+
+def test_library_search_route_does_not_shadow_document_id_route(test_client, isolated_dirs):
+    """/library/search가 /library/{doc_id}보다 먼저 등록되어 있어야, "search"가
+    doc_id로 잘못 매칭되지 않는다."""
+    res = test_client.get("/api/library/search", params={"q": "nonexistent"})
+    assert res.status_code == 200
+    assert res.json() == {"documents": [], "total": 0}

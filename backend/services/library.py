@@ -8,6 +8,7 @@ from services.db import (
     db_save_document,
     db_get_document,
     db_list_documents,
+    db_search_documents,
     db_delete_document,
     db_soft_delete_document,
     db_restore_document,
@@ -145,6 +146,24 @@ def list_documents(
                     )
                     pages = [r["page_num"] for r in cursor.fetchall()]
         doc["translated_pages"] = pages
+    return docs
+
+
+def search_documents(username: str, query: str, only_trash: bool = False) -> list:
+    """파일명/제목·카테고리와 번역된 텍스트를 가로질러 검색어와 매칭되는
+    문서 목록을 최신순으로 반환합니다."""
+    query = (query or "").strip()
+    if not query:
+        return []
+    docs = db_search_documents(username, query, only_trash=only_trash)
+    for doc in docs:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? ORDER BY page_num ASC",
+                (doc["id"],)
+            )
+            doc["translated_pages"] = [r["page_num"] for r in cursor.fetchall()]
     return docs
 
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from services.auth import get_current_user
 from services.library import (
-    list_documents, get_document, permanently_delete_document,
+    list_documents, search_documents, get_document, permanently_delete_document,
     soft_delete_document, restore_document, empty_trash,
     get_translation, get_pdf_path, get_cover_path, update_document_metadata
 )
@@ -62,6 +62,17 @@ async def empty_library_trash(current_user: str = Depends(get_current_user)):
     if not empty_trash(current_user):
         raise HTTPException(status_code=500, detail="휴지통 비우기에 실패했습니다.")
     return {"message": "휴지통이 비워졌습니다."}
+
+
+@router.get("/library/search")
+async def search_library(q: str = "", current_user: str = Depends(get_current_user)):
+    """파일명/제목·카테고리와 번역된 본문 텍스트를 가로질러 검색합니다.
+
+    /library/{doc_id}보다 먼저 등록해야 한다 - 그렇지 않으면 "search"가
+    doc_id 경로 파라미터로 잘못 매칭된다.
+    """
+    docs = search_documents(current_user, q)
+    return {"documents": docs, "total": len(docs)}
 
 
 @router.get("/library/{doc_id}")

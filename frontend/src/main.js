@@ -2,7 +2,7 @@ import './style.css'
 import { marked } from 'marked'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -164,6 +164,10 @@ const fileInput         = $('file-input')
 const libUploadBtn      = $('lib-upload-btn')
 const libraryGrid       = $('library-grid')
 const libraryCategoryFilters = $('library-category-filters')
+const librarySearchInput = $('library-search-input')
+const librarySearchClearBtn = $('library-search-clear-btn')
+const librarySearchStatus = $('library-search-status')
+const libraryFilterRow  = $('library-filter-row')
 const libraryCountBadge = $('library-count-badge')
 const libTabArchive     = $('lib-tab-archive')
 const libTabHistory     = $('lib-tab-history')
@@ -2795,6 +2799,14 @@ async function showLibraryScreen(shouldPushState = true) {
 let activeCategoryFilter = 'ALL'
 
 async function renderLibrary() {
+  // 탭 전환 등으로 목록을 새로 불러올 때는 검색 상태를 초기화한다 - 검색
+  // 결과가 다른 탭의 목록과 뒤섞여 보이는 것을 방지
+  if (librarySearchInput) librarySearchInput.value = ''
+  if (librarySearchClearBtn) librarySearchClearBtn.classList.add('hidden')
+  if (librarySearchStatus) librarySearchStatus.classList.add('hidden')
+  if (libraryFilterRow) libraryFilterRow.style.display = ''
+  isLibrarySearchActive = false
+
   libraryGrid.innerHTML = ''
   libraryCategoryFilters.innerHTML = ''
   try {
@@ -2924,6 +2936,81 @@ function filterLibraryCards(docs) {
 
   const createItem = libraryViewMode === 'list' ? createDocListRow : createDocCard
   filteredDocs.forEach(doc => libraryGrid.appendChild(createItem(doc)))
+}
+
+// ── 라이브러리 전체 검색 (파일명/제목/카테고리 + 번역된 본문 텍스트) ──────
+let isLibrarySearchActive = false
+let librarySearchDebounceTimer = null
+
+function renderLibrarySearchResults(docs, query) {
+  libraryGrid.innerHTML = ''
+  libraryGrid.classList.toggle('list-view', libraryViewMode === 'list')
+
+  if (docs.length === 0) {
+    const el = document.createElement('div')
+    el.className = 'lib-empty'
+    el.innerHTML = `<div style="margin-bottom:16px;color:var(--text-muted)">${icon('book', 48)}</div>
+      <p>"${escapeHtml(query)}"에 대한 검색 결과가 없습니다</p>
+      <p style="font-size:13px;color:var(--text-muted);margin-top:8px">논문 제목, 파일명, 번역된 본문 내용을 검색합니다</p>`
+    libraryGrid.appendChild(el)
+  } else {
+    const createItem = libraryViewMode === 'list' ? createDocListRow : createDocCard
+    docs.forEach(doc => libraryGrid.appendChild(createItem(doc)))
+  }
+
+  if (librarySearchStatus) {
+    librarySearchStatus.textContent = `"${query}" 검색 결과 ${docs.length}건`
+    librarySearchStatus.classList.remove('hidden')
+  }
+}
+
+async function runLibrarySearch(query) {
+  try {
+    const res = await searchLibrary(query)
+    // 디바운스 중 사용자가 입력을 더 바꿨을 수 있으므로, 지금 입력값과 다르면 버린다
+    if (librarySearchInput.value.trim() !== query) return
+    renderLibrarySearchResults(res.documents || [], query)
+  } catch (err) {
+    console.error(err)
+    if (librarySearchStatus) {
+      librarySearchStatus.textContent = '검색 중 오류가 발생했습니다.'
+      librarySearchStatus.classList.remove('hidden')
+    }
+  }
+}
+
+function exitLibrarySearch() {
+  isLibrarySearchActive = false
+  if (librarySearchStatus) librarySearchStatus.classList.add('hidden')
+  if (libraryFilterRow) libraryFilterRow.style.display = ''
+  filterLibraryCards(currentLibraryDocs)
+}
+
+if (librarySearchInput) {
+  librarySearchInput.addEventListener('input', () => {
+    const query = librarySearchInput.value.trim()
+    if (librarySearchClearBtn) librarySearchClearBtn.classList.toggle('hidden', !query)
+    clearTimeout(librarySearchDebounceTimer)
+
+    if (!query) {
+      if (isLibrarySearchActive) exitLibrarySearch()
+      return
+    }
+    librarySearchDebounceTimer = setTimeout(() => {
+      isLibrarySearchActive = true
+      if (libraryFilterRow) libraryFilterRow.style.display = 'none'
+      runLibrarySearch(query)
+    }, 300)
+  })
+}
+
+if (librarySearchClearBtn) {
+  librarySearchClearBtn.addEventListener('click', () => {
+    librarySearchInput.value = ''
+    librarySearchClearBtn.classList.add('hidden')
+    exitLibrarySearch()
+    librarySearchInput.focus()
+  })
 }
 
 function createEmptyState(isHistory = false) {

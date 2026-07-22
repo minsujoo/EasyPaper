@@ -59,6 +59,12 @@ export async function updateLibraryTranslation(docId, pageNum, payload, options 
   if (!res.ok) throw new Error('번역 수정 저장 실패')
   return res.json()
 }
+export async function searchLibrary(query) {
+  const res = await fetch(`${API_BASE}/library/search?q=${encodeURIComponent(query)}`)
+  if (!res.ok) throw new Error('검색 실패')
+  return res.json()
+}
+
 export async function fetchLibraryTrash(options = {}) {
   const res = await fetch(`${API_BASE}/library/trash${buildQuery(options)}`)
   if (!res.ok) throw new Error('휴지통 조회 실패')
