@@ -180,6 +180,39 @@ sudo journalctl -u easypaper -f
 
 ---
 
+## Docker로 실행하기
+
+Python/Node.js를 직접 설치하지 않고 Docker만으로 실행할 수도 있습니다. 프론트엔드 빌드와 백엔드 실행이 하나의 이미지에 담겨 있으며, 문서 DB·업로드·라이브러리·설정 값은 모두 `/data` 볼륨에 영속화되어 컨테이너를 재생성해도 유지됩니다.
+
+```bash
+git clone https://github.com/orion-gz/EasyPaper.git
+cd EasyPaper
+docker compose up -d --build
+```
+
+서버 구동 후 브라우저에서 `http://localhost:8000`에 접속합니다. 초기 로그인 계정은 위의 `admin` / `admin`과 동일합니다.
+
+기본값은 호스트에 설치된 Ollama(`http://host.docker.internal:11434`)를 바라봅니다. Gemini/Claude/OpenAI API를 쓰려면 로그인 후 설정 화면에서 API 키를 입력하면 됩니다(볼륨에 저장되어 유지됨). `docker-compose.yml`의 `environment`에 직접 `GEMINI_API_KEY` 등을 추가해도 됩니다.
+
+> **참고**: Antigravity/Claude Code/Codex 같은 CLI 기반 엔진은 로그인이 필요한 대화형 설치 과정을 거치므로 Docker 이미지에 포함되어 있지 않습니다. 컨테이너 안에서는 Ollama 또는 API 키 기반 프로바이더(Gemini/Claude/OpenAI)만 사용할 수 있습니다.
+
+**로그 확인**
+```bash
+docker compose logs -f
+```
+
+**중지 (데이터는 볼륨에 남아 유지됨)**
+```bash
+docker compose down
+```
+
+**데이터까지 완전히 삭제**
+```bash
+docker compose down -v
+```
+
+---
+
 ## CLI 기반 AI 엔진 (Antigravity / Claude Code / Codex)
 
 EasyPaper는 Google Antigravity(`agy`), Anthropic Claude Code(`claude`), OpenAI Codex(`codex`) CLI를 서브프로세스로 연동하는 전용 LLM Provider를 내장하고 있습니다.
