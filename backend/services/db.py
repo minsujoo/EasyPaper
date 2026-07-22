@@ -229,6 +229,50 @@ def db_list_documents(username: Optional[str] = None, only_trash: bool = False) 
             docs.append(doc)
         return docs
 
+
+def _escape_like(text: str) -> str:
+    """LIKE 패턴의 와일드카드(%, _)를 리터럴로 취급하도록 이스케이프한다."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def db_search_documents(username: str, query: str, only_trash: bool = False) -> list:
+    """파일명/제목·카테고리(metadata)와 페이지별 번역 텍스트를 가로질러 검색어를
+    찾아 매칭되는 문서 목록을 반환합니다 (대소문자 구분 없음).
+
+    원문(PDF에서 추출한 텍스트)은 세션 메모리에만 있고 DB에 영속화되지
+    않아 검색 대상에 포함하지 못한다 - 파일명/제목/카테고리와 번역된
+    텍스트만 검색 대상이다.
+    """
+    is_deleted_val = 1 if only_trash else 0
+    like_query = f"%{_escape_like(query)}%"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT d.id, d.username, d.filename, d.pdf_path, d.total_pages,
+                   d.metadata, d.is_deleted, d.created_at
+            FROM documents d
+            LEFT JOIN translations t ON t.doc_id = d.id
+            WHERE d.username = ? AND d.is_deleted = ?
+              AND (
+                    d.filename LIKE ? ESCAPE '\\'
+                 OR d.metadata LIKE ? ESCAPE '\\'
+                 OR t.translation LIKE ? ESCAPE '\\'
+              )
+            ORDER BY d.created_at DESC
+            """,
+            (username, is_deleted_val, like_query, like_query, like_query)
+        )
+        rows = cursor.fetchall()
+        docs = []
+        for r in rows:
+            doc = dict(r)
+            doc["metadata"] = json.loads(doc["metadata"]) if doc["metadata"] else {}
+            docs.append(doc)
+        return docs
+
+
 def db_delete_document(doc_id: str) -> bool:
     with get_db() as conn:
         cursor = conn.cursor()
