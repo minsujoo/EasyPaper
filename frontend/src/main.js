@@ -4001,92 +4001,107 @@ async function loadDocumentReferences(docId) {
   }
 }
 
+// location.hash 대입은 브라우저에 따라 popstate와 hashchange를 둘 다 발생시켜,
+// 두 리스너가 각각 handleRouting()을 호출하면서 openFromLibrary가 같은 문서에
+// 대해 중복 실행되는 경쟁 조건이 있었다(state.sessionId는 함수 맨 앞에서 동기적으로
+// 설정되지만 viewerScreen이 active가 되는 시점은 그보다 한참 뒤라서, 두 번째 호출이
+// 라우터의 "이미 열려있는 문서면 스킵" 가드를 통과해버림). 그 결과 채팅 히스토리가
+// 두 번 렌더링되는 등의 중복 문제가 생겼다. 비교 화면의 openCompareScreen에 적용한
+// 것과 동일한 패턴으로, 같은 문서를 여는 재진입 호출을 걸러낸다.
+let docOpeningId = null
+
 async function openFromLibrary(doc, shouldPushState = true) {
-  // 이전 문서에서 진행 중이던 채팅 스트림이 있으면 반드시 먼저 취소한다.
-  // 이 함수는 popstate/hashchange 라우팅(handleRouting)에서 resetState()를
-  // 거치지 않고 직접 호출될 수 있어서, 취소하지 않으면 이전 문서의 스트림
-  // 응답이 뒤늦게 도착해 방금 초기화한 새 문서의 state.chatHistory/DOM에
-  // 섞여 들어가는 경쟁 조건이 있었다.
-  if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
+  if (docOpeningId === doc.id) return
+  docOpeningId = doc.id
+  try {
+    // 이전 문서에서 진행 중이던 채팅 스트림이 있으면 반드시 먼저 취소한다.
+    // 이 함수는 popstate/hashchange 라우팅(handleRouting)에서 resetState()를
+    // 거치지 않고 직접 호출될 수 있어서, 취소하지 않으면 이전 문서의 스트림
+    // 응답이 뒤늦게 도착해 방금 초기화한 새 문서의 state.chatHistory/DOM에
+    // 섞여 들어가는 경쟁 조건이 있었다.
+    if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
 
-  if (shouldPushState) {
-    history.pushState({ screen: 'viewer', docId: doc.id }, '', `#viewer?id=${doc.id}`)
-  }
-  state.sessionId  = doc.id
-  loadDocumentImages(doc.id)
-  loadDocumentReferences(doc.id)
-  state.filename   = doc.filename
-  state.currentDocId = doc.id
-  state.currentDocMetadata = doc.metadata || {}
-  
-  if (viewerReadToggleBtn) {
-    const isRead = state.currentDocMetadata.read === true
-    viewerReadToggleBtn.classList.toggle('active', isRead)
-  }
-  const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
-  state.title      = displayTitle
-  state.totalPages = doc.total_pages
-  state.translationCache = {}
-  state.translationSentences = {}
-  state.translatingPages = new Set()
-  state.pageInsightCache = {}
-  // 번역이 완료된 페이지 번호만 기록하고 번역본 로드는 lazy-load에 위임
-  state.translatedPages  = new Set(doc.translated_pages || [])
-
-  // 채팅 내역 초기화
-  state.chatHistory = []
-  chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
-
-  // 채팅 기록 조회는 PDF 로딩과 서로 무관한 별개의 요청이므로, 기다리지 않고
-  // 병렬로 시작해 전체 대기 시간을 줄인다 (완료되면 아래에서 반영).
-  const chatHistoryPromise = getChatHistoryAPI(doc.id).catch(err => {
-    console.error('채팅 기록 로드 실패:', err)
-    return null
-  })
-
-  await loadPDF(`/api/library/${doc.id}/pdf`)
-  docTitle.textContent  = displayTitle
-  docTitle.title        = doc.filename
-  pageTotal.textContent = `/ ${doc.total_pages}`
-  pageInput.max   = doc.total_pages
-
-  // 책갈피: 설정에서 끄지 않았고 마지막으로 읽던 위치가 저장되어 있으면 그 페이지로,
-  // 아니면 1페이지로
-  const savedLastPage = state.disableBookmark ? null : doc.metadata?.last_page
-  const restorePage = (Number.isInteger(savedLastPage) && savedLastPage >= 1 && savedLastPage <= doc.total_pages)
-    ? savedLastPage
-    : 1
-  pageInput.value = restorePage
-  state.currentPage = restorePage
-
-  showViewer()
-  hideOutlineSidebar()
-
-  // PDF가 로드된 뒤에만 가능한 두 작업(페이지 렌더링, 목차 조회)은 서로 무관하므로
-  // 병렬로 실행한다 - 이전에는 순차 실행이라 두 작업 시간이 그대로 더해졌었다.
-  await Promise.all([
-    (async () => {
-      await initScrollViewer()
-      if (restorePage > 1) {
-        scrollToPage(viewerScrollContainer, restorePage, { instant: true })
-      }
-    })(),
-    loadPDFOutline(),
-  ])
-
-  // 채팅 기록 반영 (PDF 로딩과 병렬로 이미 완료됐을 가능성이 높음)
-  // 주의: 변수명을 "history"로 쓰면 이 함수 맨 위에서 쓰는 전역 history(window.history)
-  // 객체를 가려버려("Cannot access 'history' before initialization") 함수 전체가
-  // 조용히 실패하므로 반드시 다른 이름을 사용해야 한다.
-  const chatRes = await chatHistoryPromise
-  const chatHistoryList = chatRes?.history || []
-  if (chatHistoryList.length > 0) {
-    for (const msg of chatHistoryList) {
-      state.chatHistory.push({ role: msg.role, content: msg.content })
-      const isAssistant = msg.role === 'assistant'
-      const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
-      appendChatMessage(msg.role, renderedContent, true)
+    if (shouldPushState) {
+      history.pushState({ screen: 'viewer', docId: doc.id }, '', `#viewer?id=${doc.id}`)
     }
+    state.sessionId  = doc.id
+    loadDocumentImages(doc.id)
+    loadDocumentReferences(doc.id)
+    state.filename   = doc.filename
+    state.currentDocId = doc.id
+    state.currentDocMetadata = doc.metadata || {}
+
+    if (viewerReadToggleBtn) {
+      const isRead = state.currentDocMetadata.read === true
+      viewerReadToggleBtn.classList.toggle('active', isRead)
+    }
+    const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+    state.title      = displayTitle
+    state.totalPages = doc.total_pages
+    state.translationCache = {}
+    state.translationSentences = {}
+    state.translatingPages = new Set()
+    state.pageInsightCache = {}
+    // 번역이 완료된 페이지 번호만 기록하고 번역본 로드는 lazy-load에 위임
+    state.translatedPages  = new Set(doc.translated_pages || [])
+
+    // 채팅 내역 초기화
+    state.chatHistory = []
+    chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
+
+    // 채팅 기록 조회는 PDF 로딩과 서로 무관한 별개의 요청이므로, 기다리지 않고
+    // 병렬로 시작해 전체 대기 시간을 줄인다 (완료되면 아래에서 반영).
+    const chatHistoryPromise = getChatHistoryAPI(doc.id).catch(err => {
+      console.error('채팅 기록 로드 실패:', err)
+      return null
+    })
+
+    await loadPDF(`/api/library/${doc.id}/pdf`)
+    docTitle.textContent  = displayTitle
+    docTitle.title        = doc.filename
+    pageTotal.textContent = `/ ${doc.total_pages}`
+    pageInput.max   = doc.total_pages
+
+    // 책갈피: 설정에서 끄지 않았고 마지막으로 읽던 위치가 저장되어 있으면 그 페이지로,
+    // 아니면 1페이지로
+    const savedLastPage = state.disableBookmark ? null : doc.metadata?.last_page
+    const restorePage = (Number.isInteger(savedLastPage) && savedLastPage >= 1 && savedLastPage <= doc.total_pages)
+      ? savedLastPage
+      : 1
+    pageInput.value = restorePage
+    state.currentPage = restorePage
+
+    showViewer()
+    hideOutlineSidebar()
+
+    // PDF가 로드된 뒤에만 가능한 두 작업(페이지 렌더링, 목차 조회)은 서로 무관하므로
+    // 병렬로 실행한다 - 이전에는 순차 실행이라 두 작업 시간이 그대로 더해졌었다.
+    await Promise.all([
+      (async () => {
+        await initScrollViewer()
+        if (restorePage > 1) {
+          scrollToPage(viewerScrollContainer, restorePage, { instant: true })
+        }
+      })(),
+      loadPDFOutline(),
+    ])
+
+    // 채팅 기록 반영 (PDF 로딩과 병렬로 이미 완료됐을 가능성이 높음)
+    // 주의: 변수명을 "history"로 쓰면 이 함수 맨 위에서 쓰는 전역 history(window.history)
+    // 객체를 가려버려("Cannot access 'history' before initialization") 함수 전체가
+    // 조용히 실패하므로 반드시 다른 이름을 사용해야 한다.
+    const chatRes = await chatHistoryPromise
+    const chatHistoryList = chatRes?.history || []
+    if (chatHistoryList.length > 0) {
+      for (const msg of chatHistoryList) {
+        state.chatHistory.push({ role: msg.role, content: msg.content })
+        const isAssistant = msg.role === 'assistant'
+        const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
+        appendChatMessage(msg.role, renderedContent, true)
+      }
+    }
+  } finally {
+    if (docOpeningId === doc.id) docOpeningId = null
   }
 }
 
@@ -4629,6 +4644,48 @@ function showCustomConfirm(message, { title = '확인', confirmText = '확인', 
   })
 }
 
+// ── 채팅 인용 이미지 로컬 영속화 ─────────────────────────
+// 채팅 메시지 자체(백엔드 DB)에는 "[인용된 이미지 (Page N)]" 같은 텍스트
+// placeholder만 저장되고 실제 이미지(base64)는 저장되지 않는다 - 그 결과
+// 새로고침/재접속 후 히스토리를 다시 불러오면 인용했던 이미지가 사라지고
+// placeholder 텍스트만 남는 문제가 있었다. 이미지 자체는 여기(로컬
+// 스토리지, annotations/memos와 동일한 문서별 키 패턴)에 별도 보관해두고,
+// 히스토리 렌더링 시 메시지에 함께 저장해둔 참조 ID로 다시 찾아 복원한다
+// (같은 브라우저에서 새로고침하는 일반적인 경우는 커버되고, 다른 기기/
+// 브라우저에서 열거나 로컬 스토리지가 지워진 경우엔 기존과 동일하게
+// placeholder만 보인다 - 완전한 서버측 보관은 이번 범위 밖).
+const CHAT_QUOTE_IMAGE_MAX_ENTRIES = 20
+
+function loadChatQuoteImages(sessionId) {
+  if (!sessionId) return {}
+  try {
+    return JSON.parse(localStorage.getItem(`easypaper_chat_quote_images_${sessionId}`)) || {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function saveChatQuoteImage(sessionId, quoteId, base64Img) {
+  if (!sessionId) return
+  try {
+    const images = loadChatQuoteImages(sessionId)
+    images[quoteId] = base64Img
+    // quoteId 자체에 타임스탬프가 앞에 붙어 있어 문자열 정렬 = 시간 순 정렬
+    const keys = Object.keys(images).sort()
+    if (keys.length > CHAT_QUOTE_IMAGE_MAX_ENTRIES) {
+      keys.slice(0, keys.length - CHAT_QUOTE_IMAGE_MAX_ENTRIES).forEach(k => delete images[k])
+    }
+    localStorage.setItem(`easypaper_chat_quote_images_${sessionId}`, JSON.stringify(images))
+  } catch (e) {
+    console.warn('인용 이미지 로컬 저장 실패:', e)
+  }
+}
+
+function getChatQuoteImage(sessionId, quoteId) {
+  if (!sessionId || !quoteId) return null
+  return loadChatQuoteImages(sessionId)[quoteId] || null
+}
+
 // ── Floating Markdown Memo 관리 ─────────────────────────
 function loadMemos(sessionId) {
   if (!sessionId) return {}
@@ -5078,6 +5135,29 @@ function createFloatingMemoForSentence(pageNum, sentenceIdx) {
   renderPageMemos(pageNum)
 }
 
+// PDF 원문/번역문/AI 답변에서 마우스로 드래그 선택한 텍스트를 추출한다.
+// selection.toString()을 그대로 쓰면, 선택 영역에 KaTeX 수식이 포함될 때
+// 문제가 있다 - KaTeX는 렌더링용 시각 트리(.katex-html)와 스크린리더용
+// MathML 트리(.katex-mathml)를 함께 렌더링하는데(output: 'htmlAndMathml'),
+// .katex-mathml은 화면에는 안 보이도록 클립 처리만 되어 있을 뿐 실제로는
+// 선택 영역에 그대로 포함된다. 그 결과 selection.toString()이 두 트리의
+// 텍스트를 이어 붙여 "3\n×\n3\n×\n33×3×3"처럼 수식이 중복되고, 게다가
+// KaTeX 시각 트리 자체가 여러 개의 인접한 inline-block 상자로 이루어져
+// 있어서 토큰 사이에 줄바꿈까지 끼어든다. 선택 영역을 복제한 뒤
+// .katex-mathml만 제거하고 textContent로 읽으면 두 문제 모두 없어진다
+// (실측 확인됨). pdf.js 텍스트 레이어는 단어 사이에 실제 공백 문자를
+// 넣어두므로 일반 텍스트 선택에는 영향이 없다.
+function extractSelectionText(selection) {
+  if (!selection || selection.rangeCount === 0) return ''
+  const parts = []
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const frag = selection.getRangeAt(i).cloneContents()
+    frag.querySelectorAll('.katex-mathml').forEach(el => el.remove())
+    parts.push(frag.textContent)
+  }
+  return parts.join('')
+}
+
 // ── 팝업 툴팁 선택 메뉴 관리 ──
 let selectionMenu = null
 let sentenceHoverTimer = null
@@ -5288,7 +5368,7 @@ function createSelectionMenu() {
       askAIAssistantImage(state.pendingFigureQuote.base64Img, state.pendingFigureQuote.pageNum)
     } else {
       const selection = window.getSelection()
-      const text = selection.toString().trim()
+      const text = extractSelectionText(selection).trim()
       if (text) {
         askAIAssistant(text)
       }
@@ -5730,7 +5810,7 @@ document.addEventListener('mouseup', (e) => {
         return
       }
 
-      const selectedText = selection.toString().trim()
+      const selectedText = extractSelectionText(selection).trim()
       if (!selectedText) {
         hideSelectionMenu()
         return
@@ -6214,9 +6294,24 @@ function formatUserChatHtml(content) {
     const marker = ']\n\n질문:\n'
     const markerIdx = content.indexOf(marker)
     if (markerIdx !== -1) {
-      const pageInfo = content.substring(1, markerIdx)
+      let pageInfo = content.substring(1, markerIdx)
       const questionText = content.substring(markerIdx + marker.length)
-      return `<div class="message-quote"><span class="quote-symbol">❝</span><span class="quote-body" style="font-size: 11px; opacity: 0.85;">${icon('image', 12, 'style="vertical-align:-2px;margin-right:2px"')}${escapeHtml(pageInfo)}</span></div><div class="message-text">${escapeHtml(questionText)}</div>`
+
+      // "(Page N)|quoteId" 형태면 quoteId로 로컬에 저장해둔 실제 이미지를
+      // 복원한다 - 옛 형식(quoteId 없음)이거나 이 브라우저에 저장된 게
+      // 없으면 기존과 동일한 텍스트 placeholder로 자연스럽게 대체된다.
+      let imgSrc = null
+      const sepIdx = pageInfo.lastIndexOf('|')
+      if (sepIdx !== -1) {
+        const quoteId = pageInfo.substring(sepIdx + 1)
+        pageInfo = pageInfo.substring(0, sepIdx)
+        imgSrc = getChatQuoteImage(state.sessionId, quoteId)
+      }
+
+      const quoteBodyHtml = imgSrc
+        ? `<img class="message-quote-img" src="${imgSrc}" alt="Quoted Figure" />`
+        : `<span class="quote-body" style="font-size: 11px; opacity: 0.85;">${icon('image', 12, 'style="vertical-align:-2px;margin-right:2px"')}${escapeHtml(pageInfo)}</span>`
+      return `<div class="message-quote"><span class="quote-symbol">❝</span>${quoteBodyHtml}</div><div class="message-text">${escapeHtml(questionText)}</div>`
     }
   }
   
@@ -6470,8 +6565,12 @@ async function sendChatMessage() {
     const quoteArea = $('chat-quote-area')
     if (quoteArea) quoteArea.classList.add('hidden')
   } else if (state.quotedImage) {
-    const fullPayload = `[인용된 이미지 (Page ${state.quotedImagePage})]\n\n질문:\n${text}`
-    
+    // 실제 이미지 데이터는 DB에 저장되지 않으므로, 새로고침 후에도 복원할 수
+    // 있도록 로컬 스토리지에 별도 보관하고 메시지에는 참조 ID만 남긴다.
+    const quoteId = `qimg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    saveChatQuoteImage(state.sessionId, quoteId, state.quotedImage)
+    const fullPayload = `[인용된 이미지 (Page ${state.quotedImagePage})|${quoteId}]\n\n질문:\n${text}`
+
     // UI에 답장/인용구 레이아웃으로 표시
     const userMsgHtml = `<div class="message-quote"><span class="quote-symbol">❝</span><img class="message-quote-img" src="${state.quotedImage}" alt="Quoted Figure" /></div><div class="message-text">${escapeHtml(text)}</div>`
     appendChatMessage('user', userMsgHtml, true)
