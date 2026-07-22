@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경: 앱의 실제 accent-from/accent-to 그라디언트를 그대로 사용 -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- 문서(페이지) 실루엣 - 앱 헤더 로고와 동일한 file-text 모양(Lucide) 경로를
+       24x24 기준에서 스케일업해 채운 도형으로 재사용, 작은 크기에서도
+       또렷하도록 얇은 선이 아닌 채운 도형으로 그림 -->
+  <g transform="translate(96,96) scale(13.333)">
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" fill="#ffffff"/>
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" fill="none" stroke="#93c5fd" stroke-width="1.1"/>
+  </g>
+
+  <!-- 번역된 본문 텍스트 라인 - 얇은 스트로크 대신 두꺼운 채움 막대로 -->
+  <rect x="182" y="248" width="132" height="26" rx="13" fill="#2563eb"/>
+  <rect x="182" y="300" width="132" height="26" rx="13" fill="#2563eb"/>
+  <rect x="182" y="352" width="92"  height="26" rx="13" fill="#2563eb"/>
+</svg>
