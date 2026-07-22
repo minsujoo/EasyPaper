@@ -2,7 +2,7 @@ import './style.css'
 import { marked } from 'marked'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -46,6 +46,7 @@ const state = {
   availableOllamaModels: [],   // Ollama에서 설치된 모델 목록
   quotedText: null,            // AI 질문 시 인용구 보관용
   documentImages: [],          // 문서 내 이미지 좌표 목록
+  referenceMap: {},            // 참고문헌 번호 -> 원문 텍스트 맵
   quotedImage: null,           // AI 질문 시 인용 이미지 보관용 (Base64)
   quotedImagePage: null,       // AI 질문 시 인용 이미지의 페이지 번호
   pendingFigureQuote: null,    // 클릭 후 AI 질문 전 대기중인 인용 이미지 정보
@@ -288,7 +289,7 @@ function resetState() {
     sessionId: null, filename: null, title: null, totalPages: 0, currentPage: 1,
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
     chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null, pendingFigureQuote: null,
-    activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: []
+    activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {}
   })
   if (typeof toggleCropMode === 'function') toggleCropMode(false)
   viewerScrollContainer.innerHTML = ''
@@ -3524,6 +3525,25 @@ async function loadDocumentImages(docId) {
   }
 }
 
+async function loadDocumentReferences(docId) {
+  try {
+    const refRes = await fetchLibraryReferences(docId)
+    state.referenceMap = refRes.references || {}
+
+    // 이미 렌더링되어 있는 페이지들의 인용 오버레이 갱신
+    document.querySelectorAll('.textLayer').forEach(textLayerDiv => {
+      const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
+      if (pageWrapper) {
+        const pageNum = parseInt(pageWrapper.dataset.page)
+        renderCitationOverlayLayer(textLayerDiv, pageNum)
+      }
+    })
+  } catch (e) {
+    console.warn("참고문헌 목록 로드 실패:", e)
+    state.referenceMap = {}
+  }
+}
+
 async function openFromLibrary(doc, shouldPushState = true) {
   // 이전 문서에서 진행 중이던 채팅 스트림이 있으면 반드시 먼저 취소한다.
   // 이 함수는 popstate/hashchange 라우팅(handleRouting)에서 resetState()를
@@ -3537,6 +3557,7 @@ async function openFromLibrary(doc, shouldPushState = true) {
   }
   state.sessionId  = doc.id
   loadDocumentImages(doc.id)
+  loadDocumentReferences(doc.id)
   state.filename   = doc.filename
   state.currentDocId = doc.id
   state.currentDocMetadata = doc.metadata || {}
@@ -5310,6 +5331,7 @@ window.onTextLayerRendered = (textLayerDiv, pageNum) => {
   }
 
   renderImageOverlayLayer(textLayerDiv, pageNum)
+  renderCitationOverlayLayer(textLayerDiv, pageNum)
 
   // Render floating memos
   renderPageMemos(pageNum)
@@ -5403,6 +5425,100 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   inner.appendChild(layer)
 }
 
+// 번호 인용 스타일만 지원 ([12], [12, 13], [12-14] 등) - (Author, Year) 스타일은
+// 백엔드 reference_parser.py와 동일하게 이번 범위에서 제외했다.
+const CITATION_MARKER_RE = /\[\s*\d{1,3}(?:\s*[,\-–]\s*\d{1,3})*\s*\]/g
+
+// "[12, 14-16]" 형태의 대괄호 안 내용을 개별 참고문헌 번호 목록으로 펼친다
+function parseCitationNumbers(bracketText) {
+  const inner = bracketText.slice(1, -1)
+  const nums = []
+  inner.split(',').forEach(part => {
+    const range = part.trim().match(/^(\d{1,3})\s*[-–]\s*(\d{1,3})$/)
+    if (range) {
+      const start = parseInt(range[1], 10)
+      const end = parseInt(range[2], 10)
+      // 비정상적으로 넓은 범위(오탐 - 예: 페이지/연도 범위 오인)는 무시
+      if (end >= start && end - start <= 50) {
+        for (let n = start; n <= end; n++) nums.push(String(n))
+      }
+    } else {
+      const single = part.trim().match(/^\d{1,3}$/)
+      if (single) nums.push(single[0])
+    }
+  })
+  return nums
+}
+
+// 본문 인용 표기 오버레이 - 참고문헌 목록에 실제로 존재하는 번호를 가리키는
+// 표기만 클릭 가능하게 만든다(오탐/미매칭 표기까지 다 클릭되게 하면 클릭할
+// 때마다 404 토스트만 뜨는 경험이 되므로).
+function renderCitationOverlayLayer(textLayerDiv, pageNum) {
+  const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
+  if (!pageWrapper) return
+
+  const overlay = getOrCreateOverlay(pageWrapper)
+  overlay.querySelectorAll('.citation-marker-box').forEach(el => el.remove())
+
+  const refMap = state.referenceMap || {}
+  if (Object.keys(refMap).length === 0) return
+
+  const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum]
+  if (!vtm || !vtm.fullText) return
+
+  const docId = state.currentDocId
+  if (!docId) return
+
+  CITATION_MARKER_RE.lastIndex = 0
+  let match
+  while ((match = CITATION_MARKER_RE.exec(vtm.fullText)) !== null) {
+    const nums = parseCitationNumbers(match[0]).filter(n => refMap[n])
+    if (nums.length === 0) continue
+
+    const charStart = match.index
+    const charEnd = match.index + match[0].length
+    const rects = getSentenceRects({ charStart, charEnd }, vtm, textLayerDiv)
+    if (rects.length === 0) continue
+
+    // 대괄호 안에 여러 번호가 있어도([12, 13]) 클릭 시엔 첫 번째 매칭 번호로만
+    // 이동한다 - 대부분 단일 인용이고, 여러 창을 한 번에 여는 것은 오히려 방해된다.
+    const refNum = nums[0]
+    rects.forEach(r => {
+      const box = document.createElement('div')
+      box.className = 'citation-marker-box'
+      box.style.left   = `${r.left}px`
+      box.style.top    = `${r.top}px`
+      box.style.width  = `${r.width}px`
+      box.style.height = `${r.height}px`
+      box.title = refMap[refNum] || ''
+      box.dataset.refNum = refNum
+      box.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        handleCitationClick(docId, refNum, box)
+      })
+      overlay.appendChild(box)
+    })
+  }
+}
+
+async function handleCitationClick(docId, refNum, boxEl) {
+  if (boxEl.classList.contains('loading')) return
+  boxEl.classList.add('loading')
+  try {
+    const result = await resolveLibraryReference(docId, refNum)
+    if (result && result.url) {
+      window.open(result.url, '_blank', 'noopener')
+    } else {
+      showToast('참고문헌을 찾지 못했습니다.', 'error')
+    }
+  } catch (e) {
+    console.warn('참고문헌 조회 실패:', e)
+    showToast('참고문헌을 찾지 못했습니다.', 'error')
+  } finally {
+    boxEl.classList.remove('loading')
+  }
+}
 
 // ── AI Chat Sidebar ──────────────────────────────
 function toggleChatSidebar() {

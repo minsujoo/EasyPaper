@@ -283,6 +283,83 @@ async def get_library_document_images(doc_id: str, current_user: str = Depends(g
         raise HTTPException(status_code=500, detail=f"이미지 좌표 추출 실패: {str(e)}")
 
 
+@router.get("/library/{doc_id}/references")
+async def get_library_references(doc_id: str, current_user: str = Depends(get_current_user)):
+    """참고문헌 목록(번호 -> 원문 텍스트)을 반환합니다.
+
+    외부 API 호출 없이 PDF 텍스트만 파싱한다 - 실제 외부 링크 조회는
+    사용자가 본문에서 특정 인용 표기를 클릭했을 때만
+    (/library/{doc_id}/references/{ref_num}) 그때그때 수행한다. 논문 한 편에
+    참고문헌이 수십~백여 개인 경우가 흔한데, 열 때마다 전부 미리 조회하면
+    외부 API 레이트리밋에 바로 걸리고 대부분은 클릭되지도 않아 낭비다.
+    """
+    _require_owned_document(doc_id, current_user)
+
+    from services.library import get_page_insight, save_page_insight
+
+    cached = get_page_insight(doc_id, 0, "reference_list")
+    if cached is not None:
+        try:
+            return {"references": json.loads(cached)}
+        except Exception:
+            pass
+
+    pdf_path = get_pdf_path(doc_id)
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
+
+    from services.pdf_parser import extract_pages
+    from services.reference_parser import extract_reference_list
+    try:
+        pages = extract_pages(pdf_path)
+        references = extract_reference_list(pages)
+    except Exception:
+        references = {}
+
+    save_page_insight(doc_id, 0, "reference_list", json.dumps(references, ensure_ascii=False))
+    return {"references": references}
+
+
+@router.get("/library/{doc_id}/references/{ref_num}")
+async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str = Depends(get_current_user)):
+    """특정 번호의 참고문헌을 외부(Semantic Scholar, 가능하면 arXiv)에서
+    검색해 링크를 반환합니다. 결과(성공/실패 모두)는 캐시해 같은 항목을
+    반복 조회하지 않습니다."""
+    _require_owned_document(doc_id, current_user)
+
+    from services.library import get_page_insight, save_page_insight
+
+    cached = get_page_insight(doc_id, 0, "reference_url", suffix=ref_num)
+    if cached is not None:
+        try:
+            data = json.loads(cached)
+        except Exception:
+            data = {}
+        if not data:
+            raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
+        return data
+
+    ref_list_cached = get_page_insight(doc_id, 0, "reference_list")
+    references = {}
+    if ref_list_cached:
+        try:
+            references = json.loads(ref_list_cached)
+        except Exception:
+            references = {}
+
+    ref_text = references.get(ref_num)
+    if not ref_text:
+        raise HTTPException(status_code=404, detail="해당 번호의 참고문헌을 찾을 수 없습니다.")
+
+    from services.reference_linker import resolve_reference
+    result = await resolve_reference(ref_text)
+    save_page_insight(doc_id, 0, "reference_url", json.dumps(result or {}, ensure_ascii=False), suffix=ref_num)
+
+    if not result:
+        raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
+    return result
+
+
 @router.put("/library/{doc_id}/metadata")
 async def update_doc_metadata(
     doc_id: str,
