@@ -11,11 +11,34 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app/backend
 
+# curl(agy 공식 설치 스크립트) + Node.js/npm(claude-code, codex 설치용).
+# claude/codex/agy 바이너리 자체는 설치 후 독립 실행형 네이티브 바이너리라
+# 런타임에 Node.js가 필요하지 않지만, npm install -g 설치 과정 자체에는
+# 필요하다.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+
+# CLI 기반 AI 엔진(Antigravity/Claude Code/Codex) 설치. 실제 로그인
+# 자격증명은 이미지에 절대 포함되지 않는다 - 컨테이너 실행 시 호스트의
+# ~/.claude, ~/.codex, ~/.antigravitycli, ~/.gemini를 볼륨으로 그대로
+# 마운트해, 호스트에서 이미 완료해둔 로그인을 그대로 재사용하는 방식이다
+# (README 참고). 컨테이너는 root로 실행되므로 HOME=/root 기준 경로에
+# 설치한다. claude/codex는 npm 전역 설치 시 이미 PATH에 있는
+# /usr/local/bin에 설치되어 별도 경로 지정이 필요 없고, agy 설치 스크립트만
+# $HOME/.local/bin을 쓰므로 그 경로만 PATH/AGY_PATH에 추가한다.
+ENV HOME=/root \
+    PATH="/root/.local/bin:${PATH}" \
+    AGY_PATH=/root/.local/bin/agy
+RUN npm install -g @anthropic-ai/claude-code @openai/codex \
+    && curl -fsSL https://antigravity.google/cli/install.sh | bash
 
 # config.py는 .env/translation_prompt.txt를 항상 backend/(이 이미지에서는
 # /app/backend) 기준 상대경로로 읽고 쓴다 - 심볼릭 링크로 /data 볼륨 안을
