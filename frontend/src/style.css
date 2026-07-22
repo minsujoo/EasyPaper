@@ -4392,7 +4392,91 @@ body.light-theme .sentence-memo-box {
 body.light-theme .citation-marker-box:hover {
   background-color: rgba(74, 135, 181, 0.15);
 }
-.citation-marker-box.loading {
+/* 인용 표기 호버/클릭 시 뜨는 툴팁 - 참고문헌 원문 + 외부 링크 찾기 +
+   Google Scholar 검색을 한 곳에서 보여준다. body에 직접 붙여
+   position:fixed로 뷰포트 기준 좌표를 쓴다(PDF 페이지 스크롤 컨테이너
+   내부에 있으면 overflow:hidden에 잘릴 수 있어서). */
+.citation-tooltip {
+  position: fixed;
+  z-index: 200;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  background: rgba(23, 20, 38, 0.97);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeInTooltip 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.light-theme .citation-tooltip {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: var(--border-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+.citation-tooltip.hidden {
+  display: none;
+}
+.citation-tooltip-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-height: 110px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.citation-tooltip-result {
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.citation-tooltip-result.hidden {
+  display: none;
+}
+.citation-tooltip-result a {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--control-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.citation-tooltip-result a:hover {
+  text-decoration: underline;
+}
+.citation-tooltip-result-empty {
+  color: var(--text-muted);
+}
+.citation-tooltip-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.citation-tooltip-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.citation-tooltip-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent-mid);
+}
+.citation-tooltip-action-btn:disabled {
+  opacity: 0.6;
   cursor: wait;
 }
 

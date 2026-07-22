@@ -5899,8 +5899,8 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
     const rects = getSentenceRects({ charStart, charEnd }, vtm, textLayerDiv)
     if (rects.length === 0) continue
 
-    // 대괄호 안에 여러 번호가 있어도([12, 13]) 클릭 시엔 첫 번째 매칭 번호로만
-    // 이동한다 - 대부분 단일 인용이고, 여러 창을 한 번에 여는 것은 오히려 방해된다.
+    // 대괄호 안에 여러 번호가 있어도([12, 13]) 툴팁은 첫 번째 매칭 번호 기준으로만
+    // 보여준다 - 대부분 단일 인용이고, 여러 개를 한 번에 보여주면 오히려 복잡해진다.
     const refNum = nums[0]
     rects.forEach(r => {
       const box = document.createElement('div')
@@ -5909,35 +5909,154 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.style.top    = `${r.top}px`
       box.style.width  = `${r.width}px`
       box.style.height = `${r.height}px`
-      box.title = refMap[refNum] || ''
       box.dataset.refNum = refNum
+      box.addEventListener('mouseenter', () => showCitationTooltip(docId, refNum, refMap[refNum] || '', box))
+      box.addEventListener('mouseleave', scheduleCitationTooltipHide)
+      // 클릭도 항상 툴팁을 띄운다(호버가 없는 터치 기기 대응). 실제 마우스
+      // 클릭은 브라우저가 클릭 직전에 mouseenter를 먼저 쏘므로, 여기서 굳이
+      // "이미 열려 있으면 닫기" 토글을 넣으면 방금 호버가 연 툴팁을 클릭이
+      // 곧바로 다시 닫아버리는 문제가 있어 단순히 show만 호출한다. 닫기는
+      // 바깥 클릭/스크롤/mouseleave로 처리한다.
       box.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        handleCitationClick(docId, refNum, box)
+        showCitationTooltip(docId, refNum, refMap[refNum] || '', box)
       })
       overlay.appendChild(box)
     })
   }
 }
 
-async function handleCitationClick(docId, refNum, boxEl) {
-  if (boxEl.classList.contains('loading')) return
-  boxEl.classList.add('loading')
+// ── 인용 표기 호버 툴팁: 참고문헌 원문 + 외부 링크 찾기 + Google Scholar 검색 ──
+let citationTooltipEl = null
+let citationTooltipHideTimer = null
+let citationTooltipDocId = null
+let citationTooltipRefNum = null
+let citationTooltipBoxEl = null
+
+function buildScholarSearchUrl(refText) {
+  return `https://scholar.google.com/scholar?q=${encodeURIComponent((refText || '').slice(0, 300))}`
+}
+
+function getOrCreateCitationTooltip() {
+  if (citationTooltipEl) return citationTooltipEl
+  const el = document.createElement('div')
+  el.className = 'citation-tooltip hidden'
+  el.innerHTML = `
+    <div class="citation-tooltip-text"></div>
+    <div class="citation-tooltip-result hidden"></div>
+    <div class="citation-tooltip-actions">
+      <button type="button" class="citation-tooltip-action-btn citation-tooltip-resolve-btn">${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기</button>
+      <button type="button" class="citation-tooltip-action-btn citation-tooltip-scholar-btn">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px"')}Google Scholar 검색</button>
+    </div>
+  `
+  document.body.appendChild(el)
+
+  el.addEventListener('mouseenter', () => {
+    if (citationTooltipHideTimer) { clearTimeout(citationTooltipHideTimer); citationTooltipHideTimer = null }
+  })
+  el.addEventListener('mouseleave', scheduleCitationTooltipHide)
+  el.querySelector('.citation-tooltip-resolve-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    resolveCitationTooltip()
+  })
+  el.querySelector('.citation-tooltip-scholar-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    const text = el.querySelector('.citation-tooltip-text').textContent
+    window.open(buildScholarSearchUrl(text), '_blank', 'noopener')
+  })
+
+  citationTooltipEl = el
+  return el
+}
+
+function positionCitationTooltip() {
+  if (!citationTooltipEl || !citationTooltipBoxEl) return
+  const rect = citationTooltipBoxEl.getBoundingClientRect()
+  const tw = citationTooltipEl.offsetWidth || 300
+  const th = citationTooltipEl.offsetHeight || 100
+  let left = rect.left + rect.width / 2 - tw / 2
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8))
+  let top = rect.top - th - 10
+  if (top < 8) top = rect.bottom + 10
+  citationTooltipEl.style.left = `${left}px`
+  citationTooltipEl.style.top = `${top}px`
+}
+
+function showCitationTooltip(docId, refNum, refText, boxEl) {
+  if (citationTooltipHideTimer) { clearTimeout(citationTooltipHideTimer); citationTooltipHideTimer = null }
+  citationTooltipDocId = docId
+  citationTooltipRefNum = refNum
+  citationTooltipBoxEl = boxEl
+
+  const tooltip = getOrCreateCitationTooltip()
+  tooltip.querySelector('.citation-tooltip-text').textContent = refText
+  const resultEl = tooltip.querySelector('.citation-tooltip-result')
+  resultEl.className = 'citation-tooltip-result hidden'
+  resultEl.innerHTML = ''
+  const resolveBtn = tooltip.querySelector('.citation-tooltip-resolve-btn')
+  resolveBtn.disabled = false
+  resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기`
+
+  tooltip.classList.remove('hidden')
+  positionCitationTooltip()
+}
+
+function hideCitationTooltip() {
+  if (citationTooltipHideTimer) { clearTimeout(citationTooltipHideTimer); citationTooltipHideTimer = null }
+  if (citationTooltipEl) citationTooltipEl.classList.add('hidden')
+  citationTooltipBoxEl = null
+}
+
+function scheduleCitationTooltipHide() {
+  if (citationTooltipHideTimer) clearTimeout(citationTooltipHideTimer)
+  citationTooltipHideTimer = setTimeout(hideCitationTooltip, 220)
+}
+
+async function resolveCitationTooltip() {
+  if (!citationTooltipEl || !citationTooltipDocId || !citationTooltipRefNum) return
+  const resolveBtn = citationTooltipEl.querySelector('.citation-tooltip-resolve-btn')
+  const resultEl = citationTooltipEl.querySelector('.citation-tooltip-result')
+  if (resolveBtn.disabled) return
+
+  resolveBtn.disabled = true
+  resolveBtn.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:4px"')}찾는 중...`
+
   try {
-    const result = await resolveLibraryReference(docId, refNum)
+    const result = await resolveLibraryReference(citationTooltipDocId, citationTooltipRefNum)
     if (result && result.url) {
-      window.open(result.url, '_blank', 'noopener')
+      resultEl.className = 'citation-tooltip-result'
+      const label = result.title ? `${result.title}${result.year ? ` (${result.year})` : ''}` : result.url
+      resultEl.innerHTML = `<a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px;flex-shrink:0"')}<span>${escapeHtml(label)}</span></a>`
     } else {
-      showToast('참고문헌을 찾지 못했습니다.', 'error')
+      resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
+      resultEl.textContent = '원문 링크를 찾지 못했습니다. Google Scholar 검색을 이용해보세요.'
     }
   } catch (e) {
     console.warn('참고문헌 조회 실패:', e)
-    showToast('참고문헌을 찾지 못했습니다.', 'error')
+    resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
+    resultEl.textContent = '조회 중 오류가 발생했습니다.'
   } finally {
-    boxEl.classList.remove('loading')
+    resolveBtn.disabled = false
+    resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}다시 찾기`
+    positionCitationTooltip()
   }
 }
+
+// PDF 스크롤 중에는 인용 박스와 툴팁의 상대 위치가 계속 바뀌므로, 스크롤이
+// 시작되면 곧바로 닫는다(매 스크롤 이벤트마다 재계산하는 것보다 훨씬 가볍다).
+document.addEventListener('scroll', () => {
+  if (citationTooltipEl && !citationTooltipEl.classList.contains('hidden')) hideCitationTooltip()
+}, true)
+
+// 툴팁/인용 표기 바깥을 클릭하면 닫는다 - 호버가 없는 터치 기기에서 닫는
+// 유일한 방법이라 필요하다.
+document.addEventListener('click', (e) => {
+  if (!citationTooltipEl || citationTooltipEl.classList.contains('hidden')) return
+  if (citationTooltipEl.contains(e.target)) return
+  if (citationTooltipBoxEl && citationTooltipBoxEl.contains(e.target)) return
+  hideCitationTooltip()
+})
 
 // ── AI Chat Sidebar ──────────────────────────────
 function toggleChatSidebar() {
