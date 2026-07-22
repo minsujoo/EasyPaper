@@ -45,6 +45,9 @@ async def get_agy_models():
         return {
             "ok": True,
             "models": [
+                "Gemini 3.6 Flash (Medium)",
+                "Gemini 3.6 Flash (High)",
+                "Gemini 3.6 Flash (Low)",
                 "Gemini 3.5 Flash (Medium)",
                 "Gemini 3.5 Flash (High)",
                 "Gemini 3.5 Flash (Low)",
