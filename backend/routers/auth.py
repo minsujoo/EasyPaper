@@ -24,6 +24,7 @@ from config import (
     get_claude_code_path,
     get_codex_path,
     find_ollama_binary,
+    get_project_root,
 )
 from services.llm_client import check_ollama_health
 
@@ -588,9 +589,16 @@ async def system_update(current_user: str = Depends(get_current_user)):
     import os
 
     try:
-        # 프로젝트 루트 디렉토리 찾기
-        project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        
+        # 프로젝트 루트 디렉토리 찾기. os.path.dirname(__file__)로 직접 계산하면
+        # 이 파일(routers/auth.py)이 backend/ 밑 한 단계 더 깊은 routers/ 안에
+        # 있다는 걸 놓치기 쉬워, 실제로 project_dir이 backend/를 가리키게 되는
+        # 버그가 있었다(그 결과 frontend_dir이 backend/frontend로 계산되어
+        # 존재하지 않으니 프론트엔드 빌드가 조용히 스킵되고, _restart_server_process
+        # 에서도 backend_dir이 backend/backend로 계산되어 재시작이
+        # "No such file or directory"로 실패했다). config.py의 검증된
+        # get_project_root()를 그대로 재사용해 이런 계산 실수를 원천 차단한다.
+        project_dir = get_project_root()
+
         # 1. git pull origin main
         pull_proc = await asyncio.create_subprocess_exec(
             "git", "pull", "origin", "main",
