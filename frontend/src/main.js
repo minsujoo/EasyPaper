@@ -1510,10 +1510,15 @@ async function checkAuthentication() {
     await refreshSystemSettings()
     maybeShowOnboarding()
     // 업데이트 직후(방금 재시작됨) 안내가 있으면 그것부터 먼저 보여주고, 없을
-    // 때만 "새 업데이트가 있는지" 확인 - 두 팝업이 동시에 겹쳐 뜨지 않도록 함
-    checkPostUpdateNoticeOnce().then((shown) => {
-      if (!shown) maybeAutoCheckForUpdate()
-    })
+    // 때만 "새 업데이트가 있는지" 확인 - 두 팝업이 동시에 겹쳐 뜨지 않도록 함.
+    // git pull 기반이라 git 저장소 없이 배포되는 Tauri 데스크탑 빌드에서는
+    // 애초에 의미가 없으므로 건너뛴다(데스크탑 자체 업데이트는 Tauri updater가
+    // 별도로 담당).
+    if (!isTauriDesktop) {
+      checkPostUpdateNoticeOnce().then((shown) => {
+        if (!shown) maybeAutoCheckForUpdate()
+      })
+    }
   } else {
     showLogin()
   }
@@ -2531,7 +2536,18 @@ function resetSystemUpdateCheckState() {
   if (systemUpdateChangelogBox) systemUpdateChangelogBox.classList.add('hidden')
 }
 
-if (systemUpdateCheckBtn) {
+// 이 섹션의 "업데이트 확인/실행"은 git pull + npm build + systemctl(또는 자체
+// 프로세스) 재시작을 수행한다 - git 저장소 없이 인스톨러로 배포되는 Tauri
+// 데스크탑 빌드에서는 애초에 동작할 수 없는 전제라 UI 자체를 숨긴다. 백엔드
+// 라우트는 서버/Docker 배포에서 계속 써야 하므로 그대로 둔다(변경 없음).
+// window.__TAURI_INTERNALS__는 Tauri v2 webview에서만 주입되는 전역 값이다.
+const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+const systemUpdateSection = $('system-update-section')
+if (isTauriDesktop && systemUpdateSection) {
+  systemUpdateSection.classList.add('hidden')
+}
+
+if (systemUpdateCheckBtn && !isTauriDesktop) {
   systemUpdateCheckBtn.addEventListener('click', async () => {
     systemUpdateCheckBtn.disabled = true
     systemUpdateCheckBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '확인 중...'
@@ -2570,7 +2586,7 @@ if (systemUpdateCheckBtn) {
   })
 }
 
-if (systemUpdateRunBtn) {
+if (systemUpdateRunBtn && !isTauriDesktop) {
   systemUpdateRunBtn.addEventListener('click', async () => {
     if (!pendingSystemUpdateAvailable) return
     const ok = await showCustomConfirm('정말 깃허브 최신 코드로 자동 업데이트를 실행하시겠습니까?\n업데이트가 완료되면 서비스 데몬이 자동으로 재기동되며 약 3~5초간 접속이 중단될 수 있습니다.', { title: '시스템 업데이트', confirmText: '업데이트', danger: true })

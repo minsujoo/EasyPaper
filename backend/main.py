@@ -65,7 +65,15 @@ async def serve_pdf(session_id: str, username: str = Depends(get_current_user)):
 
 
 # 프론트엔드 정적 파일 서빙 (빌드된 dist 폴더)
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "../frontend/dist")
+#
+# EASYPAPER_FRONTEND_DIST가 있으면 그 경로를 그대로 쓴다. PyInstaller onedir로
+# 패키징된 sidecar에서는 main.py의 __file__이 <onedir>/_internal/main.py를
+# 가리키게 되는데, PyInstaller가 datas 목적지로 "<onedir> 최상위 밖"(예:
+# "../frontend/dist")을 허용하지 않아 dist를 onedir 최상위(main.py가 기존
+# 상대경로로 찾는 위치)에 둘 수 없다. 대신 dist를 _internal/frontend/dist에
+# 두고 이 env var로 실제 위치를 알려준다. 미설정 시(서버/Docker 배포)에는
+# 기존과 동일하게 상대경로로 계산한다.
+FRONTEND_DIST = os.getenv("EASYPAPER_FRONTEND_DIST") or os.path.join(os.path.dirname(__file__), "../frontend/dist")
 if os.path.exists(FRONTEND_DIST):
     # /assets 등 정적 자산
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
@@ -106,4 +114,4 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=APP_HOST, port=APP_PORT, reload=False)
+    uvicorn.run(app, host=APP_HOST, port=APP_PORT, reload=False)
