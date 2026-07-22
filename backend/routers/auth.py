@@ -688,3 +688,20 @@ async def post_update_notice_endpoint(current_user: str = Depends(get_current_us
     return await get_post_update_notice()
 
 
+@router.get("/settings/changelog")
+async def get_full_changelog(current_user: str = Depends(get_current_user)):
+    """저장소 루트의 CHANGELOG.md 전체 내용을 반환합니다.
+
+    설정 화면에서 버전 텍스트를 클릭하면 지금까지의 전체 변경 이력을 보여주는
+    용도 - 업데이트 확인 시 뜨는 changelog(현재~최신 사이의 diff)와 달리
+    이건 프로젝트 전체 누적 이력이라 git 조회가 아니라 이 파일 자체를
+    그대로 서빙한다.
+    """
+    import os
+    changelog_path = os.path.join(get_project_root(), "CHANGELOG.md")
+    if not os.path.exists(changelog_path):
+        return {"content": ""}
+    with open(changelog_path, "r", encoding="utf-8") as f:
+        return {"content": f.read()}
+
+

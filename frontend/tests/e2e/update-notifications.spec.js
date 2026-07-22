@@ -162,3 +162,28 @@ test('설정 화면에서 업데이트 확인 주기를 변경하면 저장된�
 
   expect(savedInterval).toBe('never')
 })
+
+test('현재 버전 텍스트를 클릭하면 CHANGELOG.md 전체 내용을 보여주는 팝업이 뜬다', async ({ page }) => {
+  await mockBaseRoutes(page, { documents: [] })
+  await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: false })
+  await page.route('**/api/settings/changelog', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ content: '# Changelog\n\n## 2026-07-22\n\n- feat: 새 기능 추가 (#110)\n- fix: 버그 수정 (#111)\n' }),
+  }))
+
+  await gotoApp(page)
+  await page.waitForTimeout(600)
+  await page.click('#global-settings-btn')
+  await page.waitForTimeout(400)
+
+  await expect(page.locator('#full-changelog-modal')).toHaveClass(/hidden/)
+  await page.click('#current-version-label')
+  await expect(page.locator('#full-changelog-modal')).not.toHaveClass(/hidden/)
+
+  await expect(page.locator('#full-changelog-content h2').first()).toHaveText('2026-07-22')
+  await expect(page.locator('#full-changelog-content')).toContainText('새 기능 추가')
+  await expect(page.locator('#full-changelog-content')).toContainText('버그 수정')
+
+  await page.click('#full-changelog-close-btn')
+  await expect(page.locator('#full-changelog-modal')).toHaveClass(/hidden/)
+})

@@ -4552,6 +4552,54 @@ body.light-theme .citation-tooltip {
   overflow-y: auto;
 }
 
+.current-version-label:hover {
+  color: var(--text-primary);
+}
+
+/* 설정 모달 안에서 열리는 중첩 모달이라, 같은 z-index를 쓰는 다른
+   .modal-overlay(설정 모달 자신 포함)보다 항상 위에 그려지도록 명시적으로
+   올려준다 - 안 그러면 DOM 순서상 뒤에 있는 설정 모달이 클릭을 가로챈다. */
+#full-changelog-modal {
+  z-index: 1100;
+}
+
+/* 전체 변경 이력 모달 - CHANGELOG.md 원문을 marked로 렌더링한 결과 */
+.full-changelog-content {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.full-changelog-content h1 {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+.full-changelog-content h2 {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 18px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.full-changelog-content h2:first-of-type {
+  margin-top: 0;
+}
+.full-changelog-content ul {
+  margin: 0 0 4px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.full-changelog-content li {
+  color: var(--text-primary);
+}
+.full-changelog-content p {
+  margin: 0 0 8px;
+}
+
 /* 라이브러리 카드/리스트 위의 비교 선택 체크박스 오버레이 - 평소엔 숨겨져 있다가
    선택 모드(.compare-select-mode)일 때만 나타난다 */
 .doc-card-compare-check {

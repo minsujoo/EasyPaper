@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
@@ -2625,6 +2625,44 @@ const updateCompleteCloseBtn = $('update-complete-close-btn')
 const updateCompleteVersionLine = $('update-complete-version-line')
 const updateCompleteChangelog = $('update-complete-changelog')
 const updateCompleteConfirmBtn = $('update-complete-confirm-btn')
+
+const fullChangelogModal   = $('full-changelog-modal')
+const fullChangelogCloseBtn = $('full-changelog-close-btn')
+const fullChangelogLoading = $('full-changelog-loading')
+const fullChangelogContent = $('full-changelog-content')
+
+function closeFullChangelogModal() {
+  if (fullChangelogModal) fullChangelogModal.classList.add('hidden')
+}
+
+if (fullChangelogCloseBtn) fullChangelogCloseBtn.addEventListener('click', closeFullChangelogModal)
+if (fullChangelogModal) {
+  fullChangelogModal.addEventListener('click', (e) => {
+    if (e.target === fullChangelogModal) closeFullChangelogModal()
+  })
+}
+
+if (currentVersionLabel) {
+  currentVersionLabel.addEventListener('click', async () => {
+    if (!fullChangelogModal) return
+    fullChangelogModal.classList.remove('hidden')
+    fullChangelogLoading.classList.remove('hidden')
+    fullChangelogContent.classList.add('hidden')
+    fullChangelogContent.innerHTML = ''
+
+    try {
+      const res = await getFullChangelogAPI()
+      fullChangelogContent.innerHTML = res.content
+        ? marked.parse(res.content)
+        : '<p>변경 이력을 찾을 수 없습니다.</p>'
+    } catch (err) {
+      fullChangelogContent.innerHTML = `<p>변경 이력을 불러오지 못했습니다: ${escapeHtml(err.message || '')}</p>`
+    } finally {
+      fullChangelogLoading.classList.add('hidden')
+      fullChangelogContent.classList.remove('hidden')
+    }
+  })
+}
 
 const UPDATE_CHECK_INTERVAL_MS = {
   daily: 24 * 60 * 60 * 1000,

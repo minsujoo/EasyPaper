@@ -666,6 +666,15 @@ export async function getPostUpdateNoticeAPI() {
   return res.json()
 }
 
+/**
+ * 저장소 루트 CHANGELOG.md 전체 내용을 조회합니다.
+ */
+export async function getFullChangelogAPI() {
+  const res = await fetch(`${API_BASE}/settings/changelog`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('변경 이력 조회 실패')
+  return res.json()
+}
+
 export async function fetchTrashAPI() {
   const res = await fetch(`${API_BASE}/library/trash`, { cache: 'no-store' })
   if (!res.ok) throw new Error('휴지통 목록 조회 실패')
