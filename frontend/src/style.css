@@ -4437,6 +4437,37 @@ body.light-theme .citation-marker-box:hover {
   cursor: not-allowed;
 }
 
+/* 설정 화면 수동 확인/자동 팝업(새 업데이트 안내·업데이트 완료 안내)이 모두
+   같은 변경 로그 UI를 쓰도록 공용 클래스로 통일한다. */
+.update-changelog-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.update-changelog-version-line {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+.update-changelog-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.update-changelog-list {
+  margin: 0;
+  padding-left: 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
 /* 라이브러리 카드/리스트 위의 비교 선택 체크박스 오버레이 - 평소엔 숨겨져 있다가
    선택 모드(.compare-select-mode)일 때만 나타난다 */
 .doc-card-compare-check {

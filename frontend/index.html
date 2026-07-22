@@ -461,9 +461,10 @@
         <button id="update-available-close-btn" class="close-btn">&times;</button>
       </div>
       <div style="padding: 24px; max-height: 70vh; overflow-y: auto;">
-        <p id="update-available-version-line" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;"></p>
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">변경 내용</div>
-        <ul id="update-available-changelog" style="list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow-y: auto;"></ul>
+        <div class="update-changelog-box" style="margin-bottom: 18px;">
+          <div id="update-available-version-line" class="update-changelog-version-line"></div>
+          <ul id="update-available-changelog" class="update-changelog-list"></ul>
+        </div>
 
         <div id="update-available-progress-area" class="hidden">
           <div id="update-available-status" style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">업데이트 진행 중...</div>
@@ -487,9 +488,9 @@
       </div>
       <div style="padding: 24px; max-height: 70vh; overflow-y: auto;">
         <p id="update-complete-version-line" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;"></p>
-        <div id="update-complete-changelog-wrap">
-          <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">이번 업데이트에서 바뀐 점</div>
-          <ul id="update-complete-changelog" style="list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow-y: auto;"></ul>
+        <div id="update-complete-changelog-wrap" class="update-changelog-box" style="margin-bottom: 18px;">
+          <div class="update-changelog-heading">이번 업데이트에서 바뀐 점</div>
+          <ul id="update-complete-changelog" class="update-changelog-list"></ul>
         </div>
         <div style="text-align: right;">
           <button type="button" id="update-complete-confirm-btn" class="btn btn-primary" style="padding: 9px 20px; font-size: 13px;">확인</button>
@@ -613,9 +614,9 @@
               </div>
               <span id="current-version-label" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);"></span>
             </div>
-            <div id="system-update-changelog-box" class="hidden" style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px;">
-              <div id="system-update-version-line" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-family: var(--font-mono);"></div>
-              <ul id="system-update-changelog" style="margin: 0; padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 4px;"></ul>
+            <div id="system-update-changelog-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
+              <div id="system-update-version-line" class="update-changelog-version-line"></div>
+              <ul id="system-update-changelog" class="update-changelog-list"></ul>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
               <button type="button" id="system-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
