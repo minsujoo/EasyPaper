@@ -59,6 +59,25 @@ export async function updateLibraryTranslation(docId, pageNum, payload, options 
   if (!res.ok) throw new Error('번역 수정 저장 실패')
   return res.json()
 }
+export async function exportAnnotatedPdf(docId, payload) {
+  const res = await fetch(`${API_BASE}/library/${docId}/export-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    let message = 'PDF 내보내기 실패'
+    try {
+      const err = await res.json()
+      message = err.detail || message
+    } catch {
+      // JSON이 아닌 경우 기본 메시지 사용
+    }
+    throw new Error(message)
+  }
+  return res.blob()
+}
+
 export async function searchLibrary(query) {
   const res = await fetch(`${API_BASE}/library/search?q=${encodeURIComponent(query)}`)
   if (!res.ok) throw new Error('검색 실패')

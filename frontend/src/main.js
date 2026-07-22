@@ -2,7 +2,7 @@ import './style.css'
 import { marked } from 'marked'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -1106,25 +1106,29 @@ viewerScrollContainer.addEventListener('touchend', (e) => {
 })
 
 // ── 내보내기 ──────────────────────────────────────
-exportBtn.addEventListener('click', async () => {
-  // 캐시에 로드되지 않은 번역 완료 페이지가 있다면 다운로드 전 비동기로 로드
+// 캐시에 로드되지 않은 번역 완료 페이지가 있다면 내보내기 전 비동기로 채워 넣는다
+// (마크다운/PDF 내보내기가 공용으로 사용)
+async function ensureAllTranslationsLoaded() {
   const missingPages = Array.from(state.translatedPages).filter(pageNum => {
     return !state.translationCache[pageNum] || state.translationCache[pageNum] === '__fetching__'
   })
-  
-  if (missingPages.length > 0) {
-    showToast('전체 번역 데이터를 가져오는 중입니다...', 'info')
-    const opts = getTranslationOptions()
-    await Promise.all(missingPages.map(async (pageNum) => {
-      try {
-        const res = await fetchLibraryTranslation(state.sessionId, pageNum, opts)
-        state.translationCache[pageNum] = res.translation
-        state.translationSentences[pageNum] = res.sentences || []
-      } catch (err) {
-        console.warn(`Failed to fetch translation for page ${pageNum} during export:`, err)
-      }
-    }))
-  }
+  if (missingPages.length === 0) return
+
+  showToast('전체 번역 데이터를 가져오는 중입니다...', 'info')
+  const opts = getTranslationOptions()
+  await Promise.all(missingPages.map(async (pageNum) => {
+    try {
+      const res = await fetchLibraryTranslation(state.sessionId, pageNum, opts)
+      state.translationCache[pageNum] = res.translation
+      state.translationSentences[pageNum] = res.sentences || []
+    } catch (err) {
+      console.warn(`Failed to fetch translation for page ${pageNum} during export:`, err)
+    }
+  }))
+}
+
+async function exportAsMarkdown() {
+  await ensureAllTranslationsLoaded()
 
   const pages = Object.entries(state.translationCache)
     .filter(([_, text]) => text && text !== '__fetching__')
@@ -1140,6 +1144,102 @@ exportBtn.addEventListener('click', async () => {
   a.href = url; a.download = `${state.filename}_번역.md`; a.click()
   URL.revokeObjectURL(url)
   showToast('번역 파일을 다운로드했습니다 ✓', 'success')
+}
+
+// 하이라이트/밑줄/메모(브라우저 localStorage 보관)를 실제 PDF 주석으로 구워
+// 넣고, 번역·메모 섹션을 이어붙인 PDF를 서버에서 생성해 내려받는다.
+async function exportAsAnnotatedPdf() {
+  if (!state.sessionId) return
+  await ensureAllTranslationsLoaded()
+
+  const annotations = loadAnnotations(state.sessionId)
+  const memos = loadMemos(state.sessionId)
+  const opts = getTranslationOptions()
+
+  showToast('번역·주석이 포함된 PDF를 생성하는 중입니다. 잠시만 기다려주세요...', 'info')
+  try {
+    const blob = await exportAnnotatedPdf(state.sessionId, {
+      annotations,
+      memos,
+      target_lang: opts.targetLang,
+      style: opts.style,
+      ignore_math: opts.ignoreMath,
+      ignore_table: opts.ignoreTable,
+      ignore_refs: opts.ignoreRefs,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const baseName = (state.filename || 'document').replace(/\.pdf$/i, '')
+    a.href = url; a.download = `${baseName}_번역_주석.pdf`; a.click()
+    URL.revokeObjectURL(url)
+    showToast('PDF 파일을 다운로드했습니다 ✓', 'success')
+  } catch (err) {
+    showToast(err.message || 'PDF 내보내기 실패', 'error')
+  }
+}
+
+// 내보내기 버튼 클릭 시 형식(마크다운/PDF)을 고르는 작은 드롭다운 메뉴
+let exportFormatMenu = null
+
+function createExportFormatMenu() {
+  if (exportFormatMenu) return exportFormatMenu
+  const menu = document.createElement('div')
+  menu.id = 'export-format-menu'
+  menu.className = 'selection-menu hidden'
+  menu.style.flexDirection = 'column'
+  menu.style.alignItems = 'stretch'
+  menu.style.height = 'auto'
+  menu.style.gap = '2px'
+  menu.innerHTML = `
+    <button type="button" class="menu-btn export-format-item" data-format="md" style="justify-content: flex-start; width: 100%; padding: 8px 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap;">
+      ${icon('fileText', 14, 'style="margin-right:6px;vertical-align:-2px"')}마크다운 (.md)
+    </button>
+    <button type="button" class="menu-btn export-format-item" data-format="pdf" style="justify-content: flex-start; width: 100%; padding: 8px 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap;">
+      ${icon('download', 14, 'style="margin-right:6px;vertical-align:-2px"')}PDF (번역·주석 포함)
+    </button>
+  `
+  document.body.appendChild(menu)
+  exportFormatMenu = menu
+
+  menu.querySelectorAll('.export-format-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      hideExportFormatMenu()
+      if (btn.dataset.format === 'md') {
+        exportAsMarkdown()
+      } else {
+        exportAsAnnotatedPdf()
+      }
+    })
+  })
+
+  document.addEventListener('click', (e) => {
+    if (exportFormatMenu && !exportFormatMenu.classList.contains('hidden') &&
+        !exportFormatMenu.contains(e.target) && e.target !== exportBtn && !exportBtn.contains(e.target)) {
+      hideExportFormatMenu()
+    }
+  })
+
+  return menu
+}
+
+function hideExportFormatMenu() {
+  if (exportFormatMenu) exportFormatMenu.classList.add('hidden')
+}
+
+exportBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const menu = createExportFormatMenu()
+  const isHidden = menu.classList.contains('hidden')
+  if (!isHidden) { hideExportFormatMenu(); return }
+
+  menu.classList.remove('hidden')
+  const rect = exportBtn.getBoundingClientRect()
+  const menuWidth = menu.offsetWidth || 210
+  const idealLeft = rect.left + rect.width / 2 - menuWidth / 2 + window.scrollX
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - menuWidth - 8
+  menu.style.left = `${Math.max(8, Math.min(idealLeft, maxLeft))}px`
+  menu.style.top = `${rect.bottom + 8 + window.scrollY}px`
 })
 
 // ── 다시 번역하기 ──────────────────────────────────

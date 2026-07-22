@@ -169,6 +169,69 @@ async def get_library_pdf(doc_id: str, current_user: str = Depends(get_current_u
     return FileResponse(pdf_path, media_type="application/pdf")
 
 
+class ExportPdfRequest(BaseModel):
+    annotations: dict = {}
+    memos: dict = {}
+    target_lang: Optional[str] = None
+    style: Optional[str] = None
+    ignore_math: Optional[bool] = None
+    ignore_table: Optional[bool] = None
+    ignore_refs: Optional[bool] = None
+
+
+@router.post("/library/{doc_id}/export-pdf")
+async def export_annotated_pdf(
+    doc_id: str,
+    payload: ExportPdfRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """번역/하이라이트/밑줄/메모가 반영된 PDF를 생성해 반환합니다.
+
+    하이라이트·밑줄·메모는 브라우저 localStorage에만 있으므로 요청 본문으로
+    전달받는다(서버는 이 데이터를 저장하지 않고 즉시 PDF 생성에만 사용).
+    """
+    doc = _require_owned_document(doc_id, current_user)
+    pdf_path = get_pdf_path(doc_id)
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
+
+    suffix = ""
+    if payload.target_lang is not None and payload.style is not None:
+        suffix = f"{payload.target_lang}_{payload.style}_math{int(payload.ignore_math)}_table{int(payload.ignore_table)}_refs{int(payload.ignore_refs)}"
+
+    from services.library import get_translation_full
+    total_pages = doc.get("total_pages", 0) or 0
+    translations = {}
+    for page_num in range(1, total_pages + 1):
+        full = get_translation_full(doc_id, page_num, suffix)
+        text = (full or {}).get("translation")
+        if text:
+            translations[str(page_num)] = text
+
+    doc_title = (doc.get("metadata") or {}).get("title") or doc.get("filename", "EasyPaper")
+
+    try:
+        from services.pdf_export import generate_annotated_pdf
+        pdf_bytes = generate_annotated_pdf(
+            pdf_path, doc_title, payload.annotations, translations, payload.memos
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF 생성 실패: {str(e)}")
+
+    from fastapi.responses import Response
+    from urllib.parse import quote
+    base_filename = (doc.get("filename") or "document").rsplit(".", 1)[0]
+    export_filename = f"{base_filename}_번역_주석.pdf"
+    encoded_filename = quote(export_filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"export.pdf\"; filename*=UTF-8''{encoded_filename}"
+        }
+    )
+
+
 @router.get("/library/{doc_id}/cover")
 async def get_library_cover(doc_id: str, current_user: str = Depends(get_current_user)):
     """라이브러리 카드 미리보기용 1페이지 상단(제목+abstract) 캡쳐 이미지를 서빙합니다."""
