@@ -1,6 +1,8 @@
 <div align="center">
 
-# 📄 EasyPaper
+<img src="./frontend/public/icon-192.png" width="88" height="88" alt="EasyPaper 아이콘"><br>
+
+# EasyPaper
 
 **학술 PDF 논문을 AI로 번역하고, 논문 내용을 바탕으로 바로 대화하는 통합 웹 서비스**
 
