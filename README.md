@@ -194,7 +194,19 @@ docker compose up -d --build
 
 기본값은 호스트에 설치된 Ollama(`http://host.docker.internal:11434`)를 바라봅니다. Gemini/Claude/OpenAI API를 쓰려면 로그인 후 설정 화면에서 API 키를 입력하면 됩니다(볼륨에 저장되어 유지됨). `docker-compose.yml`의 `environment`에 직접 `GEMINI_API_KEY` 등을 추가해도 됩니다.
 
-> **참고**: Antigravity/Claude Code/Codex 같은 CLI 기반 엔진은 로그인이 필요한 대화형 설치 과정을 거치므로 Docker 이미지에 포함되어 있지 않습니다. 컨테이너 안에서는 Ollama 또는 API 키 기반 프로바이더(Gemini/Claude/OpenAI)만 사용할 수 있습니다.
+### Docker 안에서 CLI 기반 엔진(Antigravity/Claude Code/Codex) 쓰기
+
+이미지에는 세 CLI가 모두 미리 설치되어 있지만, 로그인(OAuth) 자격증명은 이미지에 절대 포함되지 않습니다. 대신 컨테이너가 호스트의 로그인 정보를 볼륨으로 그대로 재사용합니다(`docker-compose.yml`에 이미 설정되어 있음). 그래서 **먼저 호스트(컨테이너 밖)에서 CLI를 정상적으로 설치하고 로그인**해야 합니다:
+
+```bash
+# 예: Claude Code
+npm install -g @anthropic-ai/claude-code
+claude auth login
+```
+
+(또는 EasyPaper를 네이티브로 한 번 실행해서 설정 화면의 "설치" 버튼으로 설치·로그인해도 됩니다.) 로그인이 끝난 뒤 `docker compose up -d`로 컨테이너를 (재)시작하면, 호스트에서 완료한 로그인이 컨테이너 안으로 그대로 반영되어 별도 설정 없이 바로 사용할 수 있습니다. 호스트에 설치/로그인하지 않은 CLI는 그냥 "미설치" 상태로 표시될 뿐이라 안전합니다.
+
+> Claude Code가 컨테이너 안에서 `~/.claude.json 파일을 찾을 수 없습니다` 같은 백업 복원 안내를 한 번 출력할 수 있는데, 인증 자체에는 영향이 없습니다(무시해도 됩니다). 완전히 없애고 싶다면 `docker-compose.yml`에 `${HOME}/.claude.json:/root/.claude.json` 마운트를 추가하세요 — 단, 호스트에 그 파일이 실제로 존재할 때만 추가해야 합니다(존재하지 않는 파일 경로를 마운트하면 Docker가 그 자리에 빈 디렉터리를 만들어버려 이후 네이티브 설치가 깨질 수 있습니다).
 
 **로그 확인**
 ```bash
