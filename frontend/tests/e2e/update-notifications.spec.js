@@ -69,6 +69,75 @@ test('업데이트도 없고 방금 업데이트되지도 않았으면 아무 �
   await expect(page.locator('#update-available-modal')).toHaveClass(/hidden/)
 })
 
+test('설정 화면에서 업데이트 확인 버튼을 누르면 새 업데이트가 있을 때만 변경 로그가 표시되고 실행 버튼이 활성화된다', async ({ page }) => {
+  await mockBaseRoutes(page, { documents: [] })
+  await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: true })
+  // 이 테스트는 설정 화면의 수동 확인/실행 버튼만 검증한다 - 자동 백그라운드
+  // 확인 팝업이 함께 뜨면 설정 모달 클릭을 가로채므로 꺼둔다.
+  await page.route('**/api/settings/update-check-config', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ interval: 'never', last_checked_at: null }),
+  }))
+
+  await gotoApp(page)
+  await page.waitForTimeout(600)
+  await page.click('#global-settings-btn')
+  await page.waitForTimeout(400)
+
+  // 확인 전에는 실행 버튼이 비활성 상태여야 한다
+  await expect(page.locator('#system-update-run-btn')).toBeDisabled()
+  await expect(page.locator('#system-update-changelog-box')).toHaveClass(/hidden/)
+
+  await page.click('#system-update-check-btn')
+  await page.waitForTimeout(300)
+
+  await expect(page.locator('#system-update-changelog-box')).not.toHaveClass(/hidden/)
+  await expect(page.locator('#system-update-version-line')).toHaveText('2026-07-15 · abc1234 → 2026-07-21 · def5678')
+  await expect(page.locator('#system-update-changelog')).toContainText('feat: 새 기능 추가')
+  await expect(page.locator('#system-update-changelog')).toContainText('fix: 버그 수정')
+  await expect(page.locator('#system-update-run-btn')).toBeEnabled()
+  await expect(page.locator('#system-update-status')).toHaveText('새 업데이트가 있습니다.')
+})
+
+test('설정 화면에서 업데이트 확인 결과 이미 최신 버전이면 실행 버튼이 계속 비활성 상태로 남는다', async ({ page }) => {
+  await mockBaseRoutes(page, { documents: [] })
+  await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: false })
+
+  await gotoApp(page)
+  await page.waitForTimeout(600)
+  await page.click('#global-settings-btn')
+  await page.waitForTimeout(400)
+
+  await page.click('#system-update-check-btn')
+  await page.waitForTimeout(300)
+
+  await expect(page.locator('#system-update-status')).toHaveText('이미 최신 버전입니다.')
+  await expect(page.locator('#system-update-run-btn')).toBeDisabled()
+  await expect(page.locator('#system-update-changelog-box')).toHaveClass(/hidden/)
+})
+
+test('업데이트 실행 후 확인을 다시 누르지 않고는 실행 버튼을 다시 활성화할 수 없다', async ({ page }) => {
+  await mockBaseRoutes(page, { documents: [] })
+  await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: true })
+  await page.route('**/api/settings/update-check-config', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ interval: 'never', last_checked_at: null }),
+  }))
+
+  await gotoApp(page)
+  await page.waitForTimeout(600)
+  await page.click('#global-settings-btn')
+  await page.waitForTimeout(400)
+
+  await page.click('#system-update-check-btn')
+  await page.waitForTimeout(300)
+  await expect(page.locator('#system-update-run-btn')).toBeEnabled()
+
+  // 다시 확인을 누르면(예: 그 사이 최신 버전이 됐다고 가정) 실행 버튼이 다시 비활성화된다
+  await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: false })
+  await page.click('#system-update-check-btn')
+  await page.waitForTimeout(300)
+  await expect(page.locator('#system-update-run-btn')).toBeDisabled()
+})
+
 test('설정 화면에서 업데이트 확인 주기를 변경하면 저장된다', async ({ page }) => {
   await mockBaseRoutes(page, { documents: [] })
   await mockUpdateEndpoints(page, { postUpdateShow: false, updateAvailable: false })
