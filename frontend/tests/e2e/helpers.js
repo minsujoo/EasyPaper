@@ -6,6 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export const SAMPLE_PDF_A = fs.readFileSync(path.join(__dirname, 'fixtures/sample-a.pdf'))
 export const SAMPLE_PDF_B = fs.readFileSync(path.join(__dirname, 'fixtures/sample-b.pdf'))
+export const SAMPLE_PDF_CITATION = fs.readFileSync(path.join(__dirname, 'fixtures/sample-citation.pdf'))
 
 /**
  * 로그인 이후의 기본 화면(라이브러리)까지 도달하는 데 필요한 최소한의

@@ -84,6 +84,21 @@ export async function searchLibrary(query) {
   return res.json()
 }
 
+export async function fetchLibraryReferences(docId) {
+  const res = await fetch(`${API_BASE}/library/${docId}/references`)
+  if (!res.ok) throw new Error('참고문헌 목록 조회 실패')
+  return res.json()
+}
+
+export async function resolveLibraryReference(docId, refNum) {
+  const res = await fetch(`${API_BASE}/library/${docId}/references/${encodeURIComponent(refNum)}`)
+  if (!res.ok) {
+    if (res.status === 404) return null
+    throw new Error('참고문헌 링크 조회 실패')
+  }
+  return res.json()
+}
+
 export async function fetchLibraryTrash(options = {}) {
   const res = await fetch(`${API_BASE}/library/trash${buildQuery(options)}`)
   if (!res.ok) throw new Error('휴지통 조회 실패')

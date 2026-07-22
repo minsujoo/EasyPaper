@@ -4376,6 +4376,25 @@ body.light-theme .sentence-memo-box {
   animation: overlayPulse 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
+/* 본문 인용 표기([12] 등) 클릭 가능 오버레이 - 부모(.pdf-highlight-overlay)는
+   pointer-events:none이지만 이 요소만 auto로 되돌려 클릭을 받는다 */
+.citation-marker-box {
+  position: absolute;
+  pointer-events: auto !important;
+  cursor: pointer;
+  border-radius: 1px;
+  border-bottom: 1px dotted rgba(74, 135, 181, 0.65);
+}
+.citation-marker-box:hover {
+  background-color: rgba(74, 135, 181, 0.20);
+}
+body.light-theme .citation-marker-box:hover {
+  background-color: rgba(74, 135, 181, 0.15);
+}
+.citation-marker-box.loading {
+  cursor: wait;
+}
+
 /* 키워드/단어 탭 용어 클릭 시 원문 위치 하이라이트 - 스크롤이 끝난 뒤에 표시되므로
    citation 클릭용 pulse보다 오래 보이도록 별도 애니메이션을 둔다(일정 시간 유지 후 페이드) */
 @keyframes locateHighlightPulse {
