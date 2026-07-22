@@ -4432,6 +4432,11 @@ body.light-theme .citation-marker-box:hover {
   filter: none;
 }
 
+#system-update-run-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* 라이브러리 카드/리스트 위의 비교 선택 체크박스 오버레이 - 평소엔 숨겨져 있다가
    선택 모드(.compare-select-mode)일 때만 나타난다 */
 .doc-card-compare-check {

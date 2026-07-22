@@ -2511,50 +2511,97 @@ if (advancedSettingsForm) {
   })
 }
 
-// 시스템 자동 업데이트 실행
-const systemUpdateBtn = $('system-update-btn')
+// 시스템 자동 업데이트: 확인(check)과 실행(run)을 분리한다 - 확인해서 새
+// 업데이트가 있을 때만 실행 버튼이 활성화되고, 확인 시 변경 로그를 함께
+// 보여준다. (waitForServerRestartAndReload/renderChangelogList/
+// formatVersionLabel은 이 파일 아래쪽에 정의되어 있지만 function 선언이라
+// 호이스팅되어 여기서도 안전하게 쓸 수 있다.)
+const systemUpdateCheckBtn = $('system-update-check-btn')
+const systemUpdateRunBtn = $('system-update-run-btn')
 const systemUpdateStatus = $('system-update-status')
-if (systemUpdateBtn) {
-  systemUpdateBtn.addEventListener('click', async () => {
-    const ok = await showCustomConfirm('정말 깃허브 최신 코드로 자동 업데이트를 실행하시겠습니까?\n업데이트가 완료되면 서비스 데몬이 자동으로 재기동되며 약 3~5초간 접속이 중단될 수 있습니다.', { title: '시스템 업데이트', confirmText: '업데이트', danger: true })
-    if (!ok) {
-      return
+const systemUpdateChangelogBox = $('system-update-changelog-box')
+const systemUpdateVersionLine = $('system-update-version-line')
+const systemUpdateChangelogList = $('system-update-changelog')
+
+let pendingSystemUpdateAvailable = false
+
+function resetSystemUpdateCheckState() {
+  pendingSystemUpdateAvailable = false
+  if (systemUpdateRunBtn) systemUpdateRunBtn.disabled = true
+  if (systemUpdateChangelogBox) systemUpdateChangelogBox.classList.add('hidden')
+}
+
+if (systemUpdateCheckBtn) {
+  systemUpdateCheckBtn.addEventListener('click', async () => {
+    systemUpdateCheckBtn.disabled = true
+    systemUpdateCheckBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '확인 중...'
+    resetSystemUpdateCheckState()
+    if (systemUpdateStatus) { systemUpdateStatus.style.color = 'var(--text-secondary)'; systemUpdateStatus.textContent = '' }
+
+    try {
+      const result = await checkForUpdateAPI()
+      if (currentVersionLabel && result.current_version) {
+        currentVersionLabel.textContent = `현재 버전: ${formatVersionLabel(result.current_version, result.current_version_date)}`
+      }
+      if (!result.ok) {
+        systemUpdateStatus.style.color = '#ef4444'
+        systemUpdateStatus.textContent = result.error || '업데이트 확인 실패'
+      } else if (result.update_available) {
+        pendingSystemUpdateAvailable = true
+        if (systemUpdateVersionLine) {
+          systemUpdateVersionLine.textContent = `${formatVersionLabel(result.current_version, result.current_version_date)} → ${formatVersionLabel(result.latest_version, result.latest_version_date)}`
+        }
+        renderChangelogList(systemUpdateChangelogList, result.changelog)
+        if (systemUpdateChangelogBox) systemUpdateChangelogBox.classList.remove('hidden')
+        if (systemUpdateRunBtn) systemUpdateRunBtn.disabled = false
+        systemUpdateStatus.style.color = '#10b981'
+        systemUpdateStatus.textContent = '새 업데이트가 있습니다.'
+      } else {
+        systemUpdateStatus.style.color = 'var(--text-secondary)'
+        systemUpdateStatus.textContent = '이미 최신 버전입니다.'
+      }
+    } catch (err) {
+      systemUpdateStatus.style.color = '#ef4444'
+      systemUpdateStatus.textContent = err.message || '업데이트 확인 실패'
+    } finally {
+      systemUpdateCheckBtn.disabled = false
+      systemUpdateCheckBtn.innerHTML = icon('checkCircle', 13, 'style="vertical-align:-2px;margin-right:4px"') + '업데이트 확인'
     }
-    
-    systemUpdateBtn.disabled = true
-    systemUpdateBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '업데이트 진행 중...'
+  })
+}
+
+if (systemUpdateRunBtn) {
+  systemUpdateRunBtn.addEventListener('click', async () => {
+    if (!pendingSystemUpdateAvailable) return
+    const ok = await showCustomConfirm('정말 깃허브 최신 코드로 자동 업데이트를 실행하시겠습니까?\n업데이트가 완료되면 서비스 데몬이 자동으로 재기동되며 약 3~5초간 접속이 중단될 수 있습니다.', { title: '시스템 업데이트', confirmText: '업데이트', danger: true })
+    if (!ok) return
+
+    systemUpdateRunBtn.disabled = true
+    if (systemUpdateCheckBtn) systemUpdateCheckBtn.disabled = true
+    systemUpdateRunBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '업데이트 진행 중...'
     systemUpdateStatus.style.color = 'var(--text-secondary)'
     systemUpdateStatus.textContent = 'GitHub 코드 가져오는 중...'
-    
+
     try {
       const res = await triggerSystemUpdateAPI()
       if (res.ok) {
         systemUpdateStatus.style.color = '#10b981' // 초록색
-        systemUpdateStatus.textContent = '업데이트 성공! 잠시 후 자동 새로고침됩니다.'
+        systemUpdateStatus.textContent = '업데이트 성공! 서버 재시작을 기다리는 중...'
         showToast(res.message, 'success')
-        
-        // 5초 후에 페이지 새로고침
-        setTimeout(() => {
-          location.reload()
-        }, 5000)
+        await waitForServerRestartAndReload()
       } else {
-        systemUpdateBtn.disabled = false
-        systemUpdateBtn.innerHTML = icon('download', 13, 'style="vertical-align:-2px;margin-right:4px"') + '최신 업데이트 실행'
+        systemUpdateRunBtn.disabled = false
+        if (systemUpdateCheckBtn) systemUpdateCheckBtn.disabled = false
+        systemUpdateRunBtn.innerHTML = icon('download', 13, 'style="vertical-align:-2px;margin-right:4px"') + '최신 업데이트 실행'
         systemUpdateStatus.style.color = '#ef4444' // 빨간색
         systemUpdateStatus.textContent = res.message
         showToast(res.message, 'error')
       }
     } catch (err) {
-      systemUpdateBtn.disabled = false
-      systemUpdateBtn.innerHTML = icon('download', 13, 'style="vertical-align:-2px;margin-right:4px"') + '최신 업데이트 실행'
       systemUpdateStatus.style.color = '#ef4444'
-      systemUpdateStatus.textContent = '서버 재시작 대기 중...'
+      systemUpdateStatus.textContent = '서버 재시작을 감지했습니다. 잠시 후 새로고침합니다...'
       showToast('서버 재기동을 감지했습니다. 잠시 후 새로고침합니다.', 'info')
-      
-      // 5초 후에 페이지 새로고침
-      setTimeout(() => {
-        location.reload()
-      }, 5000)
+      await waitForServerRestartAndReload()
     }
   })
 }
