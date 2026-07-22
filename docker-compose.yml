@@ -1,0 +1,20 @@
+services:
+  easypaper:
+    build: .
+    image: easypaper:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - easypaper_data:/data
+    environment:
+      # 호스트에 설치된 Ollama를 그대로 쓰려면 기본값을 유지한다. Linux에서
+      # host.docker.internal을 쓰려면 아래 extra_hosts가 필요하다(Docker
+      # Desktop/Mac/Windows는 기본 지원). 별도 Ollama 컨테이너를 쓰려면 이
+      # 값을 그 서비스명(예: http://ollama:11434)으로 바꾸면 된다.
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  easypaper_data:

@@ -1,0 +1,30 @@
+.git
+.gitignore
+
+# 백엔드 - 가상환경/캐시/테스트
+backend/.venv
+backend/__pycache__
+backend/**/__pycache__
+backend/.pytest_cache
+backend/tests
+
+# 백엔드 - 실제 운영 데이터/비밀값/로컬 커스터마이징 (절대 이미지에 포함하면
+# 안 됨 - 컨테이너는 항상 /data 볼륨과 환경변수로 이 값들을 새로 받는다.
+# translation_prompt.txt는 없으면 config.py가 기본 템플릿으로 자동 생성함)
+backend/.env
+backend/easypaper.db
+backend/translation_prompt.txt
+backend/uploads
+backend/cache
+backend/library
+backend/logs
+
+# 프론트엔드 - 의존성/빌드산출물/테스트 (이미지 안에서 새로 빌드함)
+frontend/node_modules
+frontend/dist
+frontend/tests
+frontend/playwright-report
+frontend/test-results
+
+# 기타
+ask

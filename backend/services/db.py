@@ -4,7 +4,9 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "easypaper.db")
+# DB_PATH 환경변수가 있으면 그대로 쓰고(Docker 등에서 데이터 볼륨 경로로
+# 지정), 없으면 기존과 동일하게 backend/의 부모 기준 경로를 그대로 쓴다.
+DB_PATH = os.getenv("DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "easypaper.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
