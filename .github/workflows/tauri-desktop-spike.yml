@@ -1,0 +1,105 @@
+name: Tauri Desktop Spike
+
+# 수동 트리거만 사용 - 기존 웹 배포(systemd/Docker) 파이프라인에는 전혀
+# 개입하지 않는다. feature/tauri-desktop-spike 브랜치의 실현 가능성 검증용.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-sidecar:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+          - os: windows-latest
+            name: windows
+          - os: macos-14
+            name: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps + PyInstaller
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build sidecar binary (PyInstaller onedir)
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            backend/packaging/build.bat
+          else
+            backend/packaging/build.sh
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend (needed for sidecar's bundled dist)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Re-bundle sidecar with frontend dist
+        shell: bash
+        run: |
+          rm -rf backend/packaging/dist backend/packaging/build
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            backend/packaging/build.bat
+          else
+            backend/packaging/build.sh
+          fi
+
+      - name: Standalone healthcheck (no GUI needed)
+        shell: bash
+        run: |
+          set -e
+          BIN=backend/packaging/dist/easypaper-backend/easypaper-backend
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="backend/packaging/dist/easypaper-backend/easypaper-backend.exe"
+          fi
+          APP_HOST=127.0.0.1 APP_PORT=18123 \
+          EASYPAPER_CONFIG_DIR="${{ runner.temp }}/easypaper-appdata" \
+          "$BIN" &
+          SIDECAR_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:18123/ >/dev/null; then
+              echo "healthcheck OK"
+              kill "$SIDECAR_PID" || true
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "healthcheck FAILED after 30s"
+          kill "$SIDECAR_PID" || true
+          exit 1
+
+      - name: Copy sidecar into src-tauri/binaries
+        shell: bash
+        run: src-tauri/scripts/copy-sidecar.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install root deps (Tauri CLI)
+        run: npm ci
+
+      - name: cargo check (src-tauri)
+        working-directory: src-tauri
+        run: cargo check
