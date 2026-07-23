@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "marked": "^18.0.5",
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-opener": "^2.5.4"
   }
 }

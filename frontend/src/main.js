@@ -6123,6 +6123,25 @@ function buildScholarSearchUrl(refText) {
   return `https://scholar.google.com/scholar?q=${encodeURIComponent((refText || '').slice(0, 300))}`
 }
 
+// Tauri 데스크탑 webview는 보안상 window.open()/target="_blank"로 외부
+// URL을 새 탭으로 열어주지 않는다(웹 브라우저와 달리 시스템 기본 브라우저를
+// 열 권한이 없음) - Google Scholar 검색/참고문헌 링크가 데스크탑 앱에서만
+// 아무 반응 없던 원인. @tauri-apps/plugin-opener의 openUrl()로 시스템 기본
+// 브라우저를 명시적으로 열어준다. 웹 배포에서는 isTauriDesktop이 항상
+// false라 기존 window.open 그대로 동작(동일 frontend/dist 재사용).
+async function openExternalUrl(url) {
+  if (isTauriDesktop) {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener')
+      await openUrl(url)
+      return
+    } catch (err) {
+      console.warn('데스크탑에서 외부 링크 열기 실패, 브라우저 방식으로 재시도:', err)
+    }
+  }
+  window.open(url, '_blank', 'noopener')
+}
+
 function getOrCreateCitationTooltip() {
   if (citationTooltipEl) return citationTooltipEl
   const el = document.createElement('div')
@@ -6148,7 +6167,17 @@ function getOrCreateCitationTooltip() {
   el.querySelector('.citation-tooltip-scholar-btn').addEventListener('click', (e) => {
     e.stopPropagation()
     const text = el.querySelector('.citation-tooltip-text').textContent
-    window.open(buildScholarSearchUrl(text), '_blank', 'noopener')
+    openExternalUrl(buildScholarSearchUrl(text))
+  })
+  // resolveCitationTooltip()이 innerHTML로 채워 넣는 "원문 링크 찾기" 결과의
+  // <a> 태그는 그때그때 새로 생기므로, 매번 리스너를 다는 대신 이 안정적인
+  // 부모 요소에 위임해서 한 번만 등록한다.
+  el.addEventListener('click', (e) => {
+    const anchor = e.target.closest('a[href]')
+    if (anchor && isTauriDesktop) {
+      e.preventDefault()
+      openExternalUrl(anchor.href)
+    }
   })
 
   citationTooltipEl = el
