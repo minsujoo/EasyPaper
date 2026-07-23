@@ -1646,9 +1646,13 @@ const PROVIDER_CONFIG = [
   {
     id: 'ollama', label: 'Ollama (로컬)', icon: icon('hardDrive', 13),
     models: [
-      { value: 'gemma4:e4b', label: 'gemma4 e4b' },
       { value: 'qwen3.5:9b', label: 'qwen3.5 9b' },
       { value: 'llama3.1:8b', label: 'llamma 3.1' },
+      { value: 'gemma3n:e4b', label: 'gemma3n e4b' },
+      { value: 'gemma3:12b', label: 'gemma3 12b' },
+      { value: 'mistral-nemo', label: 'mistral-nemo' },
+      { value: 'phi4', label: 'phi4' },
+      { value: 'deepseek-r1:8b', label: 'deepseek-r1 8b' },
       { value: 'custom_input', label: '직접 입력' }
     ]
   },
