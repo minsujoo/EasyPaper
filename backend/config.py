@@ -1,5 +1,17 @@
 import os
+import sys
 from dotenv import load_dotenv
+
+# Windows에서 stdout/stderr이 실제 콘솔에 연결되지 않고 파이프로 리다이렉트되면
+# (Tauri sidecar로 실행되거나, 백그라운드로 띄우거나, 콘솔이 없는 GUI 프로세스의
+# 자식으로 뜨는 경우 등) 기본 인코딩이 시스템 로케일 코드페이지(cp1252 등)로
+# 떨어진다. 이 코드페이지가 표현 못 하는 한글 등을 print()하면
+# UnicodeEncodeError가 그 자리에서 발생해 프로세스 전체가 죽는다 - 실제로
+# Windows CI에서 아래쪽의 기본 관리자 계정 경고 print() 때문에 백엔드가
+# 기동 자체를 못 하는 것으로 재현됨. 인코딩을 UTF-8로 강제해 원천 차단한다.
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 load_dotenv()
 
