@@ -320,9 +320,58 @@ def update_credentials_in_env(new_username: str, new_password_hash: str):
         new_lines.append(f"APP_USERNAME={new_username}\n")
     if not hash_found:
         new_lines.append(f"APP_PASSWORD_HASH={new_password_hash}\n")
-        
+
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
+
+
+# 로그인 화면을 완전히 건너뛰고 항상 관리자로 자동 인증할지 여부. 신뢰할 수
+# 있는 개인/로컬 환경(예: 다른 사람이 접근할 수 없는 개인 PC의 Tauri
+# 데스크탑 앱)에서 매번 로그인하는 번거로움을 없애기 위한 설정이다 - 켜면
+# 이 서버에 네트워크로 접근 가능한 모든 사람이 인증 없이 전체 기능을 쓸
+# 수 있게 되므로, 계정 설정 화면에서 명시적으로 켜야만 활성화된다.
+SKIP_LOGIN = os.getenv("SKIP_LOGIN", "false").strip().lower() == "true"
+
+def get_skip_login() -> bool:
+    return SKIP_LOGIN
+
+def set_skip_login(enabled: bool):
+    global SKIP_LOGIN
+    SKIP_LOGIN = enabled
+
+    env_path = os.path.join(_get_config_dir(), ".env")
+    value_str = "true" if enabled else "false"
+    if not os.path.exists(env_path):
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(f"SKIP_LOGIN={value_str}\n")
+        return
+
+    with open(env_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    found = False
+    for line in lines:
+        if line.strip().startswith("SKIP_LOGIN="):
+            new_lines.append(f"SKIP_LOGIN={value_str}\n")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"SKIP_LOGIN={value_str}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+if SKIP_LOGIN:
+    print(
+        "\n" + "!" * 70 +
+        "\n[보안 경고] 로그인 없이 사용 설정이 켜져 있습니다.\n"
+        "이 서버에 네트워크로 접근 가능한 모든 사람이 인증 없이 전체 기능을\n"
+        "쓸 수 있습니다. 신뢰할 수 있는 개인/로컬 환경이 아니라면 설정에서\n"
+        "즉시 꺼주세요.\n"
+        + "!" * 70 + "\n"
+    )
 
 # 디렉토리 생성
 os.makedirs(UPLOAD_DIR, exist_ok=True)

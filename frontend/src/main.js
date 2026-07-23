@@ -1,6 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
@@ -76,6 +76,7 @@ const loginScreen       = $('login-screen')
 const loginForm         = $('login-form')
 const loginUsername     = $('login-username')
 const loginPassword     = $('login-password')
+const loginRememberCheckbox = $('login-remember-checkbox')
 const globalLogoutBtn   = $('global-logout-btn')
 const globalSettingsBtn = $('global-settings-btn')
 const settingsModal     = $('settings-modal')
@@ -86,6 +87,7 @@ const changeCurrentPassword = $('change-current-password')
 const changeNewUsername     = $('change-new-username')
 const changeNewPassword     = $('change-new-password')
 const changeNewPasswordConfirm = $('change-new-password-confirm')
+const settingSkipLoginCheckbox = $('setting-skip-login-checkbox')
 
 // 첫 실행 온보딩 모달
 const onboardingModal        = $('onboarding-modal')
@@ -1529,8 +1531,9 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   const username = loginUsername.value.trim()
   const password = loginPassword.value
+  const remember = loginRememberCheckbox ? loginRememberCheckbox.checked : false
   try {
-    await loginAPI(username, password)
+    await loginAPI(username, password, remember)
     showToast('로그인 성공!', 'success')
     loginPassword.value = ''
     await checkAuthentication()
@@ -2219,6 +2222,16 @@ globalSettingsBtn.addEventListener('click', async () => {
   changeNewUsername.value = state.username || 'admin'
   changeNewPassword.value = ''
   changeNewPasswordConfirm.value = ''
+
+  // 5. 로그인 생략 설정값 로드
+  if (settingSkipLoginCheckbox) {
+    try {
+      const { enabled } = await getSkipLoginAPI()
+      settingSkipLoginCheckbox.checked = enabled
+    } catch (err) {
+      console.warn('로그인 생략 설정 로드 실패:', err)
+    }
+  }
 })
 
 closeSettingsBtn.addEventListener('click', () => {
@@ -2905,6 +2918,31 @@ changeCredentialsForm.addEventListener('submit', async (e) => {
   }
 })
 
+// 로그인 생략 설정 토글 - 켤 때만 보안 영향(네트워크로 접근 가능한 누구나
+// 인증 없이 쓸 수 있게 됨)을 다시 한번 확인받는다. 끌 때는 원래대로
+// 로그인이 필요해지는 방향이라 별도 확인 없이 바로 적용한다.
+if (settingSkipLoginCheckbox) {
+  settingSkipLoginCheckbox.addEventListener('change', async () => {
+    const wantsEnabled = settingSkipLoginCheckbox.checked
+    if (wantsEnabled) {
+      const ok = await showCustomConfirm(
+        '이 서버에 네트워크로 접근 가능한 모든 사람이 로그인 없이 전체 기능을 쓸 수 있게 됩니다.\n다른 사람이 접근할 수 없는 개인 PC/로컬 환경에서만 켜세요.\n계속하시겠습니까?',
+        { title: '로그인 생략 켜기', confirmText: '켜기', danger: true }
+      )
+      if (!ok) {
+        settingSkipLoginCheckbox.checked = false
+        return
+      }
+    }
+    try {
+      await setSkipLoginAPI(wantsEnabled)
+      showToast(wantsEnabled ? '로그인 생략이 켜졌습니다.' : '로그인 생략이 꺼졌습니다.', 'success')
+    } catch (err) {
+      settingSkipLoginCheckbox.checked = !wantsEnabled
+      showToast(err.message, 'error')
+    }
+  })
+}
 
 // ── 초기화 ────────────────────────────────────────
 checkAuthentication()

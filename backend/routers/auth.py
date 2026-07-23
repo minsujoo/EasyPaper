@@ -25,6 +25,8 @@ from config import (
     get_codex_path,
     find_ollama_binary,
     get_project_root,
+    get_skip_login,
+    set_skip_login,
 )
 from services.llm_client import check_ollama_health
 
@@ -62,6 +64,7 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember: bool = False
 
 class ChangeCredentialsRequest(BaseModel):
     current_password: str
@@ -70,24 +73,29 @@ class ChangeCredentialsRequest(BaseModel):
 
 @router.post("/auth/login")
 async def login(response: Response, data: LoginRequest):
+    from services.auth import SESSION_TTL_DEFAULT_SECONDS, SESSION_TTL_REMEMBER_SECONDS
     from services.db import get_user
     user = get_user(data.username)
-    
+
     if not user or not verify_password(user["password_hash"], data.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다."
         )
-    
-    token = create_session_token(data.username)
-    
+
+    # "로그인 상태 유지"를 체크하면 훨씬 긴 만료 기간의 세션 쿠키를 발급해,
+    # 다음에 앱을 열 때 자동으로 로그인된 상태로 시작하게 한다(비밀번호를
+    # 별도로 저장하지 않고, 기존의 안전한 HttpOnly 쿠키 메커니즘만 그대로 씀).
+    ttl_seconds = SESSION_TTL_REMEMBER_SECONDS if data.remember else SESSION_TTL_DEFAULT_SECONDS
+    token = create_session_token(data.username, ttl_seconds=ttl_seconds)
+
     # 보안 강화를 위해 HttpOnly, SameSite=Lax 적용 쿠키로 토큰 주입
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
-        max_age=7 * 24 * 3600,  # 7일
-        expires=7 * 24 * 3600,
+        max_age=ttl_seconds,
+        expires=ttl_seconds,
         samesite="lax",
         secure=False,  # 로컬 개발 환경 및 내부망 접속 대응용 (HTTPS 운영 시 True 변경 권장)
         path="/"
@@ -175,6 +183,29 @@ async def change_credentials(
     )
     
     return {"message": "아이디 및 비밀번호가 성공적으로 변경되었습니다.", "username": new_username}
+
+
+class SkipLoginRequest(BaseModel):
+    enabled: bool
+
+
+@router.get("/settings/skip-login")
+async def get_skip_login_endpoint(current_user: str = Depends(get_current_user)):
+    """로그인 화면을 건너뛰는 설정이 켜져 있는지 반환합니다."""
+    return {"enabled": get_skip_login()}
+
+
+@router.post("/settings/skip-login")
+async def set_skip_login_endpoint(data: SkipLoginRequest, current_user: str = Depends(get_current_user)):
+    """로그인 화면을 건너뛰고 항상 관리자로 자동 인증할지 여부를 저장합니다.
+
+    이 서버에 네트워크로 접근 가능한 모든 사람이 인증 없이 전체 기능을 쓸
+    수 있게 되므로, 반드시 이미 로그인된 상태(current_user 의존성)에서만
+    바꿀 수 있게 한다.
+    """
+    set_skip_login(data.enabled)
+    return {"enabled": data.enabled}
+
 
 class SystemSettingsRequest(BaseModel):
     ollama_host: str
