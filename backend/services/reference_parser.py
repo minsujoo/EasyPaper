@@ -12,10 +12,14 @@
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-_SECTION_HEADER_RE = re.compile(
-    r"^\s*\**\s*(references|bibliography|참고\s*문헌)\s*\**\s*$",
+# 헤더 단어의 글자 사이에 공백을 허용한다 - 드롭캡(첫 글자만 별도 폰트/굵기)
+# 렌더링 시 "**R** **EFERENCES**"처럼 글자 사이에 공백이 끼어드는 경우까지
+# 대응하기 위함이다(별표는 별도로 먼저 제거).
+_HEADER_PREFIX_RE = re.compile(
+    r"^\s*(?:r\s*e\s*f\s*e\s*r\s*e\s*n\s*c\s*e\s*s|b\s*i\s*b\s*l\s*i\s*o\s*g\s*r\s*a\s*p\s*h\s*y|"
+    r"참\s*고\s*문\s*헌)\b",
     re.IGNORECASE,
 )
 _BRACKET_ENTRY_RE = re.compile(r"^\s*\[(\d{1,3})\]\s*(.+)")
@@ -28,6 +32,31 @@ _AUTHOR_YEAR_ENTRY_START_RE = re.compile(r"^\s*([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ
 _YEAR_RE = re.compile(r"\((\d{4})[a-z]?\)")
 
 _MAX_ENTRY_LENGTH = 500
+
+
+def _match_section_header_prefix(line: str) -> Optional[str]:
+    """줄이 References/Bibliography/참고문헌 헤더로 시작하면 그 뒤에 남는
+    텍스트를 반환하고, 헤더로 시작하지 않으면 None을 반환합니다.
+
+    일부 논문(특히 Nature류)은 헤더 다음에 개행 없이 바로 첫 항목이 이어져
+    "**References** 48. Haist, F. ..."처럼 한 줄에 같이 붙어 나온다. 이
+    경우 남는 텍스트("48. Haist, F. ...")가 실제로 참고문헌 항목의 시작처럼
+    보일 때만 헤더로 인정한다 - 그냥 "References"로 시작하는 일반 문장을
+    섹션 시작으로 오인하지 않기 위함이다. 헤더만 있고 뒤에 아무것도 없는
+    깔끔한 줄은 그대로 빈 문자열을 반환한다.
+    """
+    no_asterisks = re.sub(r"\*+", "", line)
+    m = _HEADER_PREFIX_RE.match(no_asterisks)
+    if not m:
+        return None
+
+    remainder = no_asterisks[m.end():].strip()
+    if not remainder:
+        return remainder
+    if (_BRACKET_ENTRY_RE.match(remainder) or _PLAIN_NUMBERED_ENTRY_RE.match(remainder)
+            or _AUTHOR_YEAR_ENTRY_START_RE.match(remainder)):
+        return remainder
+    return None
 
 
 def extract_reference_list(pages: List[dict]) -> Dict[str, str]:
@@ -47,7 +76,7 @@ def _extract_reference_list_impl(pages: List[dict]) -> Dict[str, str]:
     ref_start_page_idx = None
     for i in range(len(pages) - 1, -1, -1):
         text = pages[i].get("text", "") or ""
-        if any(_SECTION_HEADER_RE.match(line.strip()) for line in text.split("\n")):
+        if any(_match_section_header_prefix(line) is not None for line in text.split("\n")):
             ref_start_page_idx = i
             break
 
@@ -59,8 +88,12 @@ def _extract_reference_list_impl(pages: List[dict]) -> Dict[str, str]:
 
     start_idx = 0
     for idx, line in enumerate(lines):
-        if _SECTION_HEADER_RE.match(line.strip()):
-            start_idx = idx + 1
+        remainder = _match_section_header_prefix(line)
+        if remainder is not None:
+            # 헤더 뒤에 같은 줄로 바로 이어지는 첫 항목이 있으면(remainder)
+            # 그 부분은 버리지 않고 body_lines의 첫 줄로 그대로 살린다.
+            lines[idx] = remainder
+            start_idx = idx
             break
     body_lines = lines[start_idx:]
 
