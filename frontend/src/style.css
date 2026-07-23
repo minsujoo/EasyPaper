@@ -774,6 +774,7 @@ body:not(.light-theme) .pdf-page-inner canvas {
 
 .spinner {
   width: 16px; height: 16px;
+  flex-shrink: 0;
   border: 2px solid rgba(74, 135, 181, 0.2);
   border-top-color: var(--accent-mid);
   border-radius: 50%;
