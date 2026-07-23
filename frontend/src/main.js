@@ -1510,10 +1510,15 @@ async function checkAuthentication() {
     await refreshSystemSettings()
     maybeShowOnboarding()
     // 업데이트 직후(방금 재시작됨) 안내가 있으면 그것부터 먼저 보여주고, 없을
-    // 때만 "새 업데이트가 있는지" 확인 - 두 팝업이 동시에 겹쳐 뜨지 않도록 함
-    checkPostUpdateNoticeOnce().then((shown) => {
-      if (!shown) maybeAutoCheckForUpdate()
-    })
+    // 때만 "새 업데이트가 있는지" 확인 - 두 팝업이 동시에 겹쳐 뜨지 않도록 함.
+    // git pull 기반이라 git 저장소 없이 배포되는 Tauri 데스크탑 빌드에서는
+    // 애초에 의미가 없으므로 건너뛴다(데스크탑 자체 업데이트는 Tauri updater가
+    // 별도로 담당).
+    if (!isTauriDesktop) {
+      checkPostUpdateNoticeOnce().then((shown) => {
+        if (!shown) maybeAutoCheckForUpdate()
+      })
+    }
   } else {
     showLogin()
   }
@@ -2536,7 +2541,18 @@ function resetSystemUpdateCheckState() {
   if (systemUpdateChangelogBox) systemUpdateChangelogBox.classList.add('hidden')
 }
 
-if (systemUpdateCheckBtn) {
+// 이 섹션의 "업데이트 확인/실행"은 git pull + npm build + systemctl(또는 자체
+// 프로세스) 재시작을 수행한다 - git 저장소 없이 인스톨러로 배포되는 Tauri
+// 데스크탑 빌드에서는 애초에 동작할 수 없는 전제라 UI 자체를 숨긴다. 백엔드
+// 라우트는 서버/Docker 배포에서 계속 써야 하므로 그대로 둔다(변경 없음).
+// window.__TAURI_INTERNALS__는 Tauri v2 webview에서만 주입되는 전역 값이다.
+const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+const systemUpdateSection = $('system-update-section')
+if (isTauriDesktop && systemUpdateSection) {
+  systemUpdateSection.classList.add('hidden')
+}
+
+if (systemUpdateCheckBtn && !isTauriDesktop) {
   systemUpdateCheckBtn.addEventListener('click', async () => {
     systemUpdateCheckBtn.disabled = true
     systemUpdateCheckBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '확인 중...'
@@ -2575,7 +2591,7 @@ if (systemUpdateCheckBtn) {
   })
 }
 
-if (systemUpdateRunBtn) {
+if (systemUpdateRunBtn && !isTauriDesktop) {
   systemUpdateRunBtn.addEventListener('click', async () => {
     if (!pendingSystemUpdateAvailable) return
     const ok = await showCustomConfirm('정말 깃허브 최신 코드로 자동 업데이트를 실행하시겠습니까?\n업데이트가 완료되면 서비스 데몬이 자동으로 재기동되며 약 3~5초간 접속이 중단될 수 있습니다.', { title: '시스템 업데이트', confirmText: '업데이트', danger: true })
@@ -4118,11 +4134,32 @@ function escapeHtml(str) {
 libUploadBtn.addEventListener('click', () => { fileInput.click() })
 
 // ── 테마 토글 기능 ──────────────────────────────
+
+// Tauri 데스크탑 창의 타이틀바(테마)와 배경색을 앱의 라이트/다크 토글과 맞춘다.
+// 웹 배포에서는 window.__TAURI_INTERNALS__가 없어 isTauriDesktop이 항상
+// false라 이 함수가 조용히 아무 일도 하지 않는다 - 동일한 frontend/dist를
+// 웹/데스크탑에 그대로 재사용하기 위함(별도 빌드 분기 없음).
+const LIGHT_THEME_BG = '#f8fafc'
+const DARK_THEME_BG = '#06050a'
+
+async function syncDesktopWindowTheme(isLight) {
+  if (!isTauriDesktop) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const win = getCurrentWindow()
+    await win.setTheme(isLight ? 'light' : 'dark')
+    await win.setBackgroundColor(isLight ? LIGHT_THEME_BG : DARK_THEME_BG)
+  } catch (err) {
+    console.warn('데스크탑 타이틀바 테마 동기화 실패:', err)
+  }
+}
+
 function initTheme() {
   const savedTheme = localStorage.getItem('theme') || 'dark'
   const isLight = savedTheme === 'light'
   document.body.classList.toggle('light-theme', isLight)
   updateThemeIcons(isLight)
+  syncDesktopWindowTheme(isLight)
 }
 
 function toggleTheme() {
@@ -4131,6 +4168,7 @@ function toggleTheme() {
   updateThemeIcons(isLight)
   applyAccentColor(currentAccentColor, { persist: false })
   showToast(isLight ? '라이트 모드로 전환 ✓' : '다크 모드로 전환 ✓', 'success')
+  syncDesktopWindowTheme(isLight)
 }
 
 function updateThemeIcons(isLight) {
@@ -6090,6 +6128,25 @@ function buildScholarSearchUrl(refText) {
   return `https://scholar.google.com/scholar?q=${encodeURIComponent((refText || '').slice(0, 300))}`
 }
 
+// Tauri 데스크탑 webview는 보안상 window.open()/target="_blank"로 외부
+// URL을 새 탭으로 열어주지 않는다(웹 브라우저와 달리 시스템 기본 브라우저를
+// 열 권한이 없음) - Google Scholar 검색/참고문헌 링크가 데스크탑 앱에서만
+// 아무 반응 없던 원인. @tauri-apps/plugin-opener의 openUrl()로 시스템 기본
+// 브라우저를 명시적으로 열어준다. 웹 배포에서는 isTauriDesktop이 항상
+// false라 기존 window.open 그대로 동작(동일 frontend/dist 재사용).
+async function openExternalUrl(url) {
+  if (isTauriDesktop) {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener')
+      await openUrl(url)
+      return
+    } catch (err) {
+      console.warn('데스크탑에서 외부 링크 열기 실패, 브라우저 방식으로 재시도:', err)
+    }
+  }
+  window.open(url, '_blank', 'noopener')
+}
+
 function getOrCreateCitationTooltip() {
   if (citationTooltipEl) return citationTooltipEl
   const el = document.createElement('div')
@@ -6115,7 +6172,17 @@ function getOrCreateCitationTooltip() {
   el.querySelector('.citation-tooltip-scholar-btn').addEventListener('click', (e) => {
     e.stopPropagation()
     const text = el.querySelector('.citation-tooltip-text').textContent
-    window.open(buildScholarSearchUrl(text), '_blank', 'noopener')
+    openExternalUrl(buildScholarSearchUrl(text))
+  })
+  // resolveCitationTooltip()이 innerHTML로 채워 넣는 "원문 링크 찾기" 결과의
+  // <a> 태그는 그때그때 새로 생기므로, 매번 리스너를 다는 대신 이 안정적인
+  // 부모 요소에 위임해서 한 번만 등록한다.
+  el.addEventListener('click', (e) => {
+    const anchor = e.target.closest('a[href]')
+    if (anchor && isTauriDesktop) {
+      e.preventDefault()
+      openExternalUrl(anchor.href)
+    }
   })
 
   citationTooltipEl = el

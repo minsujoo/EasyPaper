@@ -262,6 +262,15 @@ docs/_build/
 .pybuilder/
 target/
 
+# Tauri desktop spike — 빌드 시점에 재생성되는 산출물
+backend/packaging/dist/
+backend/packaging/build/
+src-tauri/binaries/
+src-tauri/gen/
+# 위쪽 "*.spec" 규칙(PyInstaller가 자동 생성하는 스펙용)은 우리가 직접 작성해
+# 커밋하는 backend/packaging/easypaper-backend.spec까지 걸러버리므로 예외 처리.
+!backend/packaging/easypaper-backend.spec
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

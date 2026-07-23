@@ -16,7 +16,7 @@ import logging
 import logging.handlers
 import os
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_DIR = os.getenv("EASYPAPER_LOG_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "easypaper.log")
 
 _configured = False

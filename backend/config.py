@@ -13,7 +13,17 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-load_dotenv()
+def _get_config_dir() -> str:
+    """.env / translation_prompt.txt를 읽고 쓸 디렉토리.
+
+    EASYPAPER_CONFIG_DIR이 설정되어 있으면 그 경로(패키징된 데스크탑 앱이
+    OS별 사용자 데이터 디렉토리를 주입하는 용도)를, 없으면 기존과 동일하게
+    backend/ 디렉토리 자체를 사용한다(서버/Docker 배포 하위호환).
+    """
+    return os.getenv("EASYPAPER_CONFIG_DIR") or os.path.dirname(os.path.abspath(__file__))
+
+
+load_dotenv(os.path.join(_get_config_dir(), ".env"))
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 TRANS_PROVIDER = os.getenv("TRANS_PROVIDER", "ollama")
@@ -151,7 +161,7 @@ def update_system_settings(
     GEMINI_API_KEY = gemini_api_key
     CLAUDE_API_KEY = claude_api_key
     
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    env_path = os.path.join(_get_config_dir(), ".env")
     settings = {
         "OLLAMA_HOST": ollama_host,
         "TRANS_PROVIDER": trans_provider,
@@ -229,7 +239,7 @@ _INSECURE_DEFAULT_SECRET_KEYS = {
 }
 
 def _persist_secret_key_to_env(new_key: str):
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    env_path = os.path.join(_get_config_dir(), ".env")
     if not os.path.exists(env_path):
         with open(env_path, "w", encoding="utf-8") as f:
             f.write(f"SECRET_KEY={new_key}\n")
@@ -279,7 +289,7 @@ def update_credentials_in_env(new_username: str, new_password_hash: str):
     APP_PASSWORD_HASH = new_password_hash
     APP_PASSWORD = ""  # Clear plaintext password for security
     
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    env_path = os.path.join(_get_config_dir(), ".env")
     if not os.path.exists(env_path):
         with open(env_path, "w", encoding="utf-8") as f:
             f.write(f"APP_USERNAME={new_username}\nAPP_PASSWORD_HASH={new_password_hash}\n")
@@ -403,7 +413,7 @@ def get_agy_env() -> dict:
     return env
 
 # ── Dynamic Translation Prompt Template ─────────────────
-PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "translation_prompt.txt")
+PROMPT_FILE = os.path.join(_get_config_dir(), "translation_prompt.txt")
 
 DEFAULT_PROMPT_TEMPLATE = """당신은 학술 논문 번역 전문가입니다. {{LANG_INSTRUCTION}}
 
