@@ -5,7 +5,24 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tauri::Manager;
+
+/// CreateProcess에 이 플래그를 주지 않으면, PyInstaller onedir sidecar는
+/// 콘솔 서브시스템 실행파일이라 Windows가 새 콘솔 창을 띄워준다. Tauri
+/// 앱(윈도우 서브시스템, 콘솔 없음)이 부모라 자기 콘솔을 물려줄 수 없기
+/// 때문이다. 그 창은 sidecar 프로세스 자신의 콘솔이라, 사용자가 그 창을
+/// 닫으면(X 버튼) 콘솔 종료 이벤트가 발생해 sidecar 프로세스 자체가 함께
+/// 죽어버린다. stdout/stderr는 Stdio::piped()로 파이프에 리다이렉트되므로
+/// 콘솔 창 자체를 아예 안 만들어도(CREATE_NO_WINDOW) 로그 캡처에는 영향이
+/// 없다. PyInstaller를 windowed(--noconsole)로 다시 빌드하는 대신 이 방식을
+/// 쓰는 이유: PyInstaller의 windowed 모드는 버전에 따라 sys.stdout/stderr가
+/// None이 되어 print()가 있는 코드가 죽는 경우가 있어(콘솔이 아예 없다고
+/// 가정), 콘솔 서브시스템은 그대로 두고 창만 숨기는 편이 더 안전하다.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// 스폰된 백엔드 sidecar의 자식 프로세스 핸들. 창 종료/앱 종료 시 확실히
 /// kill하기 위해 앱 상태로 보관한다(고아 프로세스 방지, 계획 Phase 3).
@@ -164,6 +181,9 @@ pub fn run() {
                 .env("EASYPAPER_FRONTEND_DIST", &frontend_dist)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW);
 
             let mut child = command.spawn().expect("failed to spawn backend sidecar");
 
