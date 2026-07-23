@@ -44,25 +44,40 @@ def test_resolve_cli_path_falls_back_to_path_search(monkeypatch):
 
 def test_resolve_cli_path_returns_bare_command_as_last_resort(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda cmd: None)
-    monkeypatch.setattr(config, "get_easypaper_npm_prefix", lambda: "/nonexistent/npm-prefix")
     resolved = config._resolve_cli_path("/nonexistent/claude", "claude")
     assert resolved == "claude"
 
 
-def test_resolve_cli_path_falls_back_to_easypaper_npm_prefix(monkeypatch, tmp_path):
-    """PATH에서도 못 찾으면, 이 앱이 설정 화면에서 자체 설치할 때 쓰는
-    npm --prefix 위치(get_easypaper_npm_prefix) 아래도 확인해야 한다 -
-    macOS에서 시스템 npm 전역 prefix에 EACCES가 나서 이 앱 전용 prefix에
-    설치했을 때, 그 설치 위치를 실제로 찾아낼 수 있어야 하는 회귀 방지."""
-    npm_prefix = tmp_path / "npm-global"
-    bin_dir = npm_prefix / "bin"
+def test_resolve_cli_path_finds_codex_at_windows_localappdata(monkeypatch, tmp_path):
+    """Codex의 공식 Windows 설치 스크립트(install.ps1)는 CODEX_PATH 기본값
+    (~/.local/bin/codex)이 아니라 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin에
+    설치한다 - PATH 탐색도 실패하는 경우 이 위치를 별도로 확인해야 한다."""
+    localappdata = tmp_path / "LocalAppData"
+    bin_dir = localappdata / "Programs" / "OpenAI" / "Codex" / "bin"
     bin_dir.mkdir(parents=True)
-    (bin_dir / "codex").write_text("#!/bin/sh\n")
+    exe_path = bin_dir / "codex.exe"
+    exe_path.write_text("")
 
     monkeypatch.setattr(shutil, "which", lambda cmd: None)
-    monkeypatch.setattr(config, "get_easypaper_npm_prefix", lambda: str(npm_prefix))
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
     resolved = config._resolve_cli_path("/nonexistent/codex", "codex")
-    assert resolved == str(bin_dir / "codex")
+    assert resolved == str(exe_path)
+
+
+def test_resolve_cli_path_windows_codex_fallback_not_applied_to_other_clis(monkeypatch, tmp_path):
+    """Windows LOCALAPPDATA 폴백은 codex 전용이다 - agy/claude에 잘못 적용되지
+    않아야 한다."""
+    localappdata = tmp_path / "LocalAppData"
+    bin_dir = localappdata / "Programs" / "OpenAI" / "Codex" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "claude.exe").write_text("")
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+    resolved = config._resolve_cli_path("/nonexistent/claude", "claude")
+    assert resolved == "claude"
 
 
 def test_get_agy_env_never_hardcodes_dev_server_home(monkeypatch):

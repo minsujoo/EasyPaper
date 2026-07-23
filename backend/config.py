@@ -327,37 +327,36 @@ def get_app_host() -> str:
 def get_app_port() -> int:
     return APP_PORT
 
-def get_easypaper_npm_prefix() -> str:
-    """이 앱이 설정 화면에서 자체적으로 설치하는 npm 전역 패키지(Claude
-    Code/Codex)를 시스템 npm 전역 prefix가 아니라 이 경로에 설치한다.
-
-    macOS 공식 Node.js 설치본은 전역 prefix(/usr/local/lib/node_modules)가
-    root 소유라, sudo 없이 `npm install -g`를 실행하면 EACCES(permission
-    denied)로 실패한다. 시스템 npm 설정을 건드리는 대신, 항상 쓰기 가능한
-    사용자 홈 하위의 이 앱 전용 디렉터리에 설치해 이 문제를 원천 차단한다.
-    """
-    return os.path.expanduser("~/.easypaper/npm-global")
-
-
 def _resolve_cli_path(configured_path: str, bare_command: str) -> str:
     """설정된 CLI 경로가 실제로 존재하면 그대로 쓰고, 없으면 PATH에서 명령
-    이름으로 찾은 뒤, 그마저 실패하면 이 앱이 자체 설치할 때 쓰는 npm
-    prefix(get_easypaper_npm_prefix) 아래도 확인한다.
+    이름으로 찾은 뒤, 그마저 실패하면 각 CLI 공식 설치 스크립트가 실제로
+    쓰는 OS별 잘 알려진 위치도 한 번 더 확인한다(find_ollama_binary와 동일한
+    패턴).
 
     AGY_PATH/CLAUDE_CODE_PATH/CODEX_PATH의 기본값이 존재하지 않거나, PATH
     탐색이 실패하는 경우(특히 Tauri 데스크탑 앱처럼 GUI로 실행되어 로그인
     셸의 PATH를 물려받지 못하는 환경)에도 최대한 찾아보기 위함이다.
     """
     import os
+    import platform
     import shutil
     if configured_path and os.path.exists(configured_path):
         return configured_path
     found = shutil.which(bare_command)
     if found:
         return found
-    npm_prefix_candidate = os.path.join(get_easypaper_npm_prefix(), "bin", bare_command)
-    if os.path.exists(npm_prefix_candidate):
-        return npm_prefix_candidate
+
+    # Codex의 공식 Windows 설치 스크립트(install.ps1)는 ~/.local/bin이 아니라
+    # %LOCALAPPDATA%\Programs\OpenAI\Codex\bin에 설치한다 - CODEX_PATH
+    # 기본값(~/.local/bin/codex)과 실제 설치 위치가 OS별로 다른 유일한
+    # 경우라 별도로 확인한다.
+    if bare_command == "codex" and platform.system() == "Windows":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            candidate = os.path.join(localappdata, "Programs", "OpenAI", "Codex", "bin", "codex.exe")
+            if os.path.exists(candidate):
+                return candidate
+
     return bare_command
 
 def get_agy_path() -> str:
