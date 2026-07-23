@@ -1648,10 +1648,11 @@ const PROVIDER_CONFIG = [
     models: [
       { value: 'qwen3.5:9b', label: 'qwen3.5 9b' },
       { value: 'llama3.1:8b', label: 'llamma 3.1' },
-      { value: 'gemma3n:e4b', label: 'gemma3n e4b' },
-      { value: 'gemma3:12b', label: 'gemma3 12b' },
-      { value: 'mistral-nemo', label: 'mistral-nemo' },
-      { value: 'phi4', label: 'phi4' },
+      { value: 'gemma4:e4b', label: 'gemma4 e4b' },
+      { value: 'gemma4:12b', label: 'gemma4 12b' },
+      { value: 'qwen3.6:27b', label: 'qwen3.6 27b' },
+      { value: 'mistral-small3.2:24b', label: 'mistral-small3.2 24b' },
+      { value: 'phi4-reasoning:14b', label: 'phi4-reasoning 14b' },
       { value: 'deepseek-r1:8b', label: 'deepseek-r1 8b' },
       { value: 'custom_input', label: '직접 입력' }
     ]
