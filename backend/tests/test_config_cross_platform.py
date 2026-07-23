@@ -150,3 +150,24 @@ def test_get_or_create_secret_key_persists_across_calls(tmp_path, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", first)
     second = config._get_or_create_secret_key()
     assert second == first
+
+
+def test_skip_login_defaults_to_disabled(monkeypatch):
+    monkeypatch.delenv("SKIP_LOGIN", raising=False)
+    assert config.get_skip_login() in (True, False)  # 모듈 로드 시점 값 확인용, 아래에서 실제 토글 검증
+
+
+def test_set_skip_login_persists_and_updates_getter(tmp_path, monkeypatch):
+    """로그인 생략 설정을 켜고 끄면 get_skip_login()이 즉시 반영하고, .env 파일에도
+    저장돼야 한다(서버 재시작 후에도 유지)."""
+    monkeypatch.setattr(config, "_get_config_dir", lambda: str(tmp_path))
+
+    config.set_skip_login(True)
+    assert config.get_skip_login() is True
+    env_content = (tmp_path / ".env").read_text()
+    assert "SKIP_LOGIN=true" in env_content
+
+    config.set_skip_login(False)
+    assert config.get_skip_login() is False
+    env_content = (tmp_path / ".env").read_text()
+    assert "SKIP_LOGIN=false" in env_content

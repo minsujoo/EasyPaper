@@ -217,13 +217,14 @@ export async function getPageTranslation(sessionId, pageNum, options) {
 }
 
 /**
- * 로그인 요청을 보냅니다.
+ * 로그인 요청을 보냅니다. remember가 true면 훨씬 긴 만료 기간의 세션
+ * 쿠키를 발급받아, 다음에 앱을 열 때 자동으로 로그인된 상태로 시작한다.
  */
-export async function loginAPI(username, password) {
+export async function loginAPI(username, password, remember = false) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password, remember })
   })
   if (!res.ok) {
     try {
@@ -275,6 +276,28 @@ export async function changeCredentialsAPI(currentPassword, newUsername, newPass
       throw new Error('변경 실패')
     }
   }
+  return res.json()
+}
+
+/**
+ * 로그인 생략(로그인 화면 없이 바로 사용) 설정을 가져옵니다.
+ */
+export async function getSkipLoginAPI() {
+  const res = await fetch(`${API_BASE}/settings/skip-login`)
+  if (!res.ok) throw new Error('로그인 생략 설정 로드 실패')
+  return res.json()
+}
+
+/**
+ * 로그인 생략 설정을 저장합니다.
+ */
+export async function setSkipLoginAPI(enabled) {
+  const res = await fetch(`${API_BASE}/settings/skip-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  })
+  if (!res.ok) throw new Error('로그인 생략 설정 저장 실패')
   return res.json()
 }
 

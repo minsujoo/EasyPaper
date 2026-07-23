@@ -51,6 +51,10 @@
             <label for="login-password" style="font-size: 13px; color: var(--text-secondary); font-weight: 500; text-align: left; width: 100%;">비밀번호 (Password)</label>
             <input type="password" id="login-password" placeholder="••••••••" required style="width: 100%; padding: 12px 16px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text-primary); outline: none; font-size: 14px;" />
           </div>
+          <label style="width: 100%; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+            <input type="checkbox" id="login-remember-checkbox" style="width: 16px; height: 16px; cursor: pointer;" />
+            로그인 상태 유지 (이 기기에서 자동 로그인)
+          </label>
           <button type="submit" class="file-btn" style="width: 100%; justify-content: center; margin-top: 10px; padding: 12px 28px; border-radius: 12px; border: none;">로그인</button>
         </form>
       </div>
@@ -796,6 +800,19 @@
             <button type="submit" class="btn btn-primary">계정 정보 변경</button>
           </div>
         </form>
+
+        <!-- 로그인 생략 설정 -->
+        <div class="form-group" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px;">
+          <h3 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>로그인 생략</h3>
+          <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
+            <strong>보안 경고:</strong> 켜면 이 서버에 네트워크로 접근 가능한 모든 사람이 로그인 없이 전체 기능을 쓸 수 있습니다.
+            다른 사람이 접근할 수 없는 개인 PC/로컬 환경에서만 켜세요.
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+            <input type="checkbox" id="setting-skip-login-checkbox" style="width: 16px; height: 16px; cursor: pointer;" />
+            로그인 화면 없이 바로 사용하기
+          </label>
+        </div>
       </div>
 
       <!-- 고급 설정 탭 -->
