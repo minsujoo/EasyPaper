@@ -352,6 +352,7 @@ def _make_npm_cli_install_endpoint(package_name: str, path_getter, already_insta
     async def stream(current_user: str = Depends(get_current_user)):
         import asyncio
         import os
+        import platform
         import shutil
 
         async def event_stream():
@@ -364,9 +365,27 @@ def _make_npm_cli_install_endpoint(package_name: str, path_getter, already_insta
                 yield f"data: {json.dumps({'status': 'error', 'message': npm_missing_message})}\n\n"
                 return
 
+            # macOS(공식 설치본)/일부 Linux 배포판은 npm 전역 prefix
+            # (/usr/local/lib/node_modules)가 root 소유라, sudo 없이
+            # `npm install -g`를 실행하면 EACCES로 실패한다(실제로 macOS에서
+            # 재현됨). 시스템 prefix를 건드리는 대신 이 앱 전용의 항상 쓰기
+            # 가능한 --prefix를 지정해 이 문제를 피한다. Windows는 기본
+            # prefix(%APPDATA%\npm)가 이미 사용자 소유라 이 문제가 없고,
+            # 지금처럼 셸 문자열에 따옴표 있는 경로를 추가하면 Windows에서
+            # cmd.exe의 중첩 따옴표 문제(다른 설치 스크립트에서 이미 겪은
+            # "Illegal shell characters" 부류)를 새로 만들 위험이 있어
+            # Windows에서는 기존 방식을 그대로 둔다.
+            if platform.system() == "Windows":
+                command = f"npm install -g {package_name}"
+            else:
+                from config import get_easypaper_npm_prefix
+                prefix_dir = get_easypaper_npm_prefix()
+                os.makedirs(prefix_dir, exist_ok=True)
+                command = f'npm install -g --prefix "{prefix_dir}" {package_name}'
+
             try:
                 proc = await asyncio.create_subprocess_shell(
-                    f"npm install -g {package_name}",
+                    command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                     stdin=asyncio.subprocess.DEVNULL,
