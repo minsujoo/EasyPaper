@@ -13,7 +13,6 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-
 def _get_config_dir() -> str:
     """.env / translation_prompt.txt를 읽고 쓸 디렉토리.
 
