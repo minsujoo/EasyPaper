@@ -120,6 +120,31 @@ def test_author_year_ignores_non_reference_sentences_without_year():
     assert extract_reference_list(pages) == {}
 
 
+def test_parses_header_with_drop_cap_bold_split():
+    """일부 논문 템플릿은 섹션 제목 첫 글자를 드롭캡으로 렌더링해서, 텍스트
+    추출 시 "**R****EFERENCES**"처럼 단어 중간에 마크다운 볼드(**)가 끼어드는
+    경우가 있다(실제 UniFormer 논문에서 재현된 케이스)."""
+    pages = [{"page_num": 1, "text": (
+        "some conclusion text.\n\n"
+        "**R****EFERENCES**\n\n"
+        "[1] A. Arnab, M. Dehghani. Vivit: A video vision transformer. ICCV, 2021.\n\n"
+        "[2] Jimmy Ba, Jamie Ryan Kiros. Layer normalization. ArXiv, 2016."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"1", "2"}
+    assert "Vivit" in refs["1"]
+
+
+def test_parses_header_with_space_separated_drop_cap():
+    """드롭캡 뒤에 공백까지 끼는 "**R** **EFERENCES**" 형태도 지원한다."""
+    pages = [{"page_num": 1, "text": (
+        "**R** **EFERENCES**\n\n"
+        "[1] Some Author. A paper title. 2020."
+    )}]
+    refs = extract_reference_list(pages)
+    assert refs == {"1": "Some Author. A paper title. 2020."}
+
+
 def test_author_year_keeps_first_entry_on_duplicate_key():
     """같은 저자가 같은 해에 여러 편(2020a/2020b 등)이면 먼저 나온 항목만 유지한다."""
     pages = [{"page_num": 1, "text": (
