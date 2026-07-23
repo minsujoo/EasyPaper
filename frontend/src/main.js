@@ -5962,9 +5962,16 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   inner.appendChild(layer)
 }
 
-// 번호 인용 스타일만 지원 ([12], [12, 13], [12-14] 등) - (Author, Year) 스타일은
-// 백엔드 reference_parser.py와 동일하게 이번 범위에서 제외했다.
+// 본문 인용 표기 두 스타일을 지원한다:
+// 1) 번호 인용: [12], [12, 13], [12-14]
+// 2) 저자-연도 인용: (Smith, 2020), (Smith et al., 2020), (Smith & Jones, 2020),
+//    (Smith, 2020; Jones, 2019) 등 - 백엔드 reference_parser.py의
+//    _parse_author_year_entries와 동일하게 "저자 성(소문자)+연도"를 키로 매칭한다.
 const CITATION_MARKER_RE = /\[\s*\d{1,3}(?:\s*[,\-–]\s*\d{1,3})*\s*\]/g
+// 여는 괄호 바로 뒤 대문자로 시작하고, 닫는 괄호 전 20자 이내에 4자리 연도가
+// 있어야 인용으로 인정한다(오탐 방지 - 그냥 "(그림 2020년 기준)" 같은 일반
+// 괄호 문구가 걸리지 않도록 대문자 시작 + 연도 둘 다 요구).
+const CITATION_AUTHOR_YEAR_MARKER_RE = /\([A-ZÀ-Ö][^()]{2,160}?\d{4}[a-z]?[^()]{0,20}\)/g
 
 // "[12, 14-16]" 형태의 대괄호 안 내용을 개별 참고문헌 번호 목록으로 펼친다
 function parseCitationNumbers(bracketText) {
@@ -5987,7 +5994,24 @@ function parseCitationNumbers(bracketText) {
   return nums
 }
 
-// 본문 인용 표기 오버레이 - 참고문헌 목록에 실제로 존재하는 번호를 가리키는
+// "(Smith, 2020; Jones et al., 2019)" 형태를 세미콜론 기준으로 나눠 각각에서
+// 앞쪽 저자 성과 끝쪽 연도만 앵커로 뽑는다(공저자 나열/"et al." 등 그 사이
+// 내용은 굳이 파싱하지 않아도 이 두 앵커만으로 백엔드 키와 매칭 가능).
+function parseAuthorYearKeys(parenText) {
+  const inner = parenText.slice(1, -1)
+  const keys = []
+  inner.split(';').forEach(part => {
+    const trimmed = part.trim()
+    const surnameMatch = trimmed.match(/^([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+)/)
+    const yearMatch = trimmed.match(/(\d{4})[a-z]?/)
+    if (surnameMatch && yearMatch) {
+      keys.push(`${surnameMatch[1].toLowerCase()}${yearMatch[1]}`)
+    }
+  })
+  return keys
+}
+
+// 본문 인용 표기 오버레이 - 참고문헌 목록에 실제로 존재하는 항목을 가리키는
 // 표기만 클릭 가능하게 만든다(오탐/미매칭 표기까지 다 클릭되게 하면 클릭할
 // 때마다 404 토스트만 뜨는 경험이 되므로).
 function renderCitationOverlayLayer(textLayerDiv, pageNum) {
@@ -6006,20 +6030,8 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
   const docId = state.currentDocId
   if (!docId) return
 
-  CITATION_MARKER_RE.lastIndex = 0
-  let match
-  while ((match = CITATION_MARKER_RE.exec(vtm.fullText)) !== null) {
-    const nums = parseCitationNumbers(match[0]).filter(n => refMap[n])
-    if (nums.length === 0) continue
-
-    const charStart = match.index
-    const charEnd = match.index + match[0].length
+  const addCitationBox = (charStart, charEnd, refKey) => {
     const rects = getSentenceRects({ charStart, charEnd }, vtm, textLayerDiv)
-    if (rects.length === 0) continue
-
-    // 대괄호 안에 여러 번호가 있어도([12, 13]) 툴팁은 첫 번째 매칭 번호 기준으로만
-    // 보여준다 - 대부분 단일 인용이고, 여러 개를 한 번에 보여주면 오히려 복잡해진다.
-    const refNum = nums[0]
     rects.forEach(r => {
       const box = document.createElement('div')
       box.className = 'citation-marker-box'
@@ -6027,8 +6039,8 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.style.top    = `${r.top}px`
       box.style.width  = `${r.width}px`
       box.style.height = `${r.height}px`
-      box.dataset.refNum = refNum
-      box.addEventListener('mouseenter', () => showCitationTooltip(docId, refNum, refMap[refNum] || '', box))
+      box.dataset.refNum = refKey
+      box.addEventListener('mouseenter', () => showCitationTooltip(docId, refKey, refMap[refKey] || '', box))
       box.addEventListener('mouseleave', scheduleCitationTooltipHide)
       // 클릭도 항상 툴팁을 띄운다(호버가 없는 터치 기기 대응). 실제 마우스
       // 클릭은 브라우저가 클릭 직전에 mouseenter를 먼저 쏘므로, 여기서 굳이
@@ -6038,10 +6050,27 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showCitationTooltip(docId, refNum, refMap[refNum] || '', box)
+        showCitationTooltip(docId, refKey, refMap[refKey] || '', box)
       })
       overlay.appendChild(box)
     })
+  }
+
+  // 대괄호 안에 여러 번호가 있어도([12, 13]) 툴팁은 첫 번째 매칭 번호 기준으로만
+  // 보여준다 - 대부분 단일 인용이고, 여러 개를 한 번에 보여주면 오히려 복잡해진다.
+  CITATION_MARKER_RE.lastIndex = 0
+  let match
+  while ((match = CITATION_MARKER_RE.exec(vtm.fullText)) !== null) {
+    const nums = parseCitationNumbers(match[0]).filter(n => refMap[n])
+    if (nums.length === 0) continue
+    addCitationBox(match.index, match.index + match[0].length, nums[0])
+  }
+
+  CITATION_AUTHOR_YEAR_MARKER_RE.lastIndex = 0
+  while ((match = CITATION_AUTHOR_YEAR_MARKER_RE.exec(vtm.fullText)) !== null) {
+    const keys = parseAuthorYearKeys(match[0]).filter(k => refMap[k])
+    if (keys.length === 0) continue
+    addCitationBox(match.index, match.index + match[0].length, keys[0])
   }
 }
 
