@@ -48,6 +48,38 @@ def test_resolve_cli_path_returns_bare_command_as_last_resort(monkeypatch):
     assert resolved == "claude"
 
 
+def test_resolve_cli_path_finds_codex_at_windows_localappdata(monkeypatch, tmp_path):
+    """Codex의 공식 Windows 설치 스크립트(install.ps1)는 CODEX_PATH 기본값
+    (~/.local/bin/codex)이 아니라 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin에
+    설치한다 - PATH 탐색도 실패하는 경우 이 위치를 별도로 확인해야 한다."""
+    localappdata = tmp_path / "LocalAppData"
+    bin_dir = localappdata / "Programs" / "OpenAI" / "Codex" / "bin"
+    bin_dir.mkdir(parents=True)
+    exe_path = bin_dir / "codex.exe"
+    exe_path.write_text("")
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+    resolved = config._resolve_cli_path("/nonexistent/codex", "codex")
+    assert resolved == str(exe_path)
+
+
+def test_resolve_cli_path_windows_codex_fallback_not_applied_to_other_clis(monkeypatch, tmp_path):
+    """Windows LOCALAPPDATA 폴백은 codex 전용이다 - agy/claude에 잘못 적용되지
+    않아야 한다."""
+    localappdata = tmp_path / "LocalAppData"
+    bin_dir = localappdata / "Programs" / "OpenAI" / "Codex" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "claude.exe").write_text("")
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+    resolved = config._resolve_cli_path("/nonexistent/claude", "claude")
+    assert resolved == "claude"
+
+
 def test_get_agy_env_never_hardcodes_dev_server_home(monkeypatch):
     """HOME/USER가 비어있으면 이 개발 서버 전용 경로(/home/ubuntu)를 하드코딩해
     반환하는 대신, 실제 현재 사용자의 홈 디렉터리를 동적으로 구해야 한다 - macOS

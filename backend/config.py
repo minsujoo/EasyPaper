@@ -311,10 +311,15 @@ os.makedirs(LIBRARY_DIR, exist_ok=True)
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
 
-# Antigravity CLI path
-AGY_PATH = os.getenv("AGY_PATH", "/home/ubuntu/.local/bin/agy")
-CLAUDE_CODE_PATH = os.getenv("CLAUDE_CODE_PATH", "/home/ubuntu/.local/bin/claude")
-CODEX_PATH = os.getenv("CODEX_PATH", "/home/ubuntu/.local/bin/codex")
+# Antigravity/Claude Code/Codex CLI 기본 설치 경로. 예전에는 이 프로젝트를
+# 개발한 서버 전용 절대경로(/home/ubuntu/.local/bin/...)가 박혀 있어서 다른
+# 사용자 계정에서는 이 기본값 자체가 항상 존재하지 않는 경로였다. 각 CLI의
+# 공식 curl 설치 스크립트가 공통으로 쓰는 ~/.local/bin 기준으로 바꿔, PATH
+# 탐색(_resolve_cli_path)이 실패하더라도 이 기본값만으로 찾아지는 경우를
+# 늘린다.
+AGY_PATH = os.getenv("AGY_PATH", os.path.expanduser("~/.local/bin/agy"))
+CLAUDE_CODE_PATH = os.getenv("CLAUDE_CODE_PATH", os.path.expanduser("~/.local/bin/claude"))
+CODEX_PATH = os.getenv("CODEX_PATH", os.path.expanduser("~/.local/bin/codex"))
 
 def get_app_host() -> str:
     return APP_HOST
@@ -324,23 +329,34 @@ def get_app_port() -> int:
 
 def _resolve_cli_path(configured_path: str, bare_command: str) -> str:
     """설정된 CLI 경로가 실제로 존재하면 그대로 쓰고, 없으면 PATH에서 명령
-    이름으로 직접 찾는다.
+    이름으로 찾은 뒤, 그마저 실패하면 각 CLI 공식 설치 스크립트가 실제로
+    쓰는 OS별 잘 알려진 위치도 한 번 더 확인한다(find_ollama_binary와 동일한
+    패턴).
 
-    AGY_PATH/CLAUDE_CODE_PATH/CODEX_PATH의 기본값은 이 프로젝트를 개발한
-    서버 환경 기준의 고정 경로(/home/ubuntu/.local/bin/...)라, 다른 사용자
-    계정이나 macOS/Windows 등 다른 환경에서는 애초에 존재하지 않는 경로다.
-    이 경우 자동 감지가 항상 실패해 실제로는 정상 설치되어 있는 CLI도
-    "미설치"로 오판하게 된다. 설정된 경로가 없으면 PATH 검색으로 대체하고,
-    거기서도 못 찾으면 bare 명령 이름을 그대로 반환해 최소한 셸(PATH) 기반
-    실행이라도 시도해볼 수 있게 한다.
+    AGY_PATH/CLAUDE_CODE_PATH/CODEX_PATH의 기본값이 존재하지 않거나, PATH
+    탐색이 실패하는 경우(특히 Tauri 데스크탑 앱처럼 GUI로 실행되어 로그인
+    셸의 PATH를 물려받지 못하는 환경)에도 최대한 찾아보기 위함이다.
     """
     import os
+    import platform
     import shutil
     if configured_path and os.path.exists(configured_path):
         return configured_path
     found = shutil.which(bare_command)
     if found:
         return found
+
+    # Codex의 공식 Windows 설치 스크립트(install.ps1)는 ~/.local/bin이 아니라
+    # %LOCALAPPDATA%\Programs\OpenAI\Codex\bin에 설치한다 - CODEX_PATH
+    # 기본값(~/.local/bin/codex)과 실제 설치 위치가 OS별로 다른 유일한
+    # 경우라 별도로 확인한다.
+    if bare_command == "codex" and platform.system() == "Windows":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            candidate = os.path.join(localappdata, "Programs", "OpenAI", "Codex", "bin", "codex.exe")
+            if os.path.exists(candidate):
+                return candidate
+
     return bare_command
 
 def get_agy_path() -> str:

@@ -345,36 +345,65 @@ async def install_ollama_stream(current_user: str = Depends(get_current_user)):
     )
 
 
-def _make_npm_cli_install_endpoint(package_name: str, path_getter, already_installed_message: str):
-    """claude_code/codex처럼 npm 전역 패키지로 배포되는 CLI를 설치하는 SSE 스트림을 만듭니다.
-    Node.js/npm은 세 OS 모두 이미 EasyPaper의 필수 요구사항이라, 셸을 통한
-    `npm install -g <package>` 한 줄로 플랫폼 분기 없이 동일하게 동작합니다."""
+def _make_native_cli_install_endpoint(
+    unix_install_url: str,
+    windows_install_url: str,
+    path_getter,
+    already_installed_message: str,
+):
+    """claude_code/codex 공식 curl(Unix)/PowerShell(Windows) 네이티브 설치
+    스크립트로 CLI를 설치하는 SSE 스트림을 만듭니다.
+
+    예전에는 `npm install -g <package>`를 썼는데, macOS 공식 Node.js
+    설치본은 npm 전역 prefix(/usr/local/lib/node_modules)가 root 소유라
+    sudo 없이 실행하면 EACCES(permission denied)로 실패했다(실제로
+    재현됨). 두 CLI 모두 Node.js가 전혀 필요 없는 공식 네이티브 바이너리
+    설치 스크립트를 제공하므로(Antigravity와 동일한 배포 방식), npm을
+    아예 거치지 않는 이 방식으로 바꿔 문제를 원천적으로 피한다. 각
+    설치 스크립트가 자체적으로 셸 rc 파일(.zprofile/.bashrc 등)이나
+    Windows 사용자 PATH에 설치 위치를 등록한다.
+    """
     async def stream(current_user: str = Depends(get_current_user)):
         import asyncio
         import os
+        import platform
         import shutil
+
+        system = platform.system()  # 'Linux' | 'Darwin' | 'Windows'
 
         async def event_stream():
             cli_path = path_getter()
             if os.path.exists(cli_path) or shutil.which(cli_path):
                 yield f"data: {json.dumps({'status': 'error', 'message': already_installed_message})}\n\n"
                 return
-            if not shutil.which("npm"):
-                npm_missing_message = "'npm' 명령을 찾을 수 없습니다. Node.js가 설치되어 있는지 확인해주세요."
-                yield f"data: {json.dumps({'status': 'error', 'message': npm_missing_message})}\n\n"
-                return
 
             try:
-                proc = await asyncio.create_subprocess_shell(
-                    f"npm install -g {package_name}",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    stdin=asyncio.subprocess.DEVNULL,
-                )
+                if system == "Windows":
+                    # PowerShell 명령을 별도 argv 원소로 넘겨 create_subprocess_exec로
+                    # 실행한다 - 셸 문자열 하나로 조립해 create_subprocess_shell에
+                    # 넘기면 Windows에서 cmd /c "..."로 한 번 더 감싸이면서 명령 안의
+                    # 큰따옴표와 중첩되어 명령 경계가 깨지는 문제(Antigravity Windows
+                    # 설치에서 이미 겪은 것과 같은 부류)를 새로 만들 위험이 있다.
+                    proc = await asyncio.create_subprocess_exec(
+                        "powershell", "-NoProfile", "-ExecutionPolicy", "ByPass", "-Command",
+                        f"irm {windows_install_url} | iex",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        stdin=asyncio.subprocess.DEVNULL,
+                    )
+                else:
+                    proc = await asyncio.create_subprocess_shell(
+                        f"curl -fsSL {unix_install_url} | bash",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        stdin=asyncio.subprocess.DEVNULL,
+                    )
                 async for text in _stream_subprocess_lines(proc):
                     yield f"data: {json.dumps({'status': 'progress', 'line': text})}\n\n"
                 await proc.wait()
-                if proc.returncode == 0:
+
+                installed = os.path.exists(path_getter()) or shutil.which(path_getter())
+                if proc.returncode == 0 and installed:
                     yield f"data: {json.dumps({'status': 'success'})}\n\n"
                 else:
                     yield f"data: {json.dumps({'status': 'error', 'message': f'설치가 오류 코드 {proc.returncode}로 종료되었습니다.'})}\n\n"
@@ -396,13 +425,23 @@ def _make_npm_cli_install_endpoint(package_name: str, path_getter, already_insta
 
 router.add_api_route(
     "/settings/install-claude-code",
-    _make_npm_cli_install_endpoint("@anthropic-ai/claude-code", get_claude_code_path, "Claude Code CLI가 이미 설치되어 있습니다."),
+    _make_native_cli_install_endpoint(
+        "https://claude.ai/install.sh",
+        "https://claude.ai/install.ps1",
+        get_claude_code_path,
+        "Claude Code CLI가 이미 설치되어 있습니다.",
+    ),
     methods=["GET"],
 )
 
 router.add_api_route(
     "/settings/install-codex",
-    _make_npm_cli_install_endpoint("@openai/codex", get_codex_path, "Codex CLI가 이미 설치되어 있습니다."),
+    _make_native_cli_install_endpoint(
+        "https://chatgpt.com/codex/install.sh",
+        "https://chatgpt.com/codex/install.ps1",
+        get_codex_path,
+        "Codex CLI가 이미 설치되어 있습니다.",
+    ),
     methods=["GET"],
 )
 
