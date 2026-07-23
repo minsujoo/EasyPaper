@@ -38,6 +38,55 @@ fn find_available_port(preferred: u16) -> u16 {
     listener.local_addr().unwrap().port()
 }
 
+/// macOS(Finder/Dock에서 더블클릭)나 Linux 데스크탑 런처로 실행된 GUI 앱은
+/// launchd/데스크탑 환경이 주는 최소한의 기본 PATH만 물려받고, 사용자의
+/// 로그인 셸(.zshrc/.bash_profile 등)이 추가하는 PATH는 전혀 보지 못한다.
+/// curl 설치 스크립트로 설치되는 Antigravity/Claude Code/Codex CLI는 보통
+/// 그 rc 파일에서 PATH에 추가된 디렉토리(~/.local/bin 등)에 들어가므로,
+/// 이 상태로 sidecar를 띄우면 shutil.which() 기반 탐지가 전부 실패해
+/// "설치 안 됨"으로 오판한다(실제로 macOS 빌드에서 재현됨). 로그인 셸을
+/// 인터랙티브(-i)+로그인(-l) 모드로 짧게 실행해 그 PATH를 그대로 얻어와
+/// sidecar에 물려준다. Windows는 GUI 앱도 시스템 PATH 환경변수를 동일하게
+/// 받으므로 이 문제가 없어 대상에서 제외한다.
+fn resolve_user_shell_path() -> Option<String> {
+    if cfg!(windows) {
+        return None;
+    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let mut child = Command::new(&shell)
+        .args(["-ilc", "echo -n \"__EASYPAPER_PATH__$PATH\""])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let mut stdout = child.stdout.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = stdout.read_to_string(&mut buf);
+        let _ = tx.send(buf);
+    });
+
+    // 사용자 셸 초기화 스크립트가 무겁거나(예: nvm) 잘못 걸려 있어도
+    // 앱 시작이 무한정 멈추지 않도록 타임아웃을 둔다 - 실패하면 그냥 PATH
+    // 보강 없이 진행(기존처럼 configured 경로/PATH 탐색만 사용).
+    let output = rx.recv_timeout(Duration::from_secs(5)).ok();
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let output = output?;
+    let marker = "__EASYPAPER_PATH__";
+    let idx = output.rfind(marker)?;
+    let path = output[idx + marker.len()..].trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
 /// 백엔드의 루트(`/`)에 재시도 GET을 보내 준비 상태를 확인한다. `/api/*`는
 /// 전역 인증이 걸려 있어 로그인 전 판별에 쓸 수 없지만, 루트는 인증 없이
 /// 200을 반환하며 기존 Dockerfile의 HEALTHCHECK도 동일하게 `/`를 쓴다.
@@ -181,6 +230,15 @@ pub fn run() {
                 .env("EASYPAPER_FRONTEND_DIST", &frontend_dist)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+
+            // curl로 설치된 CLI(agy/claude/codex)가 사용자 로그인 셸에서만
+            // PATH에 잡혀 있는 macOS/Linux 환경 대응 - 위 resolve_user_shell_path
+            // 참고.
+            if let Some(shell_path) = resolve_user_shell_path() {
+                let current_path = std::env::var("PATH").unwrap_or_default();
+                log::info!("enriched sidecar PATH with login shell PATH");
+                command.env("PATH", format!("{}:{}", shell_path, current_path));
+            }
 
             #[cfg(windows)]
             command.creation_flags(CREATE_NO_WINDOW);
