@@ -4129,11 +4129,32 @@ function escapeHtml(str) {
 libUploadBtn.addEventListener('click', () => { fileInput.click() })
 
 // ── 테마 토글 기능 ──────────────────────────────
+
+// Tauri 데스크탑 창의 타이틀바(테마)와 배경색을 앱의 라이트/다크 토글과 맞춘다.
+// 웹 배포에서는 window.__TAURI_INTERNALS__가 없어 isTauriDesktop이 항상
+// false라 이 함수가 조용히 아무 일도 하지 않는다 - 동일한 frontend/dist를
+// 웹/데스크탑에 그대로 재사용하기 위함(별도 빌드 분기 없음).
+const LIGHT_THEME_BG = '#f8fafc'
+const DARK_THEME_BG = '#06050a'
+
+async function syncDesktopWindowTheme(isLight) {
+  if (!isTauriDesktop) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const win = getCurrentWindow()
+    await win.setTheme(isLight ? 'light' : 'dark')
+    await win.setBackgroundColor(isLight ? LIGHT_THEME_BG : DARK_THEME_BG)
+  } catch (err) {
+    console.warn('데스크탑 타이틀바 테마 동기화 실패:', err)
+  }
+}
+
 function initTheme() {
   const savedTheme = localStorage.getItem('theme') || 'dark'
   const isLight = savedTheme === 'light'
   document.body.classList.toggle('light-theme', isLight)
   updateThemeIcons(isLight)
+  syncDesktopWindowTheme(isLight)
 }
 
 function toggleTheme() {
@@ -4142,6 +4163,7 @@ function toggleTheme() {
   updateThemeIcons(isLight)
   applyAccentColor(currentAccentColor, { persist: false })
   showToast(isLight ? '라이트 모드로 전환 ✓' : '다크 모드로 전환 ✓', 'success')
+  syncDesktopWindowTheme(isLight)
 }
 
 function updateThemeIcons(isLight) {
