@@ -426,15 +426,23 @@ def _resolve_cli_path(configured_path: str, bare_command: str) -> str:
     if found:
         return found
 
-    # Codex의 공식 Windows 설치 스크립트(install.ps1)는 ~/.local/bin이 아니라
-    # %LOCALAPPDATA%\Programs\OpenAI\Codex\bin에 설치한다 - CODEX_PATH
-    # 기본값(~/.local/bin/codex)과 실제 설치 위치가 OS별로 다른 유일한
-    # 경우라 별도로 확인한다.
-    if bare_command == "codex" and platform.system() == "Windows":
+    # Codex/Antigravity의 공식 Windows 설치 스크립트는 ~/.local/bin이 아니라
+    # 각각 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin, %LOCALAPPDATA%\agy\bin에
+    # 설치한다 - *_PATH 기본값(~/.local/bin/...)과 실제 설치 위치가 OS별로
+    # 다른 경우라 별도로 확인한다. 이 확인이 없으면 설치 스크립트가 exit
+    # code 0으로 정상 종료해도 바이너리를 못 찾아 "성공했는데 실패로 표시"되는
+    # 모순이 생긴다(설치 직후 PATH 레지스트리 브로드캐스트는 이미 떠 있는
+    # 백엔드 프로세스의 os.environ["PATH"]는 갱신하지 못하므로 shutil.which도
+    # 도움이 안 된다).
+    if platform.system() == "Windows":
         localappdata = os.environ.get("LOCALAPPDATA", "")
         if localappdata:
-            candidate = os.path.join(localappdata, "Programs", "OpenAI", "Codex", "bin", "codex.exe")
-            if os.path.exists(candidate):
+            windows_candidates = {
+                "codex": os.path.join(localappdata, "Programs", "OpenAI", "Codex", "bin", "codex.exe"),
+                "agy": os.path.join(localappdata, "agy", "bin", "agy.exe"),
+            }
+            candidate = windows_candidates.get(bare_command)
+            if candidate and os.path.exists(candidate):
                 return candidate
 
     return bare_command
