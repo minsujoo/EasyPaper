@@ -1,5 +1,6 @@
 import './style.css'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
@@ -2902,7 +2903,7 @@ if (currentVersionLabel) {
     try {
       const res = await getFullChangelogAPI()
       fullChangelogContent.innerHTML = res.content
-        ? marked.parse(res.content)
+        ? sanitizeMarkedHtml(marked.parse(res.content))
         : '<p>변경 이력을 찾을 수 없습니다.</p>'
     } catch (err) {
       fullChangelogContent.innerHTML = `<p>변경 이력을 불러오지 못했습니다: ${escapeHtml(err.message || '')}</p>`
@@ -4387,6 +4388,17 @@ function escapeHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 }
 
+// marked.parse()는 마크다운 소스에 섞인 raw HTML(<script>, onerror= 등)을 그대로
+// 통과시킨다. AI 채팅 응답/메모/체인지로그처럼 우리가 직접 작성하지 않은 텍스트를
+// marked로 렌더링한 뒤 innerHTML에 꽂아넣는 모든 지점에서는, 악성 PDF의
+// 프롬프트 인젝션으로 LLM이 <script>/onerror= 같은 태그를 그대로 재생산해
+// same-origin XSS로 이어질 수 있다(세션 쿠키는 HttpOnly라 못 훔쳐도, 로그인된
+// 사용자 권한으로 API 키 조회·계정 변경 등을 그대로 수행 가능). 이를 막기 위해
+// marked 출력은 반드시 DOMPurify로 한 번 걸러낸 뒤에만 innerHTML에 대입한다.
+function sanitizeMarkedHtml(html) {
+  return DOMPurify.sanitize(html)
+}
+
 libUploadBtn.addEventListener('click', () => { fileInput.click() })
 
 // ── 테마 토글 기능 ──────────────────────────────
@@ -5229,7 +5241,7 @@ function renderPageMemos(pageNum) {
             console.error("Markdown parsing failed:", e)
           }
         }
-        body.innerHTML = `<div class="floating-memo-render">${renderedHtml}</div>`
+        body.innerHTML = `<div class="floating-memo-render">${sanitizeMarkedHtml(renderedHtml)}</div>`
         
         if (window.renderMathInElement) {
           try {
@@ -6810,6 +6822,9 @@ function formatChatHtml(text) {
   } else {
     html = t.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>')
   }
+
+  // 5.5. AI가 생성한(신뢰할 수 없는) 텍스트이므로 innerHTML에 꽂기 전에 반드시 살균
+  html = sanitizeMarkedHtml(html)
 
   // 6. 수식 플레이스홀더 복원
   html = html.replace(/MATHBLOCK(\d+)/g, (_, idStr) => {
