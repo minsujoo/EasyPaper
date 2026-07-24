@@ -7,8 +7,11 @@ from config import get_app_password, get_app_username, get_skip_login, SECRET_KE
 
 def verify_password(stored_password_hash: str, provided_password: str) -> bool:
     # 1. 만약 평문 비밀번호(APP_PASSWORD)가 설정되어 있다면 즉시 비교
+    # (== 대신 compare_digest로 비교 - 문자열 조기 종료 비교는 앞글자부터
+    # 하나씩 맞춰가는 타이밍 공격에 이론상 노출된다. 비ASCII 비밀번호도
+    # 지원하도록 bytes로 인코딩해 비교한다.)
     app_pwd = get_app_password()
-    if app_pwd and provided_password == app_pwd:
+    if app_pwd and hmac.compare_digest(provided_password.encode('utf-8'), app_pwd.encode('utf-8')):
         return True
 
     # 2. 해시 기반 검증 수행 (하위 호환 및 보안 권장 사양)
