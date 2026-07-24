@@ -1,8 +1,9 @@
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
-from routers.upload import sessions, ensure_session
+from routers.upload import require_session_owner
+from services.auth import get_current_user
 from services.llm_client import stream_page_insight
 from services.library import save_page_insight, get_page_insight
 
@@ -17,7 +18,8 @@ async def get_page_insight_stream(
     page_num: int,
     kind: str,
     target_lang: str = "한국어",
-    force: bool = False
+    force: bool = False,
+    current_user: str = Depends(get_current_user)
 ):
     """
     특정 페이지의 키워드/단어 설명(kind=keywords) 또는 요약(kind=summary)을
@@ -27,10 +29,7 @@ async def get_page_insight_stream(
     if kind not in VALID_KINDS:
         raise HTTPException(status_code=400, detail=f"kind는 {VALID_KINDS} 중 하나여야 합니다.")
 
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-
-    session = sessions[session_id]
+    session = require_session_owner(session_id, current_user)
     total_pages = session["total_pages"]
 
     if page_num < 1 or page_num > total_pages:

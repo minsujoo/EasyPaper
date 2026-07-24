@@ -10,7 +10,7 @@ from services.translation_job import (
     cancel_job,
 )
 from services.auth import get_current_user
-from routers.upload import sessions, ensure_session
+from routers.upload import require_session_owner
 
 router = APIRouter()
 
@@ -23,8 +23,9 @@ class RestartJobRequest(BaseModel):
 
 
 @router.get("/jobs/{session_id}/status")
-async def job_status(session_id: str):
+async def job_status(session_id: str, current_user: str = Depends(get_current_user)):
     """잡 진행 상황을 반환합니다."""
+    require_session_owner(session_id, current_user)
     job = get_job_status(session_id)
     if not job:
         raise HTTPException(status_code=404, detail="잡을 찾을 수 없습니다.")
@@ -39,9 +40,11 @@ async def get_page_translation(
     style: str = "academic",
     ignore_math: bool = False,
     ignore_table: bool = True,
-    ignore_refs: bool = False
+    ignore_refs: bool = False,
+    current_user: str = Depends(get_current_user)
 ):
     """특정 페이지의 번역 MD 내용 및 매핑 데이터를 반환합니다."""
+    require_session_owner(session_id, current_user)
     suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
     
     from services.library import get_translation_full
@@ -67,9 +70,11 @@ async def download_translation(
     style: str = "academic",
     ignore_math: bool = False,
     ignore_table: bool = True,
-    ignore_refs: bool = False
+    ignore_refs: bool = False,
+    current_user: str = Depends(get_current_user)
 ):
     """전체 번역 MD 파일을 다운로드합니다."""
+    require_session_owner(session_id, current_user)
     suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
     path = get_full_md_path(session_id, suffix)
     if not path:
@@ -88,10 +93,7 @@ async def restart_translation_job(
     current_user: str = Depends(get_current_user)
 ):
     """주어진 옵션으로 번역 작업을 중단하고 새로 재시작합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-        
-    session = sessions[session_id]
+    session = require_session_owner(session_id, current_user)
     pages = session["pages"]
     
     job = start_job(
@@ -112,9 +114,8 @@ async def cancel_translation_job(
     current_user: str = Depends(get_current_user)
 ):
     """현재 진행 중인 번역 작업을 취소(중단)합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-        
+    require_session_owner(session_id, current_user)
+
     cancelled = cancel_job(session_id)
     return {"message": "번역 작업이 취소되었습니다." if cancelled else "진행 중인 번역 작업이 없습니다."}
 
