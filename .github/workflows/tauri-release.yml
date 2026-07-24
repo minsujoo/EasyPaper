@@ -1,11 +1,17 @@
 name: Tauri Release
 
-# 태그 push(v*) 또는 수동 트리거로 win/mac-arm64/linux 3개 플랫폼을 빌드해
-# GitHub Release(초안)에 업로드하고, Tauri updater가 읽는 latest.json도
+# 태그 push(v*) 또는 수동 트리거로 win/mac-arm64/mac-x64/linux 4개 플랫폼을
+# 빌드해 GitHub Release에 업로드하고, Tauri updater가 읽는 latest.json도
 # 함께 생성한다. TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)로 업데이트 페이로드에
 # 서명하지만, OS 코드사이닝(macOS 공증/Windows Authenticode)은 아직 하지
 # 않으므로 설치 시 Gatekeeper/SmartScreen 경고가 뜬다 - 유료 인증서 발급
 # 후 별도로 추가 필요.
+#
+# v* 태그 push는 빌드가 끝나면 릴리스를 즉시 게시(draft=false)한다 - 실제
+# 배포 트리거이므로 사람이 다시 "Publish" 버튼을 누르지 않아도 updater
+# 엔드포인트(releases/latest/download/latest.json)가 바로 응답하게 하기
+# 위함. workflow_dispatch(수동 테스트 빌드)는 실수로 공개 릴리스가 되지
+# 않도록 계속 초안(draft)으로 남긴다.
 on:
   push:
     tags:
@@ -26,9 +32,42 @@ jobs:
             name: windows
           - os: macos-14
             name: macos-arm64
+          - os: macos-13
+            name: macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 태그 push 시점의 "직전 태그"를 찾아 릴리스 노트를 커밋 메시지로
+          # 자동 생성하려면 태그 히스토리 전체가 필요하다(기본 얕은 클론은
+          # 태그를 안 가져옴).
+          fetch-depth: 0
+
+      - name: Generate release notes from commits since previous tag
+        id: relnotes
+        shell: bash
+        run: |
+          current_tag="${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+          prev_tag=$(git tag --list 'v*' --sort=-creatordate | grep -vFx "$current_tag" | head -n1 || true)
+          range=HEAD
+          if [ -n "$prev_tag" ]; then
+            range="$prev_tag..HEAD"
+          fi
+
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "자동 생성된 릴리스입니다. 코드사이닝(macOS 공증/Windows Authenticode)이"
+            echo "아직 적용되지 않아 설치 시 운영체제 보안 경고가 뜰 수 있습니다."
+            echo ""
+            echo "## 변경 사항"
+            commits=$(git log "$range" --no-merges --pretty=format:'%s' | grep -E '^(feat|fix|perf)(\(.+\))?:' || true)
+            if [ -n "$commits" ]; then
+              echo "$commits" | sed 's/^/- /'
+            else
+              echo "- 세부 변경 내역 없음"
+            fi
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
         with:
@@ -83,8 +122,8 @@ jobs:
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.0.0-manual{0}', github.run_number) }}
           releaseName: "EasyPaper Desktop ${{ github.ref_type == 'tag' && github.ref_name || 'manual build' }}"
-          releaseBody: |
-            자동 생성된 릴리스입니다. 코드사이닝(macOS 공증/Windows Authenticode)이
-            아직 적용되지 않아 설치 시 운영체제 보안 경고가 뜰 수 있습니다.
-          releaseDraft: true
+          releaseBody: ${{ steps.relnotes.outputs.notes }}
+          # 태그 push만 즉시 게시하고, workflow_dispatch 수동 빌드는 검토 전
+          # 실수로 공개되지 않도록 초안으로 남긴다.
+          releaseDraft: ${{ github.ref_type != 'tag' }}
           prerelease: false
