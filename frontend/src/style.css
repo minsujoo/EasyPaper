@@ -1962,19 +1962,22 @@ body.light-theme .pdf-annotation-underline {
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.01);
   padding: 0 16px;
+  overflow-x: auto;
 }
 
 .tab-btn {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 14px 20px;
+  padding: 14px 14px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s;
   outline: none;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {
