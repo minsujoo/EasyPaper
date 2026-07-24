@@ -149,6 +149,7 @@ const settingOllamaHost    = $('setting-ollama-host')
 const settingOpenAIKey     = $('setting-openai-key')
 const settingGeminiKey     = $('setting-gemini-key')
 const settingClaudeKey     = $('setting-claude-key')
+const settingChatSameAsTrans = $('setting-chat-same-as-trans')
 
 // (provider/model selects are now custom ProviderModelPicker instances – see below)
 
@@ -2008,13 +2009,33 @@ const chatSidebarPicker = new ProviderModelPicker($('chat-sidebar-provider'), {
 
 const settingTransPicker = new ProviderModelPicker($('setting-trans-provider'), {
   compact: false,
-  onChange: () => updateSettingsUIVisibility()
+  onChange: () => applyChatSameAsTransUI()
 })
 
 const settingChatPicker = new ProviderModelPicker($('setting-chat-provider'), {
   compact: false,
   onChange: () => updateSettingsUIVisibility()
 })
+
+// "번역 모델과 동일한 모델 사용" 체크박스: 켜져 있으면 어시스턴트 선택기를
+// 잠그고 번역 모델 값을 그대로 따라가게 한다.
+function applyChatSameAsTransUI() {
+  const chatProviderEl = $('setting-chat-provider')
+  const checked = !!(settingChatSameAsTrans && settingChatSameAsTrans.checked)
+  if (checked) {
+    const { provider, model } = settingTransPicker.getValue()
+    settingChatPicker.setValue(provider, model)
+  }
+  if (chatProviderEl) {
+    chatProviderEl.style.opacity = checked ? '0.5' : ''
+    chatProviderEl.style.pointerEvents = checked ? 'none' : ''
+  }
+  updateSettingsUIVisibility()
+}
+
+if (settingChatSameAsTrans) {
+  settingChatSameAsTrans.addEventListener('change', applyChatSameAsTransUI)
+}
 
 const POPULAR_MODELS = {} // kept for backward compat
 
@@ -2147,7 +2168,13 @@ async function refreshSystemSettings() {
     settingTransPicker.setValue(sys.trans_provider || 'antigravity', sys.trans_model)
     chatSidebarPicker.setValue(sys.chat_provider || 'antigravity', sys.chat_model)
     settingChatPicker.setValue(sys.chat_provider || 'antigravity', sys.chat_model)
-    
+
+    if (settingChatSameAsTrans) {
+      settingChatSameAsTrans.checked = !!sys.trans_model &&
+        sys.chat_provider === sys.trans_provider && sys.chat_model === sys.trans_model
+    }
+    applyChatSameAsTransUI()
+
     const promptTemplate = $('setting-prompt-template')
     if (promptTemplate) {
       promptTemplate.value = sys.translation_prompt_template || promptTemplate.value
@@ -2165,12 +2192,15 @@ async function refreshSystemSettings() {
 async function changeProviderAndModel(type, newProvider, newModel) {
   try {
     const sys = await getSystemSettingsAPI()
+    // "번역 모델과 동일한 모델 사용"이 켜져 있으면 번역 모델을 바꿀 때
+    // 어시스턴트 모델도 함께 따라가게 한다.
+    const syncChatToTrans = type === 'trans' && !!(settingChatSameAsTrans && settingChatSameAsTrans.checked)
     const payload = {
       ollama_host: sys.ollama_host || '',
       trans_provider: type === 'trans' ? newProvider : (sys.trans_provider || 'antigravity'),
       trans_model: type === 'trans' ? newModel : (sys.trans_model || ''),
-      chat_provider: type === 'chat' ? newProvider : (sys.chat_provider || 'antigravity'),
-      chat_model: type === 'chat' ? newModel : (sys.chat_model || ''),
+      chat_provider: (type === 'chat' || syncChatToTrans) ? newProvider : (sys.chat_provider || 'antigravity'),
+      chat_model: (type === 'chat' || syncChatToTrans) ? newModel : (sys.chat_model || ''),
       openai_api_key: sys.openai_api_key || '',
       gemini_api_key: sys.gemini_api_key || '',
       claude_api_key: sys.claude_api_key || '',
@@ -2180,6 +2210,10 @@ async function changeProviderAndModel(type, newProvider, newModel) {
     // sync settings pickers
     if (type === 'trans') {
       settingTransPicker.setValue(newProvider, newModel)
+      if (syncChatToTrans) {
+        settingChatPicker.setValue(newProvider, newModel)
+        chatSidebarPicker.setValue(newProvider, newModel)
+      }
     } else {
       settingChatPicker.setValue(newProvider, newModel)
     }
@@ -2487,8 +2521,12 @@ systemSettingsForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   
   const { provider: transProvider, model: transModel } = settingTransPicker.getValue()
-  const { provider: chatProvider, model: chatModel } = settingChatPicker.getValue()
-  
+  let { provider: chatProvider, model: chatModel } = settingChatPicker.getValue()
+  if (settingChatSameAsTrans && settingChatSameAsTrans.checked) {
+    chatProvider = transProvider
+    chatModel = transModel
+  }
+
   if (!transModel) {
     showToast('번역 모델을 선택해주세요.', 'error')
     return
@@ -2530,8 +2568,12 @@ if (advancedSettingsForm) {
     e.preventDefault()
     
     const { provider: transProvider, model: transModel } = settingTransPicker.getValue()
-    const { provider: chatProvider, model: chatModel } = settingChatPicker.getValue()
-    
+    let { provider: chatProvider, model: chatModel } = settingChatPicker.getValue()
+    if (settingChatSameAsTrans && settingChatSameAsTrans.checked) {
+      chatProvider = transProvider
+      chatModel = transModel
+    }
+
     if (!transModel) {
       showToast('번역 모델을 선택해주세요.', 'error')
       return
