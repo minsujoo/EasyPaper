@@ -4,7 +4,7 @@
 
 # EasyPaper
 
-**학술 PDF 논문을 AI로 번역하고, 논문 내용을 바탕으로 바로 대화하는 통합 웹 서비스**
+**학술 PDF 논문을 AI로 번역하고, 논문 내용을 바탕으로 바로 대화하는 통합 서비스 — 웹 & 데스크톱 앱**
 
 [![Last Commit](https://img.shields.io/github/last-commit/orion-gz/EasyPaper?color=4f7cff&label=last%20commit)](https://github.com/orion-gz/EasyPaper/commits/main)
 [![Open Issues](https://img.shields.io/github/issues/orion-gz/EasyPaper?color=4f7cff)](https://github.com/orion-gz/EasyPaper/issues)
@@ -19,11 +19,13 @@
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](./Dockerfile)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#-빠른-시작)
 
+[![Download Desktop App](https://img.shields.io/github/v/release/orion-gz/EasyPaper?label=%E2%AC%87%EF%B8%8F%20Download%20Desktop%20App&color=4f7cff)](https://github.com/orion-gz/EasyPaper/releases/latest)
+
 </div>
 
 <br>
 
-논문을 업로드하면 원문 옆에 AI 번역본이 나란히 표시되고, 궁금한 내용을 그 자리에서 바로 질문할 수 있습니다. 번역·어시스턴트 모델로는 로컬 Ollama, 외부 API(Gemini/Claude/OpenAI), CLI 기반 엔진(Antigravity/Claude Code/Codex)을 모두 지원합니다.
+논문을 업로드하면 원문 옆에 AI 번역본이 나란히 표시되고, 궁금한 내용을 그 자리에서 바로 질문할 수 있습니다. 번역·어시스턴트 모델로는 로컬 Ollama, 외부 API(Gemini/Claude/OpenAI), CLI 기반 엔진(Antigravity/Claude Code/Codex)을 모두 지원합니다. Windows/macOS/Linux용 네이티브 데스크톱 앱과, 직접 구동하는 웹 앱 두 가지 방식으로 모두 사용할 수 있습니다.
 
 <br>
 
@@ -43,7 +45,24 @@
 </tr>
 <tr>
 <td width="50%"><img src="./image/viewer2.webp" alt="키워드·용어 인사이트 패널"><br><sub align="center">어려운 용어를 짚어주는 키워드·용어 패널</sub></td>
-<td width="50%" valign="middle" align="center"><i>더 많은 기능은 아래 "주요 기능" 참고</i></td>
+<td width="50%"><img src="./image/reference_overlay.png" alt="참고문헌 호버 오버레이"><br><sub align="center">인용 번호에 마우스를 올리면 원문 + 검색 링크가 바로 뜹니다</sub></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><b>참조 오버레이 미리보기</b> — Figure · Table · 수식 참조</summary>
+<br>
+
+<table>
+<tr>
+<td width="50%"><img src="./image/figure_overlay.png" alt="Figure 참조 호버 오버레이"><br><sub align="center">본문에서 그림 번호를 참조하면 해당 Figure를 바로 미리보기</sub></td>
+<td width="50%"><img src="./image/table_overlay.png" alt="Table 참조 호버 오버레이"><br><sub align="center">Table 참조도 동일하게 원문 위치를 크롭해 보여줍니다</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="./image/eq_overlay.png" alt="수식 참조 호버 오버레이"><br><sub align="center">수식 번호 참조 시 해당 수식만 정확히 크롭해 표시</sub></td>
+<td width="50%" valign="middle" align="center"><i>클릭하면 원문의 해당 페이지로 바로 이동합니다</i></td>
 </tr>
 </table>
 
@@ -68,6 +87,29 @@
 
 <a id="-빠른-시작"></a>
 ## 🚀 빠른 시작
+
+EasyPaper는 **① 설치 없이 바로 쓰는 네이티브 데스크톱 앱**과 **② 직접 구동하는 웹 앱**, 두 가지 방식 중 편한 쪽으로 사용할 수 있습니다.
+
+### 1. 데스크톱 앱으로 설치하기 (권장)
+
+Tauri 기반 네이티브 앱으로, Python/Node.js 설치 없이 바로 실행됩니다. 번역 엔진(FastAPI 백엔드)이 앱 안에 사이드카로 내장되어 있어 별도 서버 구동 과정이 필요 없습니다.
+
+1. **[⬇️ 최신 릴리스 다운로드](https://github.com/orion-gz/EasyPaper/releases/latest)** 에서 운영체제에 맞는 설치 파일을 받습니다.
+
+   | OS | 파일 |
+   |---|---|
+   | Windows | `.msi` / `.exe` |
+   | macOS (Apple Silicon) | `_aarch64.dmg` |
+   | Linux | `.AppImage` / `.deb` / `.rpm` |
+
+   > macOS Intel(x64) 빌드는 GitHub Actions의 `macos-13` 러너 용량 문제로 현재 배포되지 않습니다. 추후 안정화되면 다시 추가될 예정입니다.
+
+2. 설치 후 앱을 실행하면 첫 화면에서 AI 엔진(Ollama/Gemini/Claude/OpenAI/CLI) 온보딩 마법사가 안내합니다.
+3. 이후 새 버전이 배포되면 앱이 자동으로 감지하여, 설정 화면의 버튼 한 번으로 업데이트를 내려받고 설치할 수 있습니다.
+
+> ⚠️ 아직 macOS 공증(Notarization)·Windows Authenticode 코드사이닝을 적용하지 않아, 설치 시 운영체제 보안 경고가 뜰 수 있습니다. macOS는 앱 아이콘을 우클릭 → **열기**, Windows는 "Windows의 PC 보호" 화면에서 **추가 정보 → 실행**을 선택하면 정상적으로 설치됩니다.
+
+### 2. 소스에서 웹 앱으로 직접 실행하기
 
 설치와 실행에 필요한 모든 스크립트는 `scripts/` 폴더에 모여 있습니다 — macOS·Linux용은 `scripts/sh/`, Windows용은 `scripts/bat/`에 있습니다.
 
@@ -115,11 +157,12 @@ scripts\bat\cleanup.bat      # Windows
 3. **정밀한 1:1 문장 매칭 & 스크롤 이동** — 원문 PDF 문장과 번역문 문장 간의 마우스 오버 하이라이트 및 클릭 시 반대편 패널 위치 자동 스크롤(양방향) 기능을 지원합니다. LLM 의미론적 태깅 정렬 방식(Semantic Tag Alignment)을 통해 정밀도 높은 문장 정렬을 제공합니다.
 4. **듀얼 패널 뷰어** — 원본 PDF와 AI 번역 결과를 나란히 보며 읽을 수 있고, 패널 너비를 자유롭게 조절할 수 있습니다.
 5. **AI 채팅 어시스턴트** — 논문 내용을 바탕으로 질문할 수 있으며, 답변 생성 대기 상태의 **선형 프로그레스 바(Linear Loader)**와 **현대적인 알약(Capsule) 디자인 UI**를 제공합니다. 여러 논문을 함께 선택해 비교 질문도 할 수 있습니다.
-6. **참고문헌 링크 연결** — 본문의 번호 인용 표기에 마우스를 올리면 참고문헌 원문과 함께 외부 링크(Semantic Scholar/Google Scholar) 검색 툴팁이 뜹니다.
-7. **라이브러리 전체 검색 & PDF 내보내기** — 파일명·제목·번역된 본문까지 가로지르는 통합 검색과, 번역·하이라이트·밑줄·메모가 그대로 포함된 PDF 내보내기를 지원합니다.
+6. **인용·그림·표·수식 참조 오버레이** — 본문의 번호 인용, Figure/Table/수식 참조 어디에든 마우스를 올리면 원문에서 크롭한 미리보기가 바로 뜹니다. 인용은 참고문헌 원문과 함께 Semantic Scholar/Google Scholar 검색 링크도 함께 제공하고, 여러 서브패널로 나뉜 그림도 하나의 오버레이로 합쳐서 보여줍니다. 참조를 클릭하면 원문의 해당 페이지로 바로 이동하며, 설정에서 오버레이 표시 자체를 끌 수도 있습니다.
+7. **라이브러리 전체 검색 & PDF 내보내기** — 파일명·제목·번역된 본문까지 가로지르는 통합 검색과, 번역·하이라이트·밑줄·메모가 그대로 포함된 PDF 내보내기를 지원합니다. 내보낸 PDF는 뷰어와 동일하게 원문·번역 페이지가 나란히 페어링되며, 번역이 길어져도 한 페이지 안에 맞도록 자동으로 축소됩니다.
 8. **통합 모델 선택기** — UI 안에서 제공업체와 AI 모델(Ollama, Gemini, Claude, OpenAI, Antigravity, Claude Code, Codex)을 즉시 전환할 수 있습니다. 로컬에 Ollama가 설치되어 있지 않다면 설정 화면에서 원클릭으로 바로 설치할 수 있습니다.
 9. **자유 배치 Floating 메모** — 논문 본문 및 번역문 위에 메모를 자유롭게 배치하여 기록할 수 있습니다. 실시간 Markdown & LaTeX 수식 렌더링, 5색 테마 컬러 피커, 커스텀 삭제 대화상자를 지원합니다.
 10. **테마 색상 커스터마이징** — 설정 화면에서 프리셋 컬러 또는 컬러 피커로 서비스 전체의 강조 색상을 자유롭게 바꿀 수 있으며, 미니멀하고 절제된 다크/라이트 테마를 기본으로 제공합니다.
+11. **네이티브 데스크톱 앱 (Windows/macOS/Linux)** — Tauri 기반 데스크톱 앱으로도 배포됩니다. FastAPI 백엔드가 사이드카로 앱에 내장되어 있어 별도 서버 구동 없이 바로 실행되며, 새 버전이 나오면 앱 내에서 자동으로 감지해 업데이트를 설치할 수 있습니다.
 
 ---
 
