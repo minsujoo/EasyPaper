@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List
 
-from routers.upload import sessions, ensure_session
+from routers.upload import sessions, ensure_session, require_session_owner
 from services.llm_client import stream_chat
 from services.db import db_save_chat_message, db_get_chat_history
 from services.library import get_document as lib_get_document
@@ -55,16 +55,13 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return list(dict.fromkeys(items))
 
 @router.post("/chat/stream")
-async def chat_stream(data: ChatRequest):
+async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current_user)):
     """
     논문 내용을 기반으로 AI 전문가와 챗을 진행하고 실시간 스트리밍 답변을 반환합니다.
     """
     session_id = data.session_id
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    session = require_session_owner(session_id, current_user)
 
-    session = sessions[session_id]
-    
     # 세션 내의 모든 페이지에서 텍스트 수집
     pages = session.get("pages", [])
     paper_text = ""
@@ -235,9 +232,8 @@ async def get_compare_chat_history(doc_ids: str, current_user: str = Depends(get
 
 
 @router.get("/chat/{session_id}/history")
-async def get_chat_history(session_id: str):
+async def get_chat_history(session_id: str, current_user: str = Depends(get_current_user)):
     """특정 문서의 이전 채팅 히스토리를 반환합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    require_session_owner(session_id, current_user)
     history = db_get_chat_history(session_id)
     return {"history": history}

@@ -57,11 +57,8 @@ async def startup_event():
 @app.get("/api/pdf-file/{session_id}")
 async def serve_pdf(session_id: str, username: str = Depends(get_current_user)):
     """PDF 파일을 직접 서빙합니다."""
-    if not upload.ensure_session(session_id):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-    pdf_path = upload.sessions[session_id]["pdf_path"]
-    return FileResponse(pdf_path, media_type="application/pdf")
+    session = upload.require_session_owner(session_id, username)
+    return FileResponse(session["pdf_path"], media_type="application/pdf")
 
 
 # 프론트엔드 정적 파일 서빙 (빌드된 dist 폴더)

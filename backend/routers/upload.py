@@ -50,6 +50,22 @@ def ensure_session(session_id: str) -> bool:
         return False
 
 
+def require_session_owner(session_id: str, current_user: str) -> dict:
+    """세션이 존재하고 현재 로그인한 사용자 소유인지 확인합니다.
+
+    library.py의 _require_owned_document와 동일한 이유로, 다른 사용자의
+    세션은 존재 여부조차 알려주지 않도록(403이 아니라) 존재하지 않는
+    경우와 동일하게 404로 응답한다. jobs.py/main.py의 세션 기반
+    엔드포인트에서도 재사용한다.
+    """
+    if not ensure_session(session_id):
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    session = sessions[session_id]
+    if session.get("username") != current_user:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    return session
+
+
 def restore_sessions_from_library():
     """서버 시작 시 라이브러리의 문서들을 세션으로 복원하고 미완료 잡을 재개합니다."""
     for doc in list_documents():
@@ -153,12 +169,9 @@ async def upload_pdf(
 
 
 @router.get("/session/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, current_user: str = Depends(get_current_user)):
     """세션 정보를 반환합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-
-    session = sessions[session_id]
+    session = require_session_owner(session_id, current_user)
     return {
         "session_id": session_id,
         "filename": session["filename"],
@@ -168,17 +181,16 @@ async def get_session(session_id: str):
 
 
 @router.delete("/session/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, current_user: str = Depends(get_current_user)):
     """세션 및 업로드 파일을 삭제합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    require_session_owner(session_id, current_user)
 
     session = sessions.pop(session_id)
     session_dir = os.path.dirname(session["pdf_path"])
-    
+
     from services.library import delete_chat_sessions
     delete_chat_sessions(session_id)
-    
+
     shutil.rmtree(session_dir, ignore_errors=True)
 
     from services.cache import clear_session_cache
@@ -188,8 +200,7 @@ async def delete_session(session_id: str):
 
 
 @router.get("/pdf/{session_id}")
-async def get_pdf_path(session_id: str):
+async def get_pdf_path(session_id: str, current_user: str = Depends(get_current_user)):
     """세션의 PDF 파일 경로를 반환합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-    return {"pdf_path": sessions[session_id]["pdf_path"]}
+    session = require_session_owner(session_id, current_user)
+    return {"pdf_path": session["pdf_path"]}

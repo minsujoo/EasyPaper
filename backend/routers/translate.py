@@ -1,9 +1,10 @@
 import asyncio
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
-from routers.upload import sessions, ensure_session
+from routers.upload import require_session_owner
+from services.auth import get_current_user
 from services.chunker import split_into_chunks, align_sentences, tag_source_text, parse_tagged_translation
 from services.llm_client import stream_translation, check_ollama_health
 from services.cache import get_cached_translation, save_translation_cache, get_cached_translation_full
@@ -20,16 +21,14 @@ async def translate_page(
     style: str = "academic",
     ignore_math: bool = False,
     ignore_table: bool = True,
-    ignore_refs: bool = False
+    ignore_refs: bool = False,
+    current_user: str = Depends(get_current_user)
 ):
     """
     특정 페이지를 번역하고 SSE 스트리밍으로 반환합니다.
     이미 동일한 옵션으로 번역된 페이지는 캐시에서 즉시 반환합니다.
     """
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-
-    session = sessions[session_id]
+    session = require_session_owner(session_id, current_user)
     total_pages = session["total_pages"]
 
     if page_num < 1 or page_num > total_pages:
@@ -221,12 +220,9 @@ async def get_providers_availability():
 
 
 @router.get("/translation-status/{session_id}")
-async def translation_status(session_id: str):
+async def translation_status(session_id: str, current_user: str = Depends(get_current_user)):
     """세션의 번역 완료 페이지 목록을 반환합니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-
-    session = sessions[session_id]
+    session = require_session_owner(session_id, current_user)
     total_pages = session["total_pages"]
 
     from services.cache import get_cached_translation
@@ -244,11 +240,10 @@ async def translation_status(session_id: str):
 
 
 @router.post("/translate/{session_id}/clear-cache")
-async def clear_translation_cache(session_id: str):
+async def clear_translation_cache(session_id: str, current_user: str = Depends(get_current_user)):
     """세션의 모든 번역 캐시와 라이브러리 번역 저장본 및 잡 상태를 지웁니다."""
-    if not ensure_session(session_id):
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-        
+    require_session_owner(session_id, current_user)
+
     # 1. 파일 캐시 삭제
     from services.cache import clear_session_cache
     clear_session_cache(session_id)
