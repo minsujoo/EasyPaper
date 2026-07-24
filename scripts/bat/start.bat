@@ -11,7 +11,7 @@ for /f "usebackq delims=" %%R in (`powershell -NoProfile -Command ^
     "$idx = Join-Path '%REPO_ROOT%' 'frontend\dist\index.html'; " ^
     "if (-not (Test-Path $idx)) { 'BUILD'; exit }; " ^
     "$missing = $false; " ^
-    "(Select-String -Path $idx -Pattern '\"(/assets/[^\"]+\.(js|css))\"' -AllMatches).Matches | ForEach-Object { " ^
+    "(Select-String -Path $idx -Pattern '\x22(/assets/[^\x22]+\.(js|css))\x22' -AllMatches).Matches | ForEach-Object { " ^
     "  $p = Join-Path '%REPO_ROOT%' ('frontend\dist' + $_.Groups[1].Value.Replace('/', '\')); " ^
     "  if (-not (Test-Path $p)) { $missing = $true } " ^
     "}; " ^
