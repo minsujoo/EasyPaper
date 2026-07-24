@@ -112,18 +112,32 @@ async def upload_pdf(
     os.makedirs(session_dir, exist_ok=True)
     pdf_path = os.path.join(session_dir, "document.pdf")
 
-    # 파일 저장
-    content = await file.read()
-    file_size_mb = len(content) / (1024 * 1024)
+    # 파일 저장 (스트리밍) - await file.read()로 전체를 한 번에 읽으면 크기
+    # 제한 검사가 이미 전체 파일을 메모리에 다 올린 "다음"에야 이루어져,
+    # MAX_FILE_SIZE_MB를 아무리 작게 잡아도 공격자가 매우 큰 파일을 계속
+    # 올려 메모리를 고갈시키는 DoS 벡터가 된다. 청크 단위로 읽어 디스크에
+    # 바로 쓰면서, 누적 크기가 한도를 넘는 순간 더 읽지 않고 즉시 중단한다.
+    CHUNK_SIZE = 1024 * 1024  # 1MB
+    max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+    total_bytes = 0
+    try:
+        async with aiofiles.open(pdf_path, "wb") as f:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"파일 크기가 {MAX_FILE_SIZE_MB}MB를 초과합니다."
+                    )
+                await f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
 
-    if file_size_mb > MAX_FILE_SIZE_MB:
-        raise HTTPException(
-            status_code=413,
-            detail=f"파일 크기가 {MAX_FILE_SIZE_MB}MB를 초과합니다."
-        )
-
-    async with aiofiles.open(pdf_path, "wb") as f:
-        await f.write(content)
+    file_size_mb = total_bytes / (1024 * 1024)
 
     # PDF 파싱
     try:
