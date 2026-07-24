@@ -1,7 +1,12 @@
-name: Tauri Desktop Spike
+name: Tauri Sidecar Smoke Test
 
 # 수동 트리거만 사용 - 기존 웹 배포(systemd/Docker) 파이프라인에는 전혀
-# 개입하지 않는다. feature/tauri-desktop-spike 브랜치의 실현 가능성 검증용.
+# 개입하지 않는다. tauri-desktop-spike 브랜치는 main에 병합되어 데스크탑
+# 지원이 정식화됐고(tauri-release.yml이 실제 서명/배포까지 담당), 이
+# 워크플로우는 그 무거운 릴리스 빌드 없이도 "PyInstaller sidecar가 정상
+# 기동해 응답하는지 + Rust가 컴파일되는지"를 빠르게 확인하는 스모크
+# 테스트로 계속 남겨둔다(tauri-release.yml에는 이 healthcheck/cargo
+# check 단계가 없음).
 on:
   workflow_dispatch: {}
 
