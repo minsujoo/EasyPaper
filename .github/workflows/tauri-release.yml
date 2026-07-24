@@ -1,11 +1,15 @@
 name: Tauri Release
 
-# 태그 push(v*) 또는 수동 트리거로 win/mac-arm64/mac-x64/linux 4개 플랫폼을
+# 태그 push(v*) 또는 수동 트리거로 win/mac-arm64/linux 3개 플랫폼을
 # 빌드해 GitHub Release에 업로드하고, Tauri updater가 읽는 latest.json도
 # 함께 생성한다. TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)로 업데이트 페이로드에
 # 서명하지만, OS 코드사이닝(macOS 공증/Windows Authenticode)은 아직 하지
 # 않으므로 설치 시 Gatekeeper/SmartScreen 경고가 뜬다 - 유료 인증서 발급
 # 후 별도로 추가 필요.
+#
+# macos-13(Intel) 러너는 GitHub Actions 큐에서 몇 시간째 시작되지 않는
+# 문제(용량 부족/단종 추정)로 인해 매트릭스에서 제외했다 - macOS Intel
+# 빌드가 다시 필요하면 macos-13 대신 다른 macOS 러너 이미지를 확인할 것.
 #
 # v* 태그 push는 빌드가 끝나면 릴리스를 즉시 게시(draft=false)한다 - 실제
 # 배포 트리거이므로 사람이 다시 "Publish" 버튼을 누르지 않아도 updater
@@ -32,8 +36,6 @@ jobs:
             name: windows
           - os: macos-14
             name: macos-arm64
-          - os: macos-13
-            name: macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
