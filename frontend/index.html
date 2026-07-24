@@ -891,6 +891,30 @@
               <span id="system-update-status" style="font-size: 12.5px; color: var(--text-secondary);"></span>
             </div>
           </div>
+
+          <div id="tauri-update-section" class="form-group hidden">
+            <label>앱 업데이트 (App Update)</label>
+            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>데스크탑 앱 업데이트:</strong><br>
+              아래 버튼을 누르면 새 버전이 있는지 확인합니다. 새 버전이 있으면 다운로드 후 설치하고 앱을 자동으로 재시작합니다.
+            </div>
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 12px;">
+              <span id="tauri-current-version-label" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);"></span>
+            </div>
+            <div id="tauri-update-notes-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
+              <div id="tauri-update-version-line" class="update-changelog-version-line"></div>
+              <div id="tauri-update-notes" style="font-size: 12.5px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; max-height: 240px; overflow-y: auto;"></div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <button type="button" id="tauri-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
+              </button>
+              <button type="button" id="tauri-update-install-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>설치 후 재시작
+              </button>
+              <span id="tauri-update-status" style="font-size: 12.5px; color: var(--text-secondary);"></span>
+            </div>
+          </div>
         </div>
       </div>
 

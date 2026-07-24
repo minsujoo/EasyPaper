@@ -1527,6 +1527,9 @@ async function checkAuthentication() {
       checkPostUpdateNoticeOnce().then((shown) => {
         if (!shown) maybeAutoCheckForUpdate()
       })
+    } else {
+      loadTauriAppVersion()
+      checkTauriUpdate({ silent: true })
     }
   } else {
     showLogin()
@@ -2638,6 +2641,143 @@ const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
 const systemUpdateSection = $('system-update-section')
 if (isTauriDesktop && systemUpdateSection) {
   systemUpdateSection.classList.add('hidden')
+}
+
+// ── 데스크탑(Tauri) 자체 업데이트: tauri-plugin-updater를 프론트에서 직접 호출한다.
+// 기존에는 Rust 쪽 setup()에서 check()만 호출하고 결과를 로그에 남기는 게
+// 전부라, 새 버전이 있어도 사용자에게 전달되거나 실제로 설치되는 경로가
+// 전혀 없었다. updater:default 권한(check/download/install)과
+// process:allow-restart 권한은 이미 capabilities/default.json에 있었으므로
+// (스파이크 때 미리 넣어뒀던 것으로 보임) 프론트 바인딩만 연결하면 된다.
+const tauriUpdateSection = $('tauri-update-section')
+const tauriCurrentVersionLabel = $('tauri-current-version-label')
+const tauriUpdateCheckBtn = $('tauri-update-check-btn')
+const tauriUpdateInstallBtn = $('tauri-update-install-btn')
+const tauriUpdateStatus = $('tauri-update-status')
+const tauriUpdateNotesBox = $('tauri-update-notes-box')
+const tauriUpdateVersionLine = $('tauri-update-version-line')
+const tauriUpdateNotes = $('tauri-update-notes')
+
+let pendingTauriUpdate = null
+
+if (isTauriDesktop && tauriUpdateSection) {
+  tauriUpdateSection.classList.remove('hidden')
+}
+
+async function loadTauriAppVersion() {
+  if (!isTauriDesktop || !tauriCurrentVersionLabel) return
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app')
+    const version = await getVersion()
+    tauriCurrentVersionLabel.textContent = `현재 버전: v${version}`
+  } catch (err) {
+    console.warn('데스크탑 앱 버전 조회 실패:', err)
+  }
+}
+
+function resetTauriUpdateState() {
+  pendingTauriUpdate = null
+  if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = true
+  if (tauriUpdateNotesBox) tauriUpdateNotesBox.classList.add('hidden')
+}
+
+async function checkTauriUpdate({ silent = false } = {}) {
+  if (!isTauriDesktop) return
+  resetTauriUpdateState()
+  if (!silent && tauriUpdateCheckBtn) {
+    tauriUpdateCheckBtn.disabled = true
+    tauriUpdateCheckBtn.innerHTML = icon('refreshCw', 13, 'style="vertical-align:-2px;margin-right:4px"') + '확인 중...'
+  }
+  if (!silent && tauriUpdateStatus) {
+    tauriUpdateStatus.style.color = 'var(--text-secondary)'
+    tauriUpdateStatus.textContent = ''
+  }
+
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (update) {
+      pendingTauriUpdate = update
+      if (tauriUpdateVersionLine) {
+        tauriUpdateVersionLine.textContent = `v${update.currentVersion} → v${update.version}`
+      }
+      if (tauriUpdateNotes) {
+        tauriUpdateNotes.textContent = update.body || '세부 변경 내역이 제공되지 않았습니다.'
+      }
+      if (tauriUpdateNotesBox) tauriUpdateNotesBox.classList.remove('hidden')
+      if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = false
+      if (tauriUpdateStatus) {
+        tauriUpdateStatus.style.color = '#10b981'
+        tauriUpdateStatus.textContent = '새 업데이트가 있습니다.'
+      }
+    } else if (tauriUpdateStatus) {
+      tauriUpdateStatus.style.color = 'var(--text-secondary)'
+      tauriUpdateStatus.textContent = '이미 최신 버전입니다.'
+    }
+  } catch (err) {
+    if (tauriUpdateStatus) {
+      tauriUpdateStatus.style.color = '#ef4444'
+      tauriUpdateStatus.textContent = '업데이트 확인 실패: ' + (err.message || err)
+    }
+  } finally {
+    if (tauriUpdateCheckBtn) {
+      tauriUpdateCheckBtn.disabled = false
+      tauriUpdateCheckBtn.innerHTML = icon('checkCircle', 13, 'style="vertical-align:-2px;margin-right:4px"') + '업데이트 확인'
+    }
+  }
+}
+
+async function installTauriUpdate() {
+  if (!pendingTauriUpdate) return
+  const ok = await showCustomConfirm(
+    `새 버전(v${pendingTauriUpdate.version})을 다운로드하고 설치한 뒤 앱을 재시작하시겠습니까?`,
+    { title: '앱 업데이트', confirmText: '설치 후 재시작', danger: false }
+  )
+  if (!ok) return
+
+  if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = true
+  if (tauriUpdateCheckBtn) tauriUpdateCheckBtn.disabled = true
+
+  try {
+    let downloadedBytes = 0
+    let totalBytes = 0
+    await pendingTauriUpdate.downloadAndInstall((event) => {
+      if (!tauriUpdateStatus) return
+      tauriUpdateStatus.style.color = 'var(--text-secondary)'
+      switch (event.event) {
+        case 'Started':
+          totalBytes = event.data.contentLength || 0
+          tauriUpdateStatus.textContent = '다운로드 시작...'
+          break
+        case 'Progress':
+          downloadedBytes += event.data.chunkLength
+          tauriUpdateStatus.textContent = totalBytes
+            ? `다운로드 중... ${Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))}%`
+            : '다운로드 중...'
+          break
+        case 'Finished':
+          tauriUpdateStatus.textContent = '설치 중... 곧 앱이 재시작됩니다.'
+          break
+      }
+    })
+
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch (err) {
+    if (tauriUpdateStatus) {
+      tauriUpdateStatus.style.color = '#ef4444'
+      tauriUpdateStatus.textContent = '설치 실패: ' + (err.message || err)
+    }
+    if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = false
+    if (tauriUpdateCheckBtn) tauriUpdateCheckBtn.disabled = false
+  }
+}
+
+if (tauriUpdateCheckBtn) {
+  tauriUpdateCheckBtn.addEventListener('click', () => checkTauriUpdate())
+}
+if (tauriUpdateInstallBtn) {
+  tauriUpdateInstallBtn.addEventListener('click', installTauriUpdate)
 }
 
 if (systemUpdateCheckBtn && !isTauriDesktop) {
