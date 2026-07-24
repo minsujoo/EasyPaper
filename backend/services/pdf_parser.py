@@ -669,6 +669,16 @@ def _match_caption_for_rect(rect: list, captions: List[Dict[str, Any]]) -> Dict[
     캡션은 보통 그림 바로 아래, 표는 바로 위에 위치하므로 상하 인접 캡션을 모두
     후보로 보되, 가로 범위가 겹치고 세로 거리가 가장 짧은 것을 채택합니다.
 
+    단, 이 상/하 허용은 각 캡션의 종류(Table/Figure)에 맞는 방향으로만
+    적용해야 한다. 두 표가 세로로 가깝게 붙어 있으면(예: TABLE III 바로
+    아래 TABLE IV), 위쪽 표(TABLE III) 입장에서 자기 자신의 캡션(위쪽)보다
+    아래에 있는 TABLE IV의 캡션이 절대 거리상 오히려 더 가까운 경우가
+    있다. 방향을 구분하지 않고 최소 거리만으로 고르면 위쪽 표가 아래쪽
+    표의 캡션에 잘못 매칭되어, label_groups 병합 단계에서 두 표가 하나의
+    bbox로 합쳐져 버린다(실제로 합성 PDF로 재현됨 - TABLE III와 TABLE IV가
+    하나의 "Table IV" 오버레이로 크롭되는 버그). Table 캡션은 위에 있을
+    때만, Figure 캡션은 아래에 있을 때만 후보로 인정한다.
+
     벡터 그래픽으로 그려진 다이어그램은 (숨겨진 배경 사각형 등으로 인해) 감지된
     bbox가 실제 그림 내용보다 아래/위로 더 뻗어 있어 캡션 줄과 겹쳐버리는
     경우가 있다. 이 경우 캡션을 후보에서 완전히 제외하면 매칭 자체가 실패하므로,
@@ -685,20 +695,31 @@ def _match_caption_for_rect(rect: list, captions: List[Dict[str, Any]]) -> Dict[
         overlap = min(x1, cx1) - max(x0, cx0)
         if overlap <= 0:
             continue
+        is_table_caption = cap["label"].startswith("Table")
         clip_y0 = None
         clip_y1 = None
-        if cy0 >= y1:
-            dist = cy0 - y1  # 캡션이 아래에 있는 경우 (Figure)
-        elif cy1 <= y0:
-            dist = y0 - cy1  # 캡션이 위에 있는 경우 (Table)
-        elif cy0 >= y1 - edge_margin:
-            # 사각형 하단 가장자리 부근까지 캡션이 파고든 경우 - 사실상 바로
-            # 아래에 있는 캡션으로 보고 인정하되, 캡션 시작 지점에서 잘라낸다
-            dist = 0.0
-            clip_y1 = cy0
+        if cy1 <= y0:
+            # 캡션이 사각형 위에 있는 경우 - Table 관례에만 부합
+            if not is_table_caption:
+                continue
+            dist = y0 - cy1
+        elif cy0 >= y1:
+            # 캡션이 사각형 아래에 있는 경우 - Figure 관례에만 부합
+            if is_table_caption:
+                continue
+            dist = cy0 - y1
         elif cy1 <= y0 + edge_margin:
+            # 사각형 상단 가장자리 부근까지 캡션이 파고든 경우 - 사실상 바로
+            # 위에 있는 캡션으로 보고 인정(Table 방향)하되, 캡션 끝 지점에서 잘라낸다
+            if not is_table_caption:
+                continue
             dist = 0.0
             clip_y0 = cy1
+        elif cy0 >= y1 - edge_margin:
+            if is_table_caption:
+                continue
+            dist = 0.0
+            clip_y1 = cy0
         else:
             continue  # 사각형 중심부까지 깊이 겹치는 캡션은 대상에서 제외
         if dist > 40.0:
@@ -978,13 +999,23 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
         # 미매칭 사각형은 같은 그림의 일부로 보고 흡수한다. 한 번 흡수하면
         # 그룹의 bbox가 커져 다음 패널과도 새로 인접할 수 있으므로 더 이상
         # 흡수할 것이 없을 때까지 반복한다.
+        #
+        # 이 흡수는 Figure 전용이다 - Table은 항상 하나의 완결된 그리드라
+        # 서브패널을 다시 이어붙일 필요가 없고, 페이지 폭 전체를 차지하는
+        # 표(Table III 등) 바로 아래 40pt 이내에 있는, 전혀 무관한 다른
+        # 표/그림(예: 옆 칸에 나란히 놓인 Table IV의 차트)까지 "가로로 많이
+        # 겹친다"는 이유로 잘못 흡수해버리는 문제가 있었다 - 겹침 비율이
+        # 더 좁은 쪽(흡수 대상) 폭 기준이라, 폭이 넓은 표는 그 아래 있는
+        # 어떤 좁은 요소와도 쉽게 "많이 겹치는" 것으로 계산되기 때문이다.
         changed = True
         while changed and unlabeled_rects:
             changed = False
             still_unlabeled = []
             for u in unlabeled_rects:
                 absorbed = False
-                for g in label_groups.values():
+                for label, g in label_groups.items():
+                    if label.startswith("Table"):
+                        continue
                     rect = g["rect"]
                     gap = _vertical_gap(rect, u)
                     if gap < 0 or gap > _PANEL_ABSORB_MAX_GAP:

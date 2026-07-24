@@ -95,6 +95,96 @@ def test_stacked_panel_figure_absorbs_distant_unlabeled_panel(tmp_path):
     assert entry_bottom_pct >= (bottom_rect.y1 / page_height) * 100 - 1
 
 
+def test_upper_table_does_not_match_lower_tables_caption(tmp_path):
+    """세로로 가깝게 붙은 두 표(예: TABLE III 바로 아래 TABLE IV)가 있으면,
+    위쪽 표(TABLE III) 입장에서 자기 자신의 캡션(위쪽)보다 아래쪽 표
+    (TABLE IV)의 캡션이 절대 거리상 오히려 더 가까울 수 있다. 방향을
+    구분하지 않고 최소 거리만으로 캡션을 고르면 위쪽 표가 아래쪽 표의
+    캡션에 잘못 매칭되어, 두 표가 하나의 bbox로 합쳐져 버리는 버그가
+    있었다(Table IV를 클릭하면 TABLE III까지 통째로 크롭되어 보임).
+    Table 캡션은 표 위에 있을 때만 후보로 인정해야 한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    # TABLE III: 캡션이 표 위 지점에 있음(자기 자신과의 거리는 40pt 이내로,
+    # 그러나 TABLE IV 캡션과의 거리(아래 참고)보다는 더 멀게)
+    page.insert_text((250, 45), "TABLE III", fontsize=9)
+    page.draw_line(fitz.Point(50, 75), fitz.Point(545, 75), color=(0, 0, 0), width=1)
+    page.insert_text((60, 90), "datasets methods average kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 100), fitz.Point(545, 100), color=(0, 0, 0), width=1)
+    page.insert_text((60, 112), "Conformer 88.19 0.7155", fontsize=7)
+    page.draw_line(fitz.Point(50, 155), fitz.Point(545, 155), color=(0, 0, 0), width=1)
+
+    # TABLE IV: TABLE III 바로 아래, 폭이 더 좁은 표. TABLE III 사각형에서
+    # TABLE IV 캡션까지의 거리가 TABLE III 자신의 캡션까지 거리보다 오히려 더 짧다.
+    page.insert_text((150, 180), "TABLE IV", fontsize=9)
+    page.draw_line(fitz.Point(50, 218), fitz.Point(290, 218), color=(0, 0, 0), width=1)
+    page.insert_text((60, 232), "datasets methods accuracy kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 240), fitz.Point(290, 240), color=(0, 0, 0), width=1)
+    page.insert_text((60, 252), "Conformer 95.30 0.9295", fontsize=7)
+    page.draw_line(fitz.Point(50, 315), fitz.Point(290, 315), color=(0, 0, 0), width=1)
+
+    path = tmp_path / "adjacent_tables.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    result = extract_pdf_images(str(path))
+    labels = sorted(r.get("label") or "" for r in result)
+    assert labels == ["Table III", "Table IV"], f"두 표가 별도 항목으로 남아야 하는데: {result}"
+
+    table3 = next(r for r in result if r["label"] == "Table III")
+    table4 = next(r for r in result if r["label"] == "Table IV")
+    page_height = 842
+    # Table III의 크롭 범위가 Table IV 영역(y=218 이후)까지 침범하면 안 된다
+    table3_bottom_pct = table3["top"] + table3["height"]
+    assert table3_bottom_pct < (218 / page_height) * 100
+
+
+def test_wide_table_does_not_absorb_unrelated_figure_below(tmp_path):
+    """페이지 폭 전체를 차지하는 표(Table) 바로 아래 40pt 이내에, 그 표와는
+    무관하게 옆 칸에 나란히 놓인 다른 그림/차트가 있을 수 있다. 서브패널
+    흡수 로직(_PANEL_ABSORB_*)은 겹침 비율을 더 좁은 쪽(흡수 대상) 폭
+    기준으로 계산하므로, 폭이 넓은 표는 그 아래 있는 어떤 좁은 요소와도
+    "가로로 많이 겹치는" 것으로 오판되어 무관한 그림까지 표 안으로
+    흡수해버리는 버그가 있었다. 이 흡수는 Figure 전용으로 제한되어야
+    하고, Table은 무관한 아래쪽 요소를 흡수하면 안 된다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    # 페이지 폭 전체를 차지하는 표
+    page.insert_text((250, 45), "Table 1", fontsize=9)
+    page.draw_line(fitz.Point(50, 75), fitz.Point(545, 75), color=(0, 0, 0), width=1)
+    page.insert_text((60, 90), "datasets methods average kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 100), fitz.Point(545, 100), color=(0, 0, 0), width=1)
+    page.draw_line(fitz.Point(50, 155), fitz.Point(545, 155), color=(0, 0, 0), width=1)
+
+    # 표 바로 아래(39pt 간격), 표 폭의 오른쪽 절반에만 걸치는 무관한 차트
+    # (자기 캡션은 이 페이지에 없음 - 다른 페이지의 Figure에 속한다고 가정)
+    chart_rect = fitz.Rect(330, 194, 545, 340)
+    page.draw_rect(chart_rect, color=(0, 0, 0), width=1.2)
+    page.draw_line(fitz.Point(340, 330), fitz.Point(500, 210), color=(0.3, 0.3, 0.8), width=3)
+
+    path = tmp_path / "wide_table_unrelated_chart.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    result = extract_pdf_images(str(path))
+    table_entries = [r for r in result if r.get("label") == "Table 1"]
+    assert len(table_entries) == 1
+    table_entry = table_entries[0]
+
+    page_height = 842
+    table_bottom_pct = table_entry["top"] + table_entry["height"]
+    # 표의 크롭 범위가 차트 시작 지점(y=194) 아래까지 뻗어나가면 안 된다
+    assert table_bottom_pct < (194 / page_height) * 100 + 2, (
+        f"Table 1이 무관한 차트를 흡수해 크롭 범위가 커짐: {table_entry}"
+    )
+
+    # 차트는 별도의 라벨 없는 항목으로 남아야 한다
+    unlabeled = [r for r in result if not r.get("label")]
+    assert len(unlabeled) == 1
+
+
 def test_unrelated_unlabeled_regions_are_not_merged(tmp_path):
     """캡션에 매칭되지 않는(라벨이 없는) 영역들은 서로 다른 그림/표의 잔여
     조각일 수 있으므로 하나로 합쳐지면 안 되고, 감지된 개수만큼 개별
