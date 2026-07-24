@@ -1,9 +1,17 @@
-from fastapi import APIRouter, Response, HTTPException, status, Depends
+from fastapi import APIRouter, Request, Response, HTTPException, status, Depends
 from fastapi.responses import StreamingResponse
 import json
 import httpx
 from pydantic import BaseModel
-from services.auth import verify_password, hash_password, create_session_token, get_current_user
+from services.auth import (
+    verify_password,
+    hash_password,
+    create_session_token,
+    get_current_user,
+    get_login_lockout_remaining,
+    record_failed_login,
+    reset_login_attempts,
+)
 from config import (
     get_app_username,
     get_app_password_hash,
@@ -72,16 +80,29 @@ class ChangeCredentialsRequest(BaseModel):
     new_password: str
 
 @router.post("/auth/login")
-async def login(response: Response, data: LoginRequest):
+async def login(request: Request, response: Response, data: LoginRequest):
     from services.auth import SESSION_TTL_DEFAULT_SECONDS, SESSION_TTL_REMEMBER_SECONDS
     from services.db import get_user
+
+    lockout_remaining = get_login_lockout_remaining(request)
+    if lockout_remaining > 0:
+        retry_after = int(lockout_remaining) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"로그인 시도가 너무 많습니다. {retry_after}초 후 다시 시도해주세요.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = get_user(data.username)
 
     if not user or not verify_password(user["password_hash"], data.password):
+        record_failed_login(request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다."
         )
+
+    reset_login_attempts(request)
 
     # "로그인 상태 유지"를 체크하면 훨씬 긴 만료 기간의 세션 쿠키를 발급해,
     # 다음에 앱을 열 때 자동으로 로그인된 상태로 시작하게 한다(비밀번호를

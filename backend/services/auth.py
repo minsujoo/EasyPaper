@@ -27,6 +27,59 @@ def hash_password(password: str) -> str:
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
     return f"{salt.hex()}:{key.hex()}"
 
+
+# ─────────────────────────────────────────────────────────
+#  로그인 무차별 대입(brute-force) 방어
+# ─────────────────────────────────────────────────────────
+# self-host 배포(리버스 프록시 뒤 네트워크 노출)를 명시적으로 지원하는 앱인데
+# 로그인 시도 횟수 제한이 전혀 없어, 비밀번호를 admin/admin에서 바꾼 뒤에도
+# 무제한으로 대입 공격이 가능했다. Redis 등 별도 인프라 없이(단일 관리자
+# 계정, 인메모리 세션과 동일한 수준의 영속성이면 충분) 클라이언트 IP 기준
+# 슬라이딩 윈도우 잠금을 둔다 - 서버 재시작 시 초기화되는 건 감내 가능한
+# 트레이드오프(재시작 자체가 이미 관리자 권한이 필요한 드문 이벤트).
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCKOUT_SECONDS = 5 * 60
+
+# IP -> {"count": 실패 횟수, "first_at": 첫 실패 시각, "locked_until": 잠금 해제 시각}
+_login_failures: dict[str, dict] = {}
+
+
+def _client_ip(request: Request) -> str:
+    # 리버스 프록시(NPM 등) 뒤에서는 request.client.host가 프록시 자신의
+    # 주소로 잡혀 모든 클라이언트가 하나로 묶일 수 있지만, X-Forwarded-For는
+    # 프록시를 신뢰할 수 있다는 보장 없이는 클라이언트가 임의로 위조해
+    # 잠금을 우회할 수 있는 값이라 그대로 신뢰하지 않는다. 지금은 요청의
+    # 실제 커넥션 주소만 기준으로 삼는다.
+    return request.client.host if request.client else "unknown"
+
+
+def get_login_lockout_remaining(request: Request) -> float:
+    """현재 요청의 클라이언트가 잠겨 있으면 남은 초를, 아니면 0을 반환합니다."""
+    state = _login_failures.get(_client_ip(request))
+    if not state:
+        return 0.0
+    remaining = state.get("locked_until", 0) - time.time()
+    return remaining if remaining > 0 else 0.0
+
+
+def record_failed_login(request: Request) -> None:
+    """로그인 실패를 기록하고, 임계치를 넘으면 잠급니다."""
+    ip = _client_ip(request)
+    now = time.time()
+    state = _login_failures.get(ip)
+    if not state or now - state["first_at"] > LOGIN_WINDOW_SECONDS:
+        state = {"count": 0, "first_at": now, "locked_until": 0.0}
+    state["count"] += 1
+    if state["count"] >= LOGIN_MAX_ATTEMPTS:
+        state["locked_until"] = now + LOGIN_LOCKOUT_SECONDS
+    _login_failures[ip] = state
+
+
+def reset_login_attempts(request: Request) -> None:
+    """로그인 성공 시 해당 클라이언트의 실패 기록을 초기화합니다."""
+    _login_failures.pop(_client_ip(request), None)
+
 SESSION_TTL_DEFAULT_SECONDS = 7 * 24 * 3600
 # "로그인 상태 유지"를 체크했을 때 쓰는 훨씬 긴 만료 기간 - 매번 다시
 # 로그인하지 않아도 되는 "자동 로그인" 효과를 기존의 안전한 HttpOnly
