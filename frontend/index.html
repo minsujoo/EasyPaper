@@ -544,6 +544,7 @@
         <button class="tab-btn" data-tab="tab-model">모델 설정</button>
         <button class="tab-btn" data-tab="tab-account">계정 설정</button>
         <button class="tab-btn" data-tab="tab-advanced">고급 설정</button>
+        <button class="tab-btn" data-tab="tab-info">정보</button>
       </div>
       
       <!-- 일반 설정 탭 -->
@@ -633,39 +634,6 @@
             </button>
           </div>
           
-          <div id="system-update-section" class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
-            <label>시스템 업데이트 (System Update)</label>
-            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>GitHub 최신 업데이트 확인 및 자동 빌드:</strong><br>
-              아래 버튼을 누르면 GitHub 저장소로부터 최신 코드를 풀(Pull) 받고,<br>
-              변경된 내용이 있을 경우 프론트엔드를 자동 빌드한 뒤 EasyPaper 데몬 서비스를 즉시 재기동합니다.
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 12.5px; color: var(--text-secondary); white-space: nowrap;">자동 업데이트 확인</span>
-                <select id="setting-update-check-interval" class="form-select" style="width: auto; min-width: 110px;">
-                  <option value="daily">매일</option>
-                  <option value="weekly">매주</option>
-                  <option value="never">사용 안 함</option>
-                </select>
-              </div>
-              <span id="current-version-label" class="current-version-label" title="전체 변경 이력 보기" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px;"></span>
-            </div>
-            <div id="system-update-changelog-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
-              <div id="system-update-version-line" class="update-changelog-version-line"></div>
-              <ul id="system-update-changelog" class="update-changelog-list"></ul>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <button type="button" id="system-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
-              </button>
-              <button type="button" id="system-update-run-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>최신 업데이트 실행
-              </button>
-              <span id="system-update-status" style="font-size: 12.5px; color: var(--text-secondary);"></span>
-            </div>
-          </div>
-
           <div class="form-actions" style="margin-top: 15px;">
             <button type="submit" class="btn btn-primary" style="width: 100%;">일반 설정 저장</button>
           </div>
@@ -858,7 +826,45 @@
           </div>
         </form>
       </div>
-      
+
+      <!-- 정보 탭 -->
+      <div id="tab-info" class="tab-pane">
+        <div class="modal-form">
+          <div id="system-update-section" class="form-group">
+            <label>시스템 업데이트 (System Update)</label>
+            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>GitHub 최신 업데이트 확인 및 자동 빌드:</strong><br>
+              아래 버튼을 누르면 GitHub 저장소로부터 최신 코드를 풀(Pull) 받고,<br>
+              변경된 내용이 있을 경우 프론트엔드를 자동 빌드한 뒤 EasyPaper 데몬 서비스를 즉시 재기동합니다.
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12.5px; color: var(--text-secondary); white-space: nowrap;">자동 업데이트 확인</span>
+                <select id="setting-update-check-interval" class="form-select" style="width: auto; min-width: 110px;">
+                  <option value="daily">매일</option>
+                  <option value="weekly">매주</option>
+                  <option value="never">사용 안 함</option>
+                </select>
+              </div>
+              <span id="current-version-label" class="current-version-label" title="전체 변경 이력 보기" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px;"></span>
+            </div>
+            <div id="system-update-changelog-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
+              <div id="system-update-version-line" class="update-changelog-version-line"></div>
+              <ul id="system-update-changelog" class="update-changelog-list"></ul>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <button type="button" id="system-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
+              </button>
+              <button type="button" id="system-update-run-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>최신 업데이트 실행
+              </button>
+              <span id="system-update-status" style="font-size: 12.5px; color: var(--text-secondary);"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
