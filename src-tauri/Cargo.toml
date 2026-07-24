@@ -1,6 +1,12 @@
+# version: 릴리스마다 반드시 이전 배포본보다 큰 값으로 올려야 Tauri
+# updater가 새 버전을 감지한다(git 태그 이름과 무관 - updater는 이 값만
+# 본다). "-beta.N" 같은 비숫자 prerelease 접미사는 붙이지 말 것 - Windows
+# MSI(WiX) 번들러가 숫자로만 이루어진 prerelease만 허용해 빌드 자체가
+# 실패한다("optional pre-release identifier ... must be numeric-only").
+# 이 파일과 tauri.conf.json/../package.json의 version을 항상 동일하게 유지할 것.
 [package]
 name = "app"
-version = "0.1.1-beta.1"
+version = "0.1.1"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
