@@ -37,6 +37,15 @@ def test_verify_password_rejects_wrong_password():
     assert verify_password(h, "wrong-password") is False
 
 
+def test_verify_password_accepts_configured_plaintext_password(monkeypatch):
+    """APP_PASSWORD(평문)가 설정된 경우의 비교 경로 - compare_digest로 bytes 비교하도록
+    바뀌었으므로 정상적으로 동작하는지, 비ASCII(한글) 비밀번호도 지원하는지 확인."""
+    import services.auth as auth_module
+    monkeypatch.setattr(auth_module, "get_app_password", lambda: "비밀번호123!")
+    assert verify_password("unused-hash", "비밀번호123!") is True
+    assert verify_password("unused-hash", "wrong") is False
+
+
 def test_verify_password_rejects_malformed_hash():
     assert verify_password("not-a-valid-hash", "anything") is False
 
