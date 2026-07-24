@@ -329,7 +329,12 @@ def update_credentials_in_env(new_username: str, new_password_hash: str):
 # 있는 개인/로컬 환경(예: 다른 사람이 접근할 수 없는 개인 PC의 Tauri
 # 데스크탑 앱)에서 매번 로그인하는 번거로움을 없애기 위한 설정이다 - 켜면
 # 이 서버에 네트워크로 접근 가능한 모든 사람이 인증 없이 전체 기능을 쓸
-# 수 있게 되므로, 계정 설정 화면에서 명시적으로 켜야만 활성화된다.
+# 수 있게 되므로, 계정 설정 화면에서 명시적으로 켜야만 활성화된다. "전체
+# 기능"에는 /settings/update(git pull + 재빌드 + 서버 재시작)와
+# /settings/install-*(Ollama/Claude Code/Codex/Antigravity 원격 설치
+# 스크립트 실행)처럼 서버에 소프트웨어를 설치·재시작시킬 수 있는 관리
+# 기능도 포함되므로, 단순 조회 권한보다 훨씬 강력한 노출이라는 점에
+# 유의해야 한다.
 SKIP_LOGIN = os.getenv("SKIP_LOGIN", "false").strip().lower() == "true"
 
 def get_skip_login() -> bool:
@@ -368,8 +373,12 @@ if SKIP_LOGIN:
         "\n" + "!" * 70 +
         "\n[보안 경고] 로그인 없이 사용 설정이 켜져 있습니다.\n"
         "이 서버에 네트워크로 접근 가능한 모든 사람이 인증 없이 전체 기능을\n"
-        "쓸 수 있습니다. 신뢰할 수 있는 개인/로컬 환경이 아니라면 설정에서\n"
-        "즉시 꺼주세요.\n"
+        "쓸 수 있습니다. 여기에는 논문 열람뿐 아니라 git pull + 재빌드 후\n"
+        "서버 자동 재시작(시스템 업데이트), Ollama/Claude Code/Codex/\n"
+        "Antigravity CLI 원격 설치 스크립트 실행(curl|bash, PowerShell\n"
+        "irm|iex) 등 서버에 임의 소프트웨어를 설치하고 프로세스를 재시작할\n"
+        "수 있는 관리 기능까지 전부 포함됩니다. 신뢰할 수 있는 개인/로컬\n"
+        "환경이 아니라면 설정에서 즉시 꺼주세요.\n"
         + "!" * 70 + "\n"
     )
 

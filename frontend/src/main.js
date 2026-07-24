@@ -3155,7 +3155,7 @@ if (settingSkipLoginCheckbox) {
     const wantsEnabled = settingSkipLoginCheckbox.checked
     if (wantsEnabled) {
       const ok = await showCustomConfirm(
-        '이 서버에 네트워크로 접근 가능한 모든 사람이 로그인 없이 전체 기능을 쓸 수 있게 됩니다.\n다른 사람이 접근할 수 없는 개인 PC/로컬 환경에서만 켜세요.\n계속하시겠습니까?',
+        '이 서버에 네트워크로 접근 가능한 모든 사람이 로그인 없이 전체 기능을 쓸 수 있게 됩니다.\n여기에는 시스템 업데이트(서버 재시작)와 Ollama/CLI 원격 설치처럼 서버에 소프트웨어를 설치·재시작시킬 수 있는 관리 기능도 포함됩니다.\n다른 사람이 접근할 수 없는 개인 PC/로컬 환경에서만 켜세요.\n계속하시겠습니까?',
         { title: '로그인 생략 켜기', confirmText: '켜기', danger: true }
       )
       if (!ok) {
