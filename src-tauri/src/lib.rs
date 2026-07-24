@@ -134,7 +134,7 @@ fn backend_binary_path(app: &tauri::AppHandle) -> PathBuf {
     } else {
         app.path()
             .resource_dir()
-            .expect("failed to resolve resource dir")
+            .unwrap_or_else(|e| die("백엔드 리소스 디렉토리를 찾을 수 없습니다", e))
             .join("binaries")
     };
     base.join("easypaper-backend").join(exe_name)
@@ -147,6 +147,25 @@ fn kill_sidecar(state: &tauri::State<SidecarState>) {
             let _ = child.wait();
         }
     }
+}
+
+/// 앱 시작에 필요한 필수 자원(리소스 디렉토리, sidecar 프로세스 등)을 얻지
+/// 못했을 때 쓴다. 이런 실패는 대부분 백신이 sidecar 바이너리를 격리했거나
+/// 디스크 권한 문제처럼 사용자가 직접 손댈 수 없는 환경 문제라 복구를
+/// 시도할 수 없다 - 이전에는 `.expect(...)`로 그냥 패닉시켜서, GUI로 띄운
+/// 앱(콘솔이 안 보임)에서는 사용자에게 아무 설명 없이 창만 사라지고
+/// 끝났다. 최소한 stderr/로그에는 원인이 남도록 정리된 메시지를 남기고
+/// 명시적으로 종료한다(패닉 언와인딩의 백트레이스 잡음도 피한다).
+fn die(context: &str, err: impl std::fmt::Display) -> ! {
+    eprintln!("[EasyPaper] 치명적 오류: {context}: {err}");
+    log::error!("fatal startup error - {context}: {err}");
+    std::process::exit(1);
+}
+
+fn die_msg(context: &str) -> ! {
+    eprintln!("[EasyPaper] 치명적 오류: {context}");
+    log::error!("fatal startup error - {context}");
+    std::process::exit(1);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -174,18 +193,19 @@ pub fn run() {
             // 또 호출하면 앱 실행마다 업데이트 서버에 중복 요청만 나갈 뿐 결과를
             // 사용자에게 보여줄 방법이 없어(로그로만 남음) 의미가 없으므로 두지
             // 않는다.
-            let port = find_available_port(8000);
 
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .expect("failed to resolve app data dir");
+                .unwrap_or_else(|e| die("앱 데이터 디렉토리를 찾을 수 없습니다", e));
             let uploads_dir = app_data_dir.join("uploads");
             let cache_dir = app_data_dir.join("cache");
             let library_dir = app_data_dir.join("library");
             let logs_dir = app_data_dir.join("logs");
             for dir in [&app_data_dir, &uploads_dir, &cache_dir, &library_dir, &logs_dir] {
-                std::fs::create_dir_all(dir).expect("failed to create app data subdirectory");
+                if let Err(e) = std::fs::create_dir_all(dir) {
+                    die(&format!("앱 데이터 하위 디렉토리를 만들 수 없습니다 ({dir:?})"), e);
+                }
             }
             let db_path = app_data_dir.join("easypaper.db");
 
@@ -196,16 +216,14 @@ pub fn run() {
             // 실제 위치를 알려준다.
             let frontend_dist = binary
                 .parent()
-                .expect("binary has no parent dir")
+                .unwrap_or_else(|| die_msg("sidecar 바이너리 경로에 상위 디렉토리가 없습니다"))
                 .join("_internal")
                 .join("frontend")
                 .join("dist");
-            log::info!("spawning backend sidecar: {:?} on port {}", binary, port);
 
             let mut command = Command::new(&binary);
             command
                 .env("APP_HOST", "127.0.0.1")
-                .env("APP_PORT", port.to_string())
                 .env("EASYPAPER_CONFIG_DIR", &app_data_dir)
                 .env("DB_PATH", &db_path)
                 .env("UPLOAD_DIR", &uploads_dir)
@@ -218,7 +236,13 @@ pub fn run() {
 
             // curl로 설치된 CLI(agy/claude/codex)가 사용자 로그인 셸에서만
             // PATH에 잡혀 있는 macOS/Linux 환경 대응 - 위 resolve_user_shell_path
-            // 참고.
+            // 참고. 사용자 로그인 셸을 띄워 PATH를 얻어오는 데 최대 5초까지 걸릴
+            // 수 있으므로(resolve_user_shell_path의 타임아웃), 포트는 반드시 이
+            // 호출이 끝난 뒤 spawn 직전에 골라야 한다 - 미리 골라두면 "포트가
+            // 비어있음을 확인"한 시점과 "실제로 그 포트를 sidecar가 bind"하는
+            // 시점 사이의 창(TOCTOU)이 최대 5초까지 벌어져, 그 사이 다른 로컬
+            // 프로세스(예: 동시에 뜬 앱의 두 번째 인스턴스)가 같은 포트를
+            // 선점할 여지가 커진다.
             if let Some(shell_path) = resolve_user_shell_path() {
                 let current_path = std::env::var("PATH").unwrap_or_default();
                 log::info!("enriched sidecar PATH with login shell PATH");
@@ -228,10 +252,23 @@ pub fn run() {
             #[cfg(windows)]
             command.creation_flags(CREATE_NO_WINDOW);
 
-            let mut child = command.spawn().expect("failed to spawn backend sidecar");
+            // 포트 선택은 spawn 바로 직전에: 위 주석 참고 (TOCTOU 창 최소화).
+            // 완전히 없앨 수는 없다(포트가 비어있음을 확인한 시점과 sidecar가
+            // 실제로 bind하는 시점 사이에는 항상 미세한 창이 남는다) - 실패하면
+            // wait_for_backend()의 헬스체크 타임아웃으로 감지되어 아래에서
+            // 에러 로그로 남는다.
+            let port = find_available_port(8000);
+            command.env("APP_PORT", port.to_string());
+            log::info!("spawning backend sidecar: {:?} on port {}", binary, port);
 
-            // 디버깅 편의를 위해 sidecar의 stdout/stderr을 그대로 로그로 흘려보낸다
-            // (스파이크 전용 - 실배포 전 로그 볼륨/레벨 조정 필요).
+            let mut child = command
+                .spawn()
+                .unwrap_or_else(|e| die("백엔드 sidecar 프로세스를 실행할 수 없습니다", e));
+
+            // 디버깅 편의를 위해 sidecar의 stdout/stderr을 그대로 로그로 흘려보낸다.
+            // tauri_plugin_log는 디버그 빌드에서만 설치되므로(위 참고), 릴리스
+            // 빌드에서는 별도 로거가 없어 이 log:: 호출들이 실제로는 아무 데도
+            // 쓰이지 않는다 - 별도 볼륨 조정이 필요 없다.
             if let Some(stdout) = child.stdout.take() {
                 std::thread::spawn(move || {
                     use std::io::BufRead;
@@ -265,7 +302,7 @@ pub fn run() {
 
             let window = app
                 .get_webview_window("main")
-                .expect("main window not found");
+                .unwrap_or_else(|| die_msg("main 윈도우를 찾을 수 없습니다"));
             std::thread::spawn(move || {
                 if wait_for_backend(port, Duration::from_secs(15)) {
                     let url = format!("http://127.0.0.1:{port}/");
