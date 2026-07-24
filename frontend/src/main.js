@@ -6414,10 +6414,22 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
 // 오버레이와 동일한 원칙으로, 백엔드가 좌표+라벨을 뽑아낸(=documentImages에
 // 실제로 존재하는) 대상을 가리키는 표기만 호버 가능한 박스로 그린다.
 //
+// 일부 논문은 Figure/Table/수식 번호를 아라비아 숫자 대신 로마 숫자(I, II, III...)로
+// 매긴다(부록 표/수식에 흔함). backend(pdf_parser.py)의 _ROMAN_NUMERAL_RE와 동일한
+// 표준 로마 숫자(1~3999) 검증 패턴 - "IVX" 같은 무효한 조합은 배제한다. 맨 앞의
+// lookahead는 그룹이 전부 빈 문자열로 매칭되어 공백이 "로마 숫자"로 인정되는 것을 막는다.
+const ROMAN_NUMERAL_SRC = '(?=[MDCLXVI])M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})'
+const ROMAN_NUMERAL_TOKEN_RE = new RegExp(`^${ROMAN_NUMERAL_SRC}$`, 'i')
+
 // 복수형(Figures/Figs/Tables)과 "Figs. 3-5", "Figures 1 and 2", "Table 1, 2"
 // 처럼 여러 개를 한 번에 가리키는 표기도 지원하기 위해, 키워드 뒤에 오는
-// 숫자 나열 전체를 그룹으로 캡처한 뒤 parseFigureTableNumberList로 펼친다.
-const FIGURE_TABLE_REF_RE = /\b(Figures?|Figs?|Tables?|Equations?|Eqns?|Eqs?)\.?\s*\(?\s*((?:\d+\s*(?:(?:[-–,]|and|&)\s*)+)*\d+)\b\)?/gi
+// 숫자(또는 로마 숫자) 나열 전체를 그룹으로 캡처한 뒤 parseFigureTableNumberList로 펼친다.
+const FIGURE_TABLE_NUM_SRC = `(?:\\d+|${ROMAN_NUMERAL_SRC})`
+const FIGURE_TABLE_REF_RE = new RegExp(
+  `\\b(Figures?|Figs?|Tables?|Equations?|Eqns?|Eqs?)\\.?\\s*\\(?\\s*` +
+  `((?:${FIGURE_TABLE_NUM_SRC}\\s*(?:(?:[-–,]|and|&)\\s*)+)*${FIGURE_TABLE_NUM_SRC})\\b\\)?`,
+  'gi'
+)
 
 function normalizeFigureTableKind(keyword) {
   const kw = keyword.toLowerCase()
@@ -6426,8 +6438,10 @@ function normalizeFigureTableKind(keyword) {
   return 'Equation'
 }
 
-// "1", "1, 2", "3-5", "1 and 2", "1, 2 and 3" 같은 숫자 나열을 개별 번호
-// 목록으로 펼친다 (본문 인용 파싱의 parseCitationNumbers와 동일한 원칙).
+// "1", "1, 2", "3-5", "1 and 2", "1, 2 and 3", "I", "I and II" 같은 숫자(아라비아
+// 또는 로마) 나열을 개별 번호 목록으로 펼친다 (본문 인용 파싱의 parseCitationNumbers와
+// 동일한 원칙). 로마 숫자는 범위("I-III") 표기는 흔치 않아 지원하지 않고, backend가
+// 라벨을 항상 대문자로 저장하므로(_find_page_captions) 매칭을 위해 대문자로 맞춘다.
 function parseFigureTableNumberList(text) {
   const nums = []
   const normalized = text.replace(/&/g, ',').replace(/\band\b/gi, ',')
@@ -6441,10 +6455,11 @@ function parseFigureTableNumberList(text) {
       if (end >= start && end - start <= 50) {
         for (let n = start; n <= end; n++) nums.push(String(n))
       }
-    } else {
-      const single = trimmed.match(/^\d+$/)
-      if (single) nums.push(single[0])
+      return
     }
+    const single = trimmed.match(/^\d+$/)
+    if (single) { nums.push(single[0]); return }
+    if (ROMAN_NUMERAL_TOKEN_RE.test(trimmed)) nums.push(trimmed.toUpperCase())
   })
   return nums
 }
@@ -6466,6 +6481,10 @@ function renderFigureRefOverlayLayer(textLayerDiv, pageNum) {
   FIGURE_TABLE_REF_RE.lastIndex = 0
   let match
   while ((match = FIGURE_TABLE_REF_RE.exec(vtm.fullText)) !== null) {
+    // 로마 숫자 대안 분기는 lookahead만으로 빈 문자열 매칭을 완전히 막지 못해
+    // "Table Introduction..."처럼 로마 숫자 글자로 시작하는 일반 단어도 숫자 그룹이
+    // 빈 문자열로 매칭될 수 있다 - 이런 경우는 실제 참조 표기가 아니므로 건너뛴다.
+    if (!match[2]) continue
     const kind = normalizeFigureTableKind(match[1])
     const numbers = parseFigureTableNumberList(match[2])
     const targets = numbers
