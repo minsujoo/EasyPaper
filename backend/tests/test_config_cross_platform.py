@@ -65,6 +65,24 @@ def test_resolve_cli_path_finds_codex_at_windows_localappdata(monkeypatch, tmp_p
     assert resolved == str(exe_path)
 
 
+def test_resolve_cli_path_finds_agy_at_windows_localappdata(monkeypatch, tmp_path):
+    """Antigravity의 공식 Windows 설치 스크립트(install.cmd)는 AGY_PATH 기본값
+    (~/.local/bin/agy)이 아니라 %LOCALAPPDATA%\\agy\\bin에 설치한다 - 이 위치를
+    확인하지 않으면 설치 스크립트가 exit code 0으로 정상 종료해도 바이너리를
+    찾지 못해 성공을 실패로 잘못 표시하는 버그가 재발한다."""
+    localappdata = tmp_path / "LocalAppData"
+    bin_dir = localappdata / "agy" / "bin"
+    bin_dir.mkdir(parents=True)
+    exe_path = bin_dir / "agy.exe"
+    exe_path.write_text("")
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+    resolved = config._resolve_cli_path("/nonexistent/agy", "agy")
+    assert resolved == str(exe_path)
+
+
 def test_resolve_cli_path_windows_codex_fallback_not_applied_to_other_clis(monkeypatch, tmp_path):
     """Windows LOCALAPPDATA 폴백은 codex 전용이다 - agy/claude에 잘못 적용되지
     않아야 한다."""
