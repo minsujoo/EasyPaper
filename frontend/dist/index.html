@@ -23,8 +23,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-CWm-e-tk.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-CNq5K3G1.css">
+  <script type="module" crossorigin src="/assets/index-DZZgg9Y0.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Ca9Rsbe5.css">
 </head>
 <body>
 
@@ -545,6 +545,7 @@
         <button class="tab-btn" data-tab="tab-model">모델 설정</button>
         <button class="tab-btn" data-tab="tab-account">계정 설정</button>
         <button class="tab-btn" data-tab="tab-advanced">고급 설정</button>
+        <button class="tab-btn" data-tab="tab-info">정보</button>
       </div>
       
       <!-- 일반 설정 탭 -->
@@ -634,39 +635,6 @@
             </button>
           </div>
           
-          <div id="system-update-section" class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
-            <label>시스템 업데이트 (System Update)</label>
-            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>GitHub 최신 업데이트 확인 및 자동 빌드:</strong><br>
-              아래 버튼을 누르면 GitHub 저장소로부터 최신 코드를 풀(Pull) 받고,<br>
-              변경된 내용이 있을 경우 프론트엔드를 자동 빌드한 뒤 EasyPaper 데몬 서비스를 즉시 재기동합니다.
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 12.5px; color: var(--text-secondary); white-space: nowrap;">자동 업데이트 확인</span>
-                <select id="setting-update-check-interval" class="form-select" style="width: auto; min-width: 110px;">
-                  <option value="daily">매일</option>
-                  <option value="weekly">매주</option>
-                  <option value="never">사용 안 함</option>
-                </select>
-              </div>
-              <span id="current-version-label" class="current-version-label" title="전체 변경 이력 보기" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px;"></span>
-            </div>
-            <div id="system-update-changelog-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
-              <div id="system-update-version-line" class="update-changelog-version-line"></div>
-              <ul id="system-update-changelog" class="update-changelog-list"></ul>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <button type="button" id="system-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
-              </button>
-              <button type="button" id="system-update-run-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>최신 업데이트 실행
-              </button>
-              <span id="system-update-status" style="font-size: 12.5px; color: var(--text-secondary);"></span>
-            </div>
-          </div>
-
           <div class="form-actions" style="margin-top: 15px;">
             <button type="submit" class="btn btn-primary" style="width: 100%;">일반 설정 저장</button>
           </div>
@@ -715,7 +683,12 @@
           <div style="border-top: 1px solid var(--border); padding-top: 15px; margin-top: 15px;">
             <h4 style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; display: flex; align-items: center; gap: 4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>AI 어시스턴트 (Chat) 설정</h4>
             <div class="form-group">
-              <label>어시스턴트 AI 제공업체 및 모델</label>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 500; color: var(--text-secondary);">
+                <span>어시스턴트 AI 제공업체 및 모델</span>
+                <label class="checkbox-label" style="font-weight: 400; font-size: 12.5px;">
+                  <input type="checkbox" id="setting-chat-same-as-trans" /> 번역 모델과 동일한 모델 사용
+                </label>
+              </div>
               <div id="setting-chat-provider"></div>
             </div>
           </div>
@@ -812,6 +785,7 @@
             <h3 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>로그인 생략</h3>
             <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
               <strong>보안 경고:</strong> 켜면 이 서버에 네트워크로 접근 가능한 모든 사람이 로그인 없이 전체 기능을 쓸 수 있습니다.
+              여기에는 논문 열람뿐 아니라 시스템 업데이트(서버 재시작)와 Ollama/CLI 원격 설치처럼 서버에 소프트웨어를 설치·재시작시킬 수 있는 관리 기능도 포함됩니다.
               다른 사람이 접근할 수 없는 개인 PC/로컬 환경에서만 켜세요.
             </div>
             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
@@ -859,7 +833,93 @@
           </div>
         </form>
       </div>
-      
+
+      <!-- 정보 탭 -->
+      <div id="tab-info" class="tab-pane">
+        <div class="modal-form">
+          <div class="form-group">
+            <label>EasyPaper 프로젝트</label>
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0; color: var(--text-primary);"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.238 1.838 1.238 1.07 1.834 2.809 1.304 3.495.997.108-.775.42-1.305.763-1.605-2.665-.303-5.467-1.334-5.467-5.93 0-1.31.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23a11.5 11.5 0 0 1 3.003-.404c1.02.005 2.047.138 3.005.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.814 1.103.814 2.222 0 1.606-.015 2.898-.015 3.293 0 .32.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                <div style="min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">orion-gz / EasyPaper</div>
+                  <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">학술 PDF 논문을 AI로 번역하고, 논문 내용을 바탕으로 바로 대화하는 통합 웹 서비스</div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <a href="https://github.com/orion-gz/EasyPaper" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 8px 14px; font-size: 12.5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>저장소 방문
+                </a>
+                <a href="https://github.com/orion-gz/EasyPaper/issues" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 8px 14px; font-size: 12.5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>버그 제보
+                </a>
+                <a href="https://github.com/orion-gz/EasyPaper/pulls" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 8px 14px; font-size: 12.5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>기여하기
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div id="system-update-section" class="form-group">
+            <label>시스템 업데이트 (System Update)</label>
+            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>GitHub 최신 업데이트 확인 및 자동 빌드:</strong><br>
+              아래 버튼을 누르면 GitHub 저장소로부터 최신 코드를 풀(Pull) 받고,<br>
+              변경된 내용이 있을 경우 프론트엔드를 자동 빌드한 뒤 EasyPaper 데몬 서비스를 즉시 재기동합니다.
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12.5px; color: var(--text-secondary); white-space: nowrap;">자동 업데이트 확인</span>
+                <select id="setting-update-check-interval" class="form-select" style="width: auto; min-width: 110px;">
+                  <option value="daily">매일</option>
+                  <option value="weekly">매주</option>
+                  <option value="never">사용 안 함</option>
+                </select>
+              </div>
+              <span id="current-version-label" class="current-version-label" title="전체 변경 이력 보기" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px;"></span>
+            </div>
+            <div id="system-update-changelog-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
+              <div id="system-update-version-line" class="update-changelog-version-line"></div>
+              <ul id="system-update-changelog" class="update-changelog-list"></ul>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="system-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px; white-space: nowrap; flex-shrink: 0;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
+              </button>
+              <button type="button" id="system-update-run-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px; white-space: nowrap; flex-shrink: 0;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>최신 업데이트 실행
+              </button>
+              <span id="system-update-status" style="font-size: 12.5px; color: var(--text-secondary); min-width: 0; overflow-wrap: break-word;"></span>
+            </div>
+          </div>
+
+          <div id="tauri-update-section" class="form-group hidden">
+            <label>앱 업데이트 (App Update)</label>
+            <div style="background: rgba(139, 92, 246, 0.1); border-left: 4px solid var(--accent-mid); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; color: var(--text-primary); line-height: 1.6;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>데스크탑 앱 업데이트:</strong><br>
+              아래 버튼을 누르면 새 버전이 있는지 확인합니다. 새 버전이 있으면 다운로드 후 설치하고 앱을 자동으로 재시작합니다.
+            </div>
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 12px;">
+              <span id="tauri-current-version-label" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);"></span>
+            </div>
+            <div id="tauri-update-notes-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
+              <div id="tauri-update-version-line" class="update-changelog-version-line"></div>
+              <div id="tauri-update-notes" style="font-size: 12.5px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; max-height: 240px; overflow-y: auto;"></div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="tauri-update-check-btn" class="btn btn-secondary" style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px; white-space: nowrap; flex-shrink: 0;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>업데이트 확인
+              </button>
+              <button type="button" id="tauri-update-install-btn" class="btn btn-secondary" disabled style="background: var(--bg-hover); border: 1px solid var(--border-strong); padding: 10px 18px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary); transition: all 0.2s; height: 38px; white-space: nowrap; flex-shrink: 0;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>설치 후 재시작
+              </button>
+              <span id="tauri-update-status" style="font-size: 12.5px; color: var(--text-secondary); min-width: 0; overflow-wrap: break-word;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
