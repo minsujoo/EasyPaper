@@ -4401,6 +4401,14 @@ function escapeHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 }
 
+// PDF 원문에서 볼드로 표시된 구간은 backend(pdf_parser.py의 _spans_to_bold_markdown)가
+// 마크다운(**...**)으로 감싸서 넘겨준다 - Figure/Table 캡션, 참고문헌 원문 등
+// 오버레이 툴팁에 원문 그대로의 볼드 서식을 되살릴 때 이 함수로 변환한다.
+// (formatTranslationHtml과 동일하게 escapeHtml 이후에 ** -> <strong> 치환)
+function renderBoldText(str) {
+  return escapeHtml(str).replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+}
+
 // marked.parse()는 마크다운 소스에 섞인 raw HTML(<script>, onerror= 등)을 그대로
 // 통과시킨다. AI 채팅 응답/메모/체인지로그처럼 우리가 직접 작성하지 않은 텍스트를
 // marked로 렌더링한 뒤 innerHTML에 꽂아넣는 모든 지점에서는, 악성 PDF의
@@ -6558,7 +6566,7 @@ async function showFigurePreviewTooltip(targets, boxEl) {
       <div class="figure-preview-tooltip-label">${escapeHtml(t.label)} · p.${t.page}</div>
       <div class="figure-preview-tooltip-loading">${icon('refreshCw', 14, 'style="vertical-align:-2px;margin-right:4px"')}불러오는 중...</div>
       <img class="figure-preview-tooltip-img hidden" alt="" />
-      ${t.caption ? `<div class="figure-preview-tooltip-caption">${escapeHtml(t.caption)}</div>` : ''}
+      ${t.caption ? `<div class="figure-preview-tooltip-caption">${renderBoldText(t.caption)}</div>` : ''}
     </div>
   `).join('')
 
@@ -6697,7 +6705,7 @@ function showCitationTooltip(docId, refNum, refText, boxEl) {
   citationTooltipBoxEl = boxEl
 
   const tooltip = getOrCreateCitationTooltip()
-  tooltip.querySelector('.citation-tooltip-text').textContent = refText
+  tooltip.querySelector('.citation-tooltip-text').innerHTML = renderBoldText(refText)
   const resultEl = tooltip.querySelector('.citation-tooltip-result')
   resultEl.className = 'citation-tooltip-result hidden'
   resultEl.innerHTML = ''

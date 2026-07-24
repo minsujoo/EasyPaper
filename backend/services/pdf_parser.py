@@ -88,6 +88,27 @@ def _is_bold_span(span: dict) -> bool:
     return bool(span.get("flags", 0) & _BOLD_FLAG) or "bold" in span.get("font", "").lower()
 
 
+def _spans_to_bold_markdown(spans: List[dict]) -> str:
+    """한 줄(line)의 span 목록을 이어붙이되, 볼드로 표시된 구간은 마크다운
+    (**...**)으로 감싼다. 본문 텍스트(_build_block_text_and_indent)뿐 아니라
+    Figure/Table 캡션 추출(_find_page_captions)에서도 원문의 볼드 서식을
+    그대로 프론트엔드까지 전달하기 위해 공용으로 쓰인다."""
+    parts = []
+    for span in spans:
+        t = span.get("text", "")
+        if not t:
+            continue
+        if _is_bold_span(span) and t.strip():
+            # 앞뒤 공백은 마크다운 표시 밖으로 빼서 "** text **"처럼 어색해지지 않게 함
+            lead = t[:len(t) - len(t.lstrip())]
+            trail = t[len(t.rstrip()):]
+            core = t.strip()
+            parts.append(f"{lead}**{core}**{trail}")
+        else:
+            parts.append(t)
+    return "".join(parts)
+
+
 def _build_block_text_and_indent(block: dict) -> tuple[str, bool]:
     """dict 모드 블록 하나에서 줄 단위로 텍스트를 조립합니다.
     볼드로 표시된 글자 구간은 번역 후에도 살아남도록 마크다운(**...**)으로 감싸고,
@@ -98,20 +119,7 @@ def _build_block_text_and_indent(block: dict) -> tuple[str, bool]:
         spans = line.get("spans", [])
         if not spans:
             continue
-        parts = []
-        for span in spans:
-            t = span.get("text", "")
-            if not t:
-                continue
-            if _is_bold_span(span) and t.strip():
-                # 앞뒤 공백은 마크다운 표시 밖으로 빼서 "** text **"처럼 어색해지지 않게 함
-                lead = t[:len(t) - len(t.lstrip())]
-                trail = t[len(t.rstrip()):]
-                core = t.strip()
-                parts.append(f"{lead}**{core}**{trail}")
-            else:
-                parts.append(t)
-        line_text = "".join(parts)
+        line_text = _spans_to_bold_markdown(spans)
         if line_text.strip():
             line_texts.append(line_text)
             line_x0s.append(line["bbox"][0])
@@ -604,6 +612,12 @@ def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
     캡션 패턴인 경우만 인정해 본문 중간에 우연히 나오는 경우를 배제한다.
     캡션 전문은 매칭된 줄부터 블록 끝까지의 텍스트를 이어붙여 구성한다
     (캡션이 보통 그 블록에서 끝까지 이어지는 독립된 문단이기 때문).
+
+    반환되는 캡션 전문에는 원문에서 볼드로 표시된 구간이 마크다운(**...**)으로
+    표시되어 있다(프론트엔드가 오버레이 캡션을 렌더링할 때 볼드로 되살린다).
+    다만 "Figure 1" 캡션 패턴 매칭(_CAPTION_RE)은 라벨 자체가 볼드로 표시되는
+    경우가 흔해(예: "**Figure 1.** ...") 마크다운 표시가 섞이면 정규식이
+    실패하므로, 매칭 전용으로 별표를 제거한 버전을 따로 만들어 사용한다.
     """
     captions = []
     blocks = page.get_text("dict")["blocks"]
@@ -611,14 +625,12 @@ def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
         lines = b.get("lines")
         if not lines:
             continue
-        line_texts = [
-            "".join(span.get("text", "") for span in ln.get("spans", [])).strip()
-            for ln in lines
-        ]
-        for i, line_text in enumerate(line_texts):
-            if not line_text:
+        line_texts = [_spans_to_bold_markdown(ln.get("spans", [])).strip() for ln in lines]
+        plain_line_texts = [re.sub(r"\*+", "", t) for t in line_texts]
+        for i, plain_text in enumerate(plain_line_texts):
+            if not plain_text:
                 continue
-            m = _CAPTION_RE.match(line_text)
+            m = _CAPTION_RE.match(plain_text)
             if not m:
                 continue
             kind = "Figure" if m.group(1).lower().startswith("fig") else "Table"
