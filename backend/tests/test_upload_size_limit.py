@@ -1,0 +1,50 @@
+"""POST /api/upload의 파일 크기 제한이 스트리밍 도중에(전체를 메모리에
+읽어들이기 전에) 적용되는지 확인하는 회귀 테스트.
+
+이전에는 await file.read()로 전체 파일을 먼저 메모리에 다 올린 "다음"에야
+MAX_FILE_SIZE_MB를 검사해서, 한도를 아무리 작게 잡아도 큰 업로드가 메모리를
+전부 소비한 뒤에야 거부되는 DoS 벡터였다.
+"""
+
+import fitz
+import routers.upload as upload_module
+
+
+def _minimal_pdf_bytes() -> bytes:
+    doc = fitz.open()
+    doc.new_page()
+    return doc.tobytes()
+
+
+def test_upload_rejects_oversized_file_without_buffering_it_all(test_client, isolated_dirs, monkeypatch):
+    upload_dir = isolated_dirs["upload_dir"]
+    monkeypatch.setattr(upload_module, "UPLOAD_DIR", str(upload_dir))
+    # 한도를 아주 작게(약 1KB) 잡아, 몇 KB짜리 업로드도 초과하도록 만든다
+    monkeypatch.setattr(upload_module, "MAX_FILE_SIZE_MB", 0.001)
+
+    oversized_content = b"%PDF-1.4\n" + (b"A" * 20_000)
+
+    res = test_client.post(
+        "/api/upload",
+        files={"file": ("big.pdf", oversized_content, "application/pdf")},
+    )
+
+    assert res.status_code == 413
+    # 거부된 업로드는 세션 디렉토리를 남기지 않아야 한다
+    assert list(upload_dir.iterdir()) == []
+
+
+def test_upload_accepts_file_within_size_limit(test_client, isolated_dirs, monkeypatch):
+    upload_dir = isolated_dirs["upload_dir"]
+    monkeypatch.setattr(upload_module, "UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setattr(upload_module, "MAX_FILE_SIZE_MB", 50)
+
+    res = test_client.post(
+        "/api/upload",
+        files={"file": ("small.pdf", _minimal_pdf_bytes(), "application/pdf")},
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["filename"] == "small.pdf"
+    assert body["session_id"] in upload_module.sessions
