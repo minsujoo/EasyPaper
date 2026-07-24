@@ -149,6 +149,18 @@ fn kill_sidecar(state: &tauri::State<SidecarState>) {
     }
 }
 
+/// 프론트엔드가 Tauri updater로 새 버전을 다운로드·설치하기 직전에 호출한다.
+/// PyInstaller onedir sidecar가 계속 떠 있으면 자신이 로드한 DLL(예:
+/// MSVCP140.dll)을 OS 레벨에서 잠그고 있어서, Windows 설치 프로그램이 같은
+/// 경로에 새 버전 파일을 덮어쓰지 못하고 "Error opening file for writing"
+/// 오류로 멈춘다 - 자동 업데이트로 설치를 시작하기 전에 sidecar를 먼저
+/// 종료해 파일 잠금을 풀어줘야 한다.
+#[tauri::command]
+fn kill_backend_sidecar(state: tauri::State<SidecarState>) {
+    log::info!("update install requested, killing sidecar to release locked files");
+    kill_sidecar(&state);
+}
+
 /// 앱 시작에 필요한 필수 자원(리소스 디렉토리, sidecar 프로세스 등)을 얻지
 /// 못했을 때 쓴다. 이런 실패는 대부분 백신이 sidecar 바이너리를 격리했거나
 /// 디스크 권한 문제처럼 사용자가 직접 손댈 수 없는 환경 문제라 복구를
@@ -175,6 +187,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarState(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![kill_backend_sidecar])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
