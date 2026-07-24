@@ -817,6 +817,24 @@ _PANEL_ABSORB_MAX_GAP = 40.0
 _PANEL_ABSORB_MIN_OVERLAP = 0.5
 
 
+def _has_caption_between(y0: float, y1: float, captions: List[Dict[str, Any]]) -> bool:
+    """두 y좌표 사이에 캡션 줄(예: "TABLE III")의 중심이 존재하는지 확인합니다.
+
+    booktabs 구분선 체이닝(아래 2-2 섹션)이 표 하나의 top/mid/bottom rule을
+    묶으려는 의도인데, 인접 임계값(100pt)이 표 내부 줄 간격보다 관대해서 캡션
+    하나만 사이에 두고 붙어 있는 서로 다른 두 표까지 하나의 체인으로 묶어버리는
+    경우가 있었다(예: Table II/III/IV가 좁은 컬럼에 촘촘히 이어질 때 셋이
+    하나의 거대한 사각형으로 합쳐져 그중 캡션 하나에만 라벨이 붙고 나머지 표는
+    오버레이가 아예 안 만들어짐). 두 구분선 사이에 캡션이 끼어 있다면 그 지점은
+    항상 표 경계이므로, 체인을 여기서 끊어야 한다.
+    """
+    for cap in captions:
+        cy0, cy1 = cap["bbox"][1], cap["bbox"][3]
+        if y0 < (cy0 + cy1) / 2 < y1:
+            return True
+    return False
+
+
 def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
     """
     PDF의 각 페이지에서 실제 그림/이미지(Figure) 및 테이블(Table)의 영역 정보를 추출합니다.
@@ -909,8 +927,10 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
                     for line in fam[1:]:
                         last_line = current_group[-1]
                         y_diff = line[1] - last_line[3]
-                        
-                        if y_diff < 100: # 인접 임계값 100pt
+
+                        # 인접 임계값(100pt) 안이어도 두 선 사이에 캡션이 끼어
+                        # 있으면 서로 다른 표의 경계이므로 체인을 끊는다.
+                        if y_diff < 100 and not _has_caption_between(last_line[3], line[1], page_captions):
                             current_group.append(line)
                         else:
                             table_groups.append(current_group)
