@@ -2,6 +2,7 @@ import json
 import os
 from typing import Optional
 from config import CACHE_DIR
+from services.atomic_io import atomic_write_text
 
 
 def _cache_path(session_id: str, page_num: int, suffix: str = "") -> str:
@@ -62,14 +63,12 @@ def save_translation_cache(session_id: str, page_num: int, translation: str, suf
         try:
             data = json.loads(translation)
             if isinstance(data, dict) and "translation" in data:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False)
+                atomic_write_text(path, json.dumps(data, ensure_ascii=False))
                 return
         except Exception:
             pass
-            
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"translation": translation}, f, ensure_ascii=False)
+
+    atomic_write_text(path, json.dumps({"translation": translation}, ensure_ascii=False))
 
 
 def clear_session_cache(session_id: str) -> None:

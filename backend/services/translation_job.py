@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from config import LIBRARY_DIR
+from services.atomic_io import atomic_write_text
 from services.chunker import split_into_chunks, align_sentences, tag_source_text, parse_tagged_translation
 from services.llm_client import stream_translation
 from services.library import save_translation, get_translation, get_document
@@ -38,9 +39,7 @@ def _load_job(session_id: str) -> Optional[dict]:
 
 def _save_job(session_id: str, job: dict) -> None:
     path = _job_path(session_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(job, f, ensure_ascii=False, indent=2)
+    atomic_write_text(path, json.dumps(job, ensure_ascii=False, indent=2))
 
 
 # ─────────────────────────────────────────────────────────
