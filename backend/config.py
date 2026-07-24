@@ -78,9 +78,23 @@ def windows_safe_exec_args(cmd):
     설치되어 있어도 "[WinError 2] 지정된 파일을 찾을 수 없습니다" 오류로
     실행 자체가 실패한다. Windows에서는 cmd.exe를 경유해 PATHEXT 확장자
     검색·해석을 맡기는 방식으로 이를 우회한다 (macOS/Linux는 기존과 동일).
+
+    단, agy(Antigravity)의 공식 Windows 설치본은 .cmd 셔임이 아니라 실제
+    agy.exe 네이티브 바이너리다(get_agy_path의 %LOCALAPPDATA%\\agy\\bin
+    폴백 참고). 이런 .exe까지 cmd /c로 감싸면, cmd.exe가 전달받은 인자
+    문자열을 자기 방식대로 다시 파싱하면서 인자 안의 개행 문자(\\n)를
+    명령 경계로 오인해 그 뒤 내용을 통째로 잘라버린다 - 실제로 번역
+    프롬프트(안내문 뒤에 \\n\\n으로 이어지는 원문 본문)를 --print 인자로
+    넘기면 agy가 안내문만 받고 원문 본문은 통째로 사라져, "번역할 텍스트를
+    알려주세요"만 반복 응답하는 버그로 이어졌다. .exe는 CreateProcess가
+    셸 없이 바로 실행할 수 있으므로 cmd.exe 경유 자체가 불필요하다 -
+    .cmd/.bat 래퍼(확장자가 .exe가 아닌 경우)만 cmd /c로 감싼다.
     """
     import platform
     if platform.system() == "Windows":
+        exe_path = cmd[0] if cmd else ""
+        if isinstance(exe_path, str) and exe_path.lower().endswith(".exe"):
+            return list(cmd)
         return ["cmd", "/c"] + list(cmd)
     return list(cmd)
 

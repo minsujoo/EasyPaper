@@ -29,6 +29,29 @@ def test_windows_safe_exec_args_passthrough_on_posix(monkeypatch):
     assert result == ["claude", "--print", "hello"]
 
 
+def test_windows_safe_exec_args_does_not_wrap_native_exe(monkeypatch):
+    """agy(Antigravity)의 공식 Windows 설치본은 .cmd 셔임이 아니라 실제
+    agy.exe 네이티브 바이너리다. 이런 .exe까지 cmd /c로 감싸면 cmd.exe가
+    인자 문자열(개행이 포함된 멀티라인 번역 프롬프트)을 자기 방식대로 다시
+    파싱하면서 개행 이후 내용을 통째로 잘라버려, 실제 번역할 원문이 CLI에
+    전달되지 않는 버그로 이어졌다 - .exe는 cmd.exe 경유 없이 CreateProcess가
+    직접 실행할 수 있으므로 감싸면 안 된다."""
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    exe_path = "C:\\Users\\test\\AppData\\Local\\agy\\bin\\agy.exe"
+    multiline_prompt = "instructions\n\nactual text to translate"
+    result = config.windows_safe_exec_args([exe_path, "--print", multiline_prompt])
+    assert result == [exe_path, "--print", multiline_prompt]
+
+
+def test_windows_safe_exec_args_still_wraps_non_exe_on_windows(monkeypatch):
+    """claude/codex처럼 npm으로 설치되어 .cmd/.bat 래퍼로 배포되는(확장자가
+    .exe가 아닌) 경우는 여전히 cmd /c로 감싸야 CreateProcess가 실행할 수
+    있다 - .exe 우회 처리가 이 기존 케이스를 깨뜨리지 않는지 확인."""
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    result = config.windows_safe_exec_args(["claude.cmd", "--print", "hello"])
+    assert result == ["cmd", "/c", "claude.cmd", "--print", "hello"]
+
+
 def test_resolve_cli_path_prefers_existing_configured_path(tmp_path):
     real_binary = tmp_path / "claude"
     real_binary.write_text("#!/bin/sh\n")
