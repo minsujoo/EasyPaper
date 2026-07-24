@@ -596,11 +596,21 @@ def render_cover_image(pdf_path: str, output_path: str, top_fraction: float = 0.
         doc.close()
 
 
-_CAPTION_RE = re.compile(r"^\s*(Fig(?:ure)?|Table)\.?\s*(\d+)\b\.?\s*[:.\-]?\s*", re.IGNORECASE)
-# 수식 번호: 줄 끝에 "(3)"처럼 소괄호 숫자만 단독으로 오는 경우만 인정한다. 인용
-# 연도("...(2020)")와 헷갈리지 않도록 자릿수를 1~3자리로 제한한다(수식 번호가
-# 999개를 넘는 논문은 사실상 없음. 반면 연도는 항상 4자리라 자동으로 배제됨).
-_EQUATION_LINE_RE = re.compile(r"\((\d{1,3})\)\s*$")
+# 일부 논문은 Figure/Table/수식 번호를 아라비아 숫자 대신 로마 숫자(I, II, III, IV...)로
+# 매긴다(부록 표/수식에 흔함). "IVX" 같은 무효한 조합은 배제하고 정식 로마 숫자
+# 표기(1~3999)만 인정하도록 표준 로마 숫자 검증 패턴을 사용한다. 맨 앞의
+# lookahead((?=[MDCLXVI]))는 그룹이 전부 빈 문자열로만 매칭되어 공백 문자열이
+# "로마 숫자"로 인정되는 것을 막기 위함이다.
+_ROMAN_NUMERAL_RE = r"(?=[MDCLXVI])M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})"
+_CAPTION_RE = re.compile(
+    rf"^\s*(Fig(?:ure)?|Table)\.?\s*(\d+|{_ROMAN_NUMERAL_RE})\b\.?\s*[:.\-]?\s*", re.IGNORECASE
+)
+# 수식 번호: 줄 끝에 "(3)"처럼 소괄호 숫자(또는 로마 숫자)만 단독으로 오는 경우만
+# 인정한다. 인용 연도("...(2020)")와 헷갈리지 않도록 자릿수를 1~3자리로 제한한다
+# (수식 번호가 999개를 넘는 논문은 사실상 없음. 반면 연도는 항상 4자리라 자동으로
+# 배제됨). 로마 숫자는 대문자만 인정한다(re.IGNORECASE를 안 씀) - 본문에
+# 흔한 "(i)", "(ii)" 같은 소문자 열거 표기를 수식 번호로 오인하지 않기 위함이다.
+_EQUATION_LINE_RE = re.compile(rf"\((\d{{1,3}}|{_ROMAN_NUMERAL_RE})\)\s*$")
 
 
 def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
@@ -631,10 +641,18 @@ def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
             if not plain_text:
                 continue
             m = _CAPTION_RE.match(plain_text)
-            if not m:
+            # 로마 숫자 대안 분기(_ROMAN_NUMERAL_RE)는 lookahead만으로는 빈 문자열
+            # 매칭을 완전히 막지 못한다 - "Table Introduction..."처럼 로마 숫자
+            # 글자(I/V/X/L/C/D/M)로 시작하는 일반 단어가 뒤따르면 숫자 그룹이
+            # 빈 문자열로 매칭되고도 \b 경계 조건은 통과해버린다. group(2)가
+            # 비어 있으면 실제 캡션이 아니므로 명시적으로 걸러낸다.
+            if not m or not m.group(2):
                 continue
             kind = "Figure" if m.group(1).lower().startswith("fig") else "Table"
-            number = m.group(2)
+            # 로마 숫자는 대소문자 상관없이 매칭되지만("fig. iv"도 허용), 프론트엔드의
+            # 본문 참조 매칭과 항상 같은 대문자 표기로 라벨을 맞춰야 한다(대문자
+            # 로마 숫자가 관례이므로 digit은 그대로 두고 로마 숫자만 사실상 영향받음).
+            number = m.group(2).upper()
             caption_text = " ".join(t for t in line_texts[i:] if t).strip()
             captions.append({
                 "label": f"{kind} {number}",
@@ -726,7 +744,7 @@ def _find_page_equations(page: "fitz.Page") -> List[Dict[str, Any]]:
             if not line_text:
                 continue
             m = _EQUATION_LINE_RE.search(line_text)
-            if m:
+            if m and m.group(1):
                 candidates.append((bbox, m.group(1)))
 
     equations = []
