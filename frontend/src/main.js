@@ -972,45 +972,58 @@ function updateProgressMiniRaw(done, total, isRunning = true) {
 function startJobPolling(sessionId) {
   if (state.pollingTimer) clearInterval(state.pollingTimer)
 
+  // 완료된 페이지 수가 많거나 네트워크가 느리면 poll() 한 번의 실행이
+  // 5초를 넘길 수 있는데, setInterval은 이전 실행이 끝났는지와 무관하게
+  // 매번 새로 poll()을 호출한다. 그러면 두 호출이 같은 페이지에 대해
+  // 동시에 getPageTranslation을 중복 요청/렌더링하게 되므로, 이전 poll()이
+  // 아직 진행 중이면 이번 tick은 건너뛴다.
+  let pollInFlight = false
+
   async function poll() {
     if (!state.sessionId || state.sessionId !== sessionId) return
-    const job = await getJobStatus(sessionId)
-    if (!job) return
+    if (pollInFlight) return
+    pollInFlight = true
+    try {
+      const job = await getJobStatus(sessionId)
+      if (!job) return
 
-    for (const pageNum of (job.completed_pages || [])) {
-      if (state.translatedPages.has(pageNum)) continue
-      const data = await getPageTranslation(sessionId, pageNum, getTranslationOptions())
-      if (data?.translation) {
-        state.translationCache[pageNum] = data.translation
-        state.translationSentences[pageNum] = data.sentences || []
-        state.translatedPages.add(pageNum)
-        state.translatingPages.delete(pageNum)
-        renderTransContent(pageNum, data.translation, false)
+      for (const pageNum of (job.completed_pages || [])) {
+        if (state.translatedPages.has(pageNum)) continue
+        const data = await getPageTranslation(sessionId, pageNum, getTranslationOptions())
+        if (data?.translation) {
+          state.translationCache[pageNum] = data.translation
+          state.translationSentences[pageNum] = data.sentences || []
+          state.translatedPages.add(pageNum)
+          state.translatingPages.delete(pageNum)
+          renderTransContent(pageNum, data.translation, false)
+        }
       }
-    }
 
-    const done  = state.translatedPages.size
-    const total = job.total_pages || state.totalPages
-    const isRunning = job.status === 'running' || job.status === 'pending'
-    updateProgressMiniRaw(done, total, isRunning)
+      const done  = state.translatedPages.size
+      const total = job.total_pages || state.totalPages
+      const isRunning = job.status === 'running' || job.status === 'pending'
+      updateProgressMiniRaw(done, total, isRunning)
 
-    if (job.status === 'running') {
-      translateSpinner.classList.remove('hidden')
-      translateStatusText.textContent = `백그라운드 번역 중 (${done}/${total}p)`
-      cancelTransBtn.classList.remove('hidden')
-      resumeTransBtn.classList.add('hidden')
-    } else {
-      translateSpinner.classList.add('hidden')
-      translateStatusText.textContent =
-        job.status === 'completed' ? `번역 완료 ✓ (${done}/${total}p)` : `상태: ${job.status}`
-      cancelTransBtn.classList.add('hidden')
-      if (job.status !== 'completed') {
-        resumeTransBtn.classList.remove('hidden')
-      } else {
+      if (job.status === 'running') {
+        translateSpinner.classList.remove('hidden')
+        translateStatusText.textContent = `백그라운드 번역 중 (${done}/${total}p)`
+        cancelTransBtn.classList.remove('hidden')
         resumeTransBtn.classList.add('hidden')
+      } else {
+        translateSpinner.classList.add('hidden')
+        translateStatusText.textContent =
+          job.status === 'completed' ? `번역 완료 ✓ (${done}/${total}p)` : `상태: ${job.status}`
+        cancelTransBtn.classList.add('hidden')
+        if (job.status !== 'completed') {
+          resumeTransBtn.classList.remove('hidden')
+        } else {
+          resumeTransBtn.classList.add('hidden')
+        }
+        clearInterval(state.pollingTimer)
+        state.pollingTimer = null
       }
-      clearInterval(state.pollingTimer)
-      state.pollingTimer = null
+    } finally {
+      pollInFlight = false
     }
   }
 
