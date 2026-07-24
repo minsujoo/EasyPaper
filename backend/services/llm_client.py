@@ -898,7 +898,17 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         claude_path = "claude"
 
     # --print - : stdin으로 프롬프트를 받아 처리 (--print 인자로 넘기면 Claude가 수학 기호를 _MB_N 으로 치환하는 버그 발생)
-    base_cmd = [claude_path, "--permission-mode", "dontAsk", "--output-format", "text", "--print", "-"]
+    #
+    # --permission-mode dontAsk는 비대화형 실행에 필수(TTY 없이 승인 프롬프트를
+    # 띄우면 그냥 멈춘다)이지만, 이것만 있으면 세션이 Bash/Write/Edit 등 모든
+    # 도구를 승인 없이 실제로 실행할 수 있게 된다. 이 호출은 PDF에서 추출한
+    # 텍스트를 그대로 프롬프트에 넣는 순수 번역/QA 용도라 도구가 전혀 필요
+    # 없는데(codex 경로의 sandbox_mode=read-only와 동일한 이유), 악성 PDF에 프롬프트
+    # 인젝션이 심어져 있으면 이 세션이 cwd(프로젝트 루트, .env 포함)에서 임의
+    # 파일을 읽거나 쓰거나 셸 명령을 실행하도록 유도될 수 있다. --tools ""로
+    # 세션에서 쓸 수 있는 도구 자체를 완전히 비워, 인젝션이 성공해도 실행할
+    # 수단이 없도록 원천 차단한다.
+    base_cmd = [claude_path, "--permission-mode", "dontAsk", "--tools", "", "--output-format", "text", "--print", "-"]
 
     # Prepare custom HOME for Claude Code session isolation to prevent concurrent locks
     env = get_agy_env()
@@ -1418,7 +1428,14 @@ async def stream_antigravity(
                 # 채팅마다 새 세션이 계속 생성되고 있었다).
                 temp_log_path = os.path.abspath(os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log"))
 
-                init_cmd = [agy_path, "--dangerously-skip-permissions"]
+                # --dangerously-skip-permissions는 비대화형 실행에 필수(TTY 없이
+                # 승인 프롬프트를 띄우면 그냥 멈춘다)이지만, 이것만 있으면 세션이
+                # 터미널 명령/파일 조작을 승인 없이 실제로 실행할 수 있게 된다.
+                # --sandbox로 터미널 사용에 제약을 걸어, 세션 초기화 프롬프트에
+                # 프롬프트 인젝션이 섞여도(우리가 직접 만든 고정 문자열이라 이
+                # 지점 자체는 안전하지만, 아래 실제 번역/채팅 호출과 동일한
+                # 세션·설정을 공유하므로 일관되게 적용) 영향 범위를 최소화한다.
+                init_cmd = [agy_path, "--dangerously-skip-permissions", "--sandbox"]
                 if model and model.strip() and model.strip().lower() != "custom":
                     init_cmd.extend(["--model", model.strip()])
                 init_cmd.extend(["--log-file", temp_log_path])
@@ -1469,7 +1486,11 @@ async def stream_antigravity(
                         except Exception:
                             pass
 
-    cmd = [agy_path, "--dangerously-skip-permissions"]
+    # PDF에서 추출한 텍스트를 그대로 프롬프트에 담아 보내는 순수 번역/채팅
+    # 용도라 터미널/파일 조작 권한이 전혀 필요 없다(codex 경로의
+    # sandbox_mode=read-only와 동일한 이유) - 악성 PDF에 프롬프트 인젝션이
+    # 심어져 있어도 --sandbox로 실행 수단 자체를 제한해 영향 범위를 최소화한다.
+    cmd = [agy_path, "--dangerously-skip-permissions", "--sandbox"]
     if model and model.strip() and model.strip().lower() != "custom":
         cmd.extend(["--model", model.strip()])
     if target_conv_id:
