@@ -167,29 +167,13 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
 
-            // 데스크탑 자체 업데이트(git pull이 아니라 Tauri updater로 배선) -
-            // tauri.conf.json의 plugins.updater.endpoints는 아직 실제로 존재하지
-            // 않는 플레이스홀더 URL이고 pubkey도 이 스파이크에서만 쓰는 임시
-            // 키페어라, check()는 지금 성공하지 못하지만(네트워크/서명 오류)
-            // 플러그인이 실제로 배선되어 매니페스트 확인 흐름을 시도한다는 것은
-            // 검증된다. 실배포 전 진짜 키 생성 + 실제 릴리스 엔드포인트로 교체 필요.
-            let updater_handle = app_handle.clone();
-            tauri::async_runtime::spawn(async move {
-                use tauri_plugin_updater::UpdaterExt;
-                match updater_handle.updater() {
-                    Ok(updater) => match updater.check().await {
-                        Ok(Some(update)) => {
-                            log::info!("update available: {}", update.version)
-                        }
-                        Ok(None) => log::info!("updater check: already up to date"),
-                        Err(e) => log::warn!(
-                            "updater check failed (expected - placeholder endpoint/key for spike): {}",
-                            e
-                        ),
-                    },
-                    Err(e) => log::warn!("updater plugin unavailable: {}", e),
-                }
-            });
+            // 데스크탑 자체 업데이트 확인/다운로드/설치는 프론트엔드(main.js의
+            // checkTauriUpdate/installTauriUpdate)가 @tauri-apps/plugin-updater로
+            // 직접 수행한다 - 로그인 직후 조용히 확인하고, 정보 탭에서 사용자가
+            // 수동으로도 확인/설치할 수 있다. 여기 setup()에서 별도로 check()를
+            // 또 호출하면 앱 실행마다 업데이트 서버에 중복 요청만 나갈 뿐 결과를
+            // 사용자에게 보여줄 방법이 없어(로그로만 남음) 의미가 없으므로 두지
+            // 않는다.
             let port = find_available_port(8000);
 
             let app_data_dir = app
