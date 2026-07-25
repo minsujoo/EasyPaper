@@ -289,6 +289,7 @@ function showLogin() {
   stopLibraryPolling()
   viewerScreen.classList.remove('active')
   libraryScreen.classList.remove('active')
+  if (compareScreen) compareScreen.classList.remove('active')
   loginScreen.classList.add('active')
   // 글로벌 테마 토글 표시, 로그아웃 및 설정 버튼 숨김
   const globalToggle = $('global-theme-toggle')
@@ -300,6 +301,7 @@ function showViewer() {
   stopLibraryPolling()
   loginScreen.classList.remove('active')
   libraryScreen.classList.remove('active')
+  if (compareScreen) compareScreen.classList.remove('active')
   viewerScreen.classList.add('active')
   // 글로벌 테마 토글 숨김 (뷰어 상단바 테마 버튼 사용)
   const globalToggle = $('global-theme-toggle')
@@ -3375,6 +3377,7 @@ async function showLibraryScreen(shouldPushState = true) {
   }
   loginScreen.classList.remove('active')
   viewerScreen.classList.remove('active')
+  if (compareScreen) compareScreen.classList.remove('active')
   libraryScreen.classList.add('active')
   // 글로벌 테마 토글, 로그아웃, 설정 버튼 표시
   const globalToggle = $('global-theme-toggle')
