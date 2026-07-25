@@ -9,6 +9,10 @@
 "첫 저자 성(소문자) + 연도"를 키로 쓴다(예: "vaswani2017") - 프론트엔드의
 본문 인용 표기 매칭(main.js의 parseAuthorYearKeys)과 반드시 같은 키 형식을
 써야 한다.
+
+대괄호 스타일은 순수 숫자(`[12]`)뿐 아니라 alpha 스타일 BibTeX가 흔히 쓰는
+"저자 이니셜+연도" 키워드 키(`[BCV13]`, `[LBH+15]`, `[Dev86]` 등)도 그대로
+키로 인정한다 - 프론트엔드의 CITATION_MARKER_RE도 동일한 키 형식을 감지한다.
 """
 
 import re
@@ -22,7 +26,7 @@ _HEADER_PREFIX_RE = re.compile(
     r"참\s*고\s*문\s*헌)\b",
     re.IGNORECASE,
 )
-_BRACKET_ENTRY_RE = re.compile(r"^\s*\[(\d{1,3})\]\s*(.+)")
+_BRACKET_ENTRY_RE = re.compile(r"^\s*\[([A-Za-z0-9][A-Za-z0-9+\-]{0,9})\]\s*(.+)")
 _PLAIN_NUMBERED_ENTRY_RE = re.compile(r"^\s*(\d{1,3})[.)]\s+(.+)")
 
 # (Author, Year) 스타일 항목의 시작 줄 판별용 - "Surname, Initial..." 형태로

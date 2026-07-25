@@ -145,6 +145,20 @@ def test_parses_header_with_space_separated_drop_cap():
     assert refs == {"1": "Some Author. A paper title. 2020."}
 
 
+def test_parses_keyword_style_bracket_references():
+    """일부 논문(특히 VAE류)은 저자 이니셜+연도 키워드를 대괄호 키로 쓴다."""
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "[BCV13] Y. Bengio, A. Courville, and P. Vincent. Representation "
+        "learning: A review and new perspectives. 2013.\n\n"
+        "[Dev86] G. E. Deville. Some early paper. 1986."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"BCV13", "Dev86"}
+    assert "Bengio" in refs["BCV13"]
+    assert "Deville" in refs["Dev86"]
+
+
 def test_author_year_keeps_first_entry_on_duplicate_key():
     """같은 저자가 같은 해에 여러 편(2020a/2020b 등)이면 먼저 나온 항목만 유지한다."""
     pages = [{"page_num": 1, "text": (
