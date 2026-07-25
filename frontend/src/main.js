@@ -4128,7 +4128,14 @@ function wireDocItemEvents(container, doc, displayTitle) {
 
   const openBtn = container.querySelector('.doc-open-btn')
   if (openBtn) {
-    openBtn.addEventListener('click', (e) => { e.stopPropagation(); openFromLibrary(doc) })
+    openBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      // 편집/삭제/미리보기 버튼은 비교 선택 모드에서 CSS(pointer-events: none)로
+      // 막혀있지만, "열기" 버튼은 카드 풋터에 별도로 배치되어 그 대상에서 빠져있다.
+      // 막지 않으면 선택 모드 중 클릭 시 선택 대신 뷰어로 즉시 이동해버린다.
+      if (compareSelectMode) { toggleDocCompareSelection(container, doc); return }
+      openFromLibrary(doc)
+    })
   }
 
   const deleteBtn = container.querySelector('.doc-delete-btn')
