@@ -145,6 +145,59 @@ def test_parses_header_with_space_separated_drop_cap():
     assert refs == {"1": "Some Author. A paper title. 2020."}
 
 
+def test_parses_entries_packed_on_one_line_without_separators():
+    """2단 레이아웃 PDF의 블록 추출 결과, 서로 다른 여러 항목이 줄바꿈 없이
+    한 줄에 이어 붙는 경우가 실제로 관찰된다(예: 실제 EEG Conformer 논문의
+    참고문헌 목록). 항목 경계가 줄바꿈이 아니라 "[N]" 표기 자체로 판정되어야
+    이런 경우에도 각 항목이 올바르게 분리된다."""
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "[1] J. Jin et al., “A novel framework,” IEEE Trans., vol. 30, "
+        "pp. 20–29, 2022. [2] B. Liu et al., “Improving SSVEP-BCI,” "
+        "IEEE Trans., vol. 29, pp. 1998–2007, 2021. [3] J. W. Li et al., "
+        "“Single-channel selection,” J. Biomed., vol. 26, 2022."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"1", "2", "3"}
+    assert "Jin" in refs["1"] and "Liu" not in refs["1"]
+    assert "Liu" in refs["2"] and "Single-channel" not in refs["2"]
+    assert "Single-channel" in refs["3"]
+
+
+def test_parses_entry_split_across_hanging_indent_continuation_line():
+    """hanging indent 서식(첫 줄은 안 들여쓰고 이어지는 줄만 들여쓰는 참고문헌
+    표기)에서, 실제 pdf_parser.py가 들여쓰기된 이어지는 줄 앞에 내부 마커
+    (_INDENT_SENTINEL)를 붙여 반환한다 - 참고문헌 파싱 결과에는 이 마커가
+    노출되지 않아야 하고, 항목도 하나로 정상 병합되어야 한다."""
+    from services.pdf_parser import _INDENT_SENTINEL
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "[1] J. Jin et al., “A novel classification framework using the graph\n\n"
+        f"{_INDENT_SENTINEL}representations of electroencephalogram,” IEEE Trans., 2022. "
+        "[2] B. Liu et al., “Second entry,” 2021."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"1", "2"}
+    assert _INDENT_SENTINEL not in refs["1"]
+    assert "representations of electroencephalogram" in refs["1"]
+
+
+def test_bracket_bibliographic_medium_marker_is_not_treated_as_new_entry():
+    """"[Online]", "[Internet]" 같은 서지 매체 표기 대괄호는 참고문헌 항목
+    안에 실제로 흔히 등장하는데, 숫자가 없는 순수 알파벳 키라 새 항목의
+    시작으로 오인되면 안 된다(오인되면 그 뒤 진짜 항목이 전부 잘못 흡수됨)."""
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "[22] Y. Song et al., “Transformer-based learning,” Jun. 2021. "
+        "[Online]. Available: https://arxiv.org/abs/2106.11170 "
+        "[23] S. Bagchi and D. Bathula, “EEG-ConvTransformer,” 2022."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"22", "23"}
+    assert "Online" in refs["22"]  # 항목 텍스트 안에는 그대로 남아 있어야 함
+    assert "Bagchi" in refs["23"]
+
+
 def test_parses_keyword_style_bracket_references():
     """일부 논문(특히 VAE류)은 저자 이니셜+연도 키워드를 대괄호 키로 쓴다."""
     pages = [{"page_num": 1, "text": (

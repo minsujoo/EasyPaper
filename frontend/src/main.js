@@ -6387,13 +6387,21 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
 //    (Smith, 2020; Jones, 2019) 등 - 백엔드 reference_parser.py의
 //    _parse_author_year_entries와 동일하게 "저자 성(소문자)+연도"를 키로 매칭한다.
 //
-// 대괄호 안 토큰 하나(숫자 또는 "BCV13"류 키워드 키, 최대 10자)를 가리키는
-// 조각 - 실제로 참고문헌 목록에 있는 키인지는 아래 addCitationBox 호출부에서
-// refMap 존재 여부로 걸러내므로, 여기서는 폭넓게 잡아도 오탐이 화면에 나타나지
-// 않는다(존재하지 않는 키는 그냥 클릭 불가능한 채로 무시됨).
-const CITATION_TOKEN_SRC = '[A-Za-z0-9][A-Za-z0-9+\\-]{0,9}'
+// 대괄호 안 토큰 하나 - 순수 숫자(1~3자리) 또는 "BCV13"류 키워드 키(영문
+// 1~6자 + 선택적 "+" + 숫자 2~4자리 + 선택적 소문자 접미사)만 인정한다.
+// 백엔드 reference_parser.py의 _BRACKET_KEY_RE와 반드시 같은 모양을 유지할
+// 것 - 숫자가 전혀 없는 순수 알파벳 키(예: 참고문헌 항목 안에 흔한
+// "[Online]", "[Internet]" 같은 서지 매체 표기)까지 토큰으로 인정하면,
+// 우연히 refMap에 같은 이름의 키가 있는 경우(드물지만 가능) 엉뚱한 곳에
+// 오버레이가 걸릴 여지가 생긴다. 실제로 참고문헌 목록에 있는 키인지는 아래
+// addCitationBox 호출부에서 refMap 존재 여부로 한 번 더 걸러진다.
+const CITATION_TOKEN_SRC = '(?:\\d{1,3}|[A-Za-z]{1,6}\\+?\\d{2,4}[a-z]?)'
+// 대괄호 목록의 항목 하나는 위 단일 키이거나, 숫자 범위("12-14")일 수 있다 -
+// 범위는 CITATION_TOKEN_SRC 모양에 안 맞으므로(하이픈 포함) 마커 탐지
+// 단계에서 별도 대안으로 허용해두고, 실제 펼치기는 parseCitationNumbers가 한다.
+const CITATION_LIST_ITEM_SRC = `(?:\\d{1,3}\\s*[-–]\\s*\\d{1,3}|${CITATION_TOKEN_SRC})`
 const CITATION_MARKER_RE = new RegExp(
-  `\\[\\s*${CITATION_TOKEN_SRC}(?:\\s*,\\s*${CITATION_TOKEN_SRC})*\\s*\\]`, 'g'
+  `\\[\\s*${CITATION_LIST_ITEM_SRC}(?:\\s*,\\s*${CITATION_LIST_ITEM_SRC})*\\s*\\]`, 'g'
 )
 // 여는 괄호 바로 뒤 대문자로 시작하고, 닫는 괄호 전 20자 이내에 4자리 연도가
 // 있어야 인용으로 인정한다(오탐 방지 - 그냥 "(그림 2020년 기준)" 같은 일반

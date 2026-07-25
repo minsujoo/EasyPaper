@@ -13,10 +13,18 @@
 대괄호 스타일은 순수 숫자(`[12]`)뿐 아니라 alpha 스타일 BibTeX가 흔히 쓰는
 "저자 이니셜+연도" 키워드 키(`[BCV13]`, `[LBH+15]`, `[Dev86]` 등)도 그대로
 키로 인정한다 - 프론트엔드의 CITATION_MARKER_RE도 동일한 키 형식을 감지한다.
+
+번호형(대괄호/평문) 항목 경계는 줄바꿈이 아니라 "항목 시작 표기" 자체를
+전체 텍스트에서 직접 찾아 판정한다(아래 _extract_marker_entries 참고) -
+2단 레이아웃 논문에서 실제로 관찰된 문제: pdf_parser.py의 블록 추출 결과가
+참고문헌 항목 경계와 줄바꿈이 전혀 일치하지 않는 경우가 흔하다(항목 하나가
+줄바꿈으로 쪼개지거나, 서로 다른 두 항목이 줄바꿈 없이 한 줄에 붙어버림).
 """
 
 import re
 from typing import Dict, List, Optional
+
+from services.pdf_parser import _INDENT_SENTINEL
 
 # 헤더 단어의 글자 사이에 공백을 허용한다 - 드롭캡(첫 글자만 별도 폰트/굵기)
 # 렌더링 시 "**R** **EFERENCES**"처럼 글자 사이에 공백이 끼어드는 경우까지
@@ -26,8 +34,26 @@ _HEADER_PREFIX_RE = re.compile(
     r"참\s*고\s*문\s*헌)\b",
     re.IGNORECASE,
 )
-_BRACKET_ENTRY_RE = re.compile(r"^\s*\[([A-Za-z0-9][A-Za-z0-9+\-]{0,9})\]\s*(.+)")
+# 대괄호 키는 순수 숫자([12]) 또는 "저자 이니셜+연도" 꼴([BCV13], [Dev86],
+# [LBH+15])만 인정하고, 숫자가 전혀 없는 순수 알파벳 키는 거부한다 -
+# 참고문헌 항목 안에는 "... 2021. [Online]. Available: ..." 처럼 서지
+# 매체를 나타내는 대괄호 표기([Online], [Internet], [Software] 등)가 실제로
+# 흔히 등장하는데, 이런 단어들이 새 항목의 시작으로 오인되면 그 뒤 진짜
+# 항목들이 전부 직전 항목에 잘못 흡수되어 버린다.
+_BRACKET_KEY_RE = re.compile(r"\d{1,3}|[A-Za-z]{1,6}\+?\d{2,4}[a-z]?")
+_BRACKET_ENTRY_RE = re.compile(r"^\s*\[(" + _BRACKET_KEY_RE.pattern + r")\]\s*(.+)")
 _PLAIN_NUMBERED_ENTRY_RE = re.compile(r"^\s*(\d{1,3})[.)]\s+(.+)")
+
+# 아래 두 정규식은 줄 시작(^)에 앵커하지 않고 텍스트 전체에서 "항목이 시작하는
+# 지점" 자체를 찾는 데 쓴다(_extract_marker_entries) - 매치와 매치 사이 구간을
+# 그대로 항목 텍스트로 잘라내므로, 항목 중간에 줄바꿈이 끼어 있든 두 항목이
+# 줄바꿈 없이 붙어 있든 항목 경계를 정확히 잡아낼 수 있다.
+_BRACKET_MARKER_RE = re.compile(r"\[(" + _BRACKET_KEY_RE.pattern + r")\]")
+# 평문 번호형은 대괄호보다 오탐 위험이 크다(항목 안에 흔한 "vol. 12," 같은
+# 숫자+마침표와 구분이 안 됨) - 뒤에 대문자/한글이 바로 이어질 때만 후보로
+# 인정하고, _extract_marker_entries에서 1부터 정확히 연속되는 번호만 채택해
+# 우연히 일치하는 페이지/연도 숫자를 걸러낸다.
+_PLAIN_NUMBERED_MARKER_RE = re.compile(r"(?:^|\s)(\d{1,3})[.)]\s+(?=[A-Z가-힣])")
 
 # (Author, Year) 스타일 항목의 시작 줄 판별용 - "Surname, Initial..." 형태로
 # 시작하는 줄을 새 항목의 시작으로 본다. 실제로 참고문헌 항목인지는 flush 시점에
@@ -88,6 +114,12 @@ def _extract_reference_list_impl(pages: List[dict]) -> Dict[str, str]:
         return {}
 
     combined_text = "\n".join(p.get("text", "") or "" for p in pages[ref_start_page_idx:])
+    # pdf_parser.py가 들여쓰기된 문단 앞에 붙이는 내부 마커(_INDENT_SENTINEL) -
+    # 원래는 chunker.py가 번역 파이프라인에서 소비하는 표시인데, 참고문헌
+    # 목록의 줄바꿈된 항목(첫 줄은 안 들여써지고 이어지는 줄은 들여써지는
+    # hanging indent 서식)도 이 표시가 붙은 채로 들어와, 그대로 두면 툴팁에
+    # 보이는 참고문헌 원문에 눈에 안 보이는 문자가 섞여 나온다.
+    combined_text = combined_text.replace(_INDENT_SENTINEL, "")
     lines = combined_text.split("\n")
 
     start_idx = 0
@@ -100,35 +132,46 @@ def _extract_reference_list_impl(pages: List[dict]) -> Dict[str, str]:
             start_idx = idx
             break
     body_lines = lines[start_idx:]
+    # 항목 경계 탐지는 줄바꿈에 기대지 않는다(아래 _extract_marker_entries
+    # 참고) - 여기서는 그냥 하나의 문자열로 이어붙이기만 한다.
+    body_text = "\n".join(body_lines)
 
-    entries: Dict[str, str] = {}
-    current_num = None
-    current_parts: List[str] = []
-
-    def flush():
-        if current_num is not None:
-            text = re.sub(r"\s+", " ", " ".join(current_parts)).strip()
-            if text:
-                entries[current_num] = text[:_MAX_ENTRY_LENGTH]
-
-    for raw_line in body_lines:
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        m = _BRACKET_ENTRY_RE.match(line) or _PLAIN_NUMBERED_ENTRY_RE.match(line)
-        if m:
-            flush()
-            current_num = m.group(1)
-            current_parts = [m.group(2)]
-        elif current_num is not None:
-            current_parts.append(line)
-
-    flush()
-
+    entries = _extract_marker_entries(body_text, _BRACKET_MARKER_RE)
+    if not entries:
+        entries = _extract_marker_entries(body_text, _PLAIN_NUMBERED_MARKER_RE, sequential=True)
     if not entries:
         entries = _parse_author_year_entries(body_lines)
 
+    return entries
+
+
+def _extract_marker_entries(text: str, marker_re: "re.Pattern", sequential: bool = False) -> Dict[str, str]:
+    """텍스트 전체에서 marker_re에 매칭되는 "항목 시작 표기"를 전부 찾아,
+    연속된 두 매치 사이 구간을 항목 텍스트로 잘라낸다.
+
+    sequential=True(평문 번호형)이면 오탐 방지를 위해 1부터 정확히
+    연속되는 번호(1, 2, 3, ...)만 항목 시작으로 채택한다 - 실제 참고문헌
+    번호는 항상 이렇게 증가하므로, 항목 본문 안의 우연한 숫자(페이지·연도
+    등)를 걸러내는 데 이 제약만으로 충분하다.
+    """
+    matches = list(marker_re.finditer(text))
+    if sequential:
+        filtered = []
+        expected = 1
+        for m in matches:
+            if int(m.group(1)) != expected:
+                continue
+            filtered.append(m)
+            expected += 1
+        matches = filtered
+
+    entries: Dict[str, str] = {}
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        entry_text = re.sub(r"\s+", " ", text[start:end]).strip()
+        if entry_text and m.group(1) not in entries:
+            entries[m.group(1)] = entry_text[:_MAX_ENTRY_LENGTH]
     return entries
 
 
