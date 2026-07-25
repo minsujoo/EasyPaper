@@ -77,3 +77,24 @@ test('선택하지 않은 상태에서는 비교 채팅 시작 버튼이 비활�
   await expect(page.locator('#compare-select-bar')).toHaveClass(/hidden/)
   await expect(page.locator('.doc-card-compare-check').first()).not.toBeVisible()
 })
+
+// 비교 선택 모드에서는 카드를 클릭하면 선택 상태만 토글되어야 한다. "열기" 버튼은
+// 편집/삭제 등 다른 카드 액션과 달리 pointer-events: none 규칙에서 빠져 있어,
+// 클릭 시 선택 대신 뷰어 화면으로 바로 이동해버리는 버그가 있었다.
+test('비교 선택 모드에서 열기 버튼을 눌러도 뷰어로 이동하지 않고 선택만 토글된다', async ({ page }) => {
+  const docs = [
+    { id: 'doc-1', filename: 'a.pdf', total_pages: 1, metadata: { title: 'Paper A' }, translated_pages: [] },
+    { id: 'doc-2', filename: 'b.pdf', total_pages: 1, metadata: { title: 'Paper B' }, translated_pages: [] },
+  ]
+  await mockBaseRoutes(page, { documents: docs })
+
+  await gotoApp(page)
+  await page.click('#lib-compare-toggle-btn')
+
+  const firstCard = page.locator('.doc-card').first()
+  await firstCard.locator('.doc-open-btn').click({ force: true })
+
+  await expect(page.locator('#compare-select-count')).toHaveText('1/5개 선택됨')
+  await expect(page.locator('#library-screen')).toHaveClass(/active/)
+  await expect(page.locator('#viewer-screen')).not.toHaveClass(/active/)
+})
