@@ -3954,8 +3954,20 @@ function renderAssistantChatSessions(sessions) {
         <div class="chat-session-item-meta">${formatChatSessionTime(session.last_message_at)}</div>
       </div>
     `
-    item.addEventListener('click', () => {
-      location.hash = `#viewer?id=${encodeURIComponent(session.doc_id)}&chat=1`
+    item.addEventListener('click', async () => {
+      // location.hash를 바꿔서 라우터(handleRouting)를 거치게 하면, 이 앱에서는
+      // hashchange와 popstate가 함께 발생해 handleRouting이 같은 문서를 두 번
+      // 라우팅하며 문서 조회(fetchLibraryDoc) 요청도 중복으로 나가 체감 로딩이
+      // 늘어진다. 라이브러리 카드의 "열기" 버튼처럼 문서를 직접 한 번만 불러와
+      // 바로 열어서 이 지연을 없앤다.
+      try {
+        const doc = await fetchLibraryDoc(session.doc_id)
+        await openFromLibrary(doc)
+        openChatSidebar()
+      } catch (err) {
+        console.error('채팅 세션에서 논문 열기 실패:', err)
+        showToast('논문을 불러오지 못했습니다.', 'error')
+      }
     })
     chatSessionList.appendChild(item)
   })
@@ -3978,9 +3990,17 @@ function renderCompareChatSessions(sessions) {
         <div class="chat-session-item-meta">${formatChatSessionTime(session.last_message_at)}</div>
       </div>
     `
-    item.addEventListener('click', () => {
-      const idsParam = session.doc_ids.map(id => encodeURIComponent(id)).join(',')
-      location.hash = `#compare?ids=${idsParam}`
+    item.addEventListener('click', async () => {
+      // 이유는 위 renderAssistantChatSessions와 동일 - 라우터를 거치지 않고
+      // 문서들을 직접 불러와 바로 비교 화면을 연다.
+      try {
+        const docs = await Promise.all(session.doc_ids.map(id => fetchLibraryDoc(id)))
+        if (!docs.every(Boolean)) throw new Error('일부 논문을 찾을 수 없습니다.')
+        await openCompareScreen(docs)
+      } catch (err) {
+        console.error('채팅 세션에서 비교 화면 열기 실패:', err)
+        showToast('비교할 논문 정보를 불러올 수 없습니다.', 'error')
+      }
     })
     chatSessionList.appendChild(item)
   })
