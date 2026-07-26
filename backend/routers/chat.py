@@ -6,7 +6,13 @@ from typing import List
 
 from routers.upload import sessions, ensure_session, require_session_owner
 from services.llm_client import stream_chat
-from services.db import db_save_chat_message, db_get_chat_history
+from services.db import (
+    db_save_chat_message,
+    db_get_chat_history,
+    db_list_assistant_chat_sessions,
+    db_upsert_compare_session,
+    db_list_compare_chat_sessions,
+)
 from services.library import get_document as lib_get_document
 from services.auth import get_current_user
 
@@ -165,6 +171,7 @@ async def chat_compare_stream(data: CompareChatRequest, current_user: str = Depe
         paper_blocks.append(f"\n\n===== 논문 {idx}: {title} =====\n{paper_text}")
 
     compare_id = _build_compare_id(doc_ids)
+    db_upsert_compare_session(compare_id, current_user, doc_ids)
     titles_list = "\n".join(f"- 논문 {i}: {t}" for i, t in enumerate(titles, start=1))
     combined_context = "".join(paper_blocks)
 
@@ -229,6 +236,22 @@ async def get_compare_chat_history(doc_ids: str, current_user: str = Depends(get
     compare_id = _build_compare_id(ids)
     history = db_get_chat_history(compare_id)
     return {"history": history, "compare_id": compare_id}
+
+
+@router.get("/chat/sessions")
+async def get_chat_sessions(current_user: str = Depends(get_current_user)):
+    """현재 사용자가 AI 어시스턴트(단일 논문) 기능으로 나눈 채팅 세션 목록을
+    최근 대화 순으로 반환합니다."""
+    sessions = db_list_assistant_chat_sessions(current_user)
+    return {"sessions": sessions}
+
+
+@router.get("/chat/compare-sessions")
+async def get_compare_chat_sessions(current_user: str = Depends(get_current_user)):
+    """현재 사용자가 논문 비교 기능으로 나눈 채팅 세션 목록을 최근 대화 순으로
+    반환합니다."""
+    sessions = db_list_compare_chat_sessions(current_user)
+    return {"sessions": sessions}
 
 
 @router.get("/chat/{session_id}/history")

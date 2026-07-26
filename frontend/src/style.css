@@ -4943,3 +4943,83 @@ body.light-theme .figure-preview-tooltip {
 #lib-tab-trash:active {
   transform: scale(0.95);
 }
+
+/* ── 채팅 세션 조회 (AI 어시스턴트 / 논문 비교 대화 목록) ── */
+.chat-session-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.chat-session-subtab-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--font-sans);
+}
+.chat-session-subtab-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.chat-session-subtab-btn.active {
+  color: #fff;
+  background: var(--control-accent);
+  border-color: var(--control-accent);
+}
+
+.chat-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-session-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.chat-session-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.35);
+  border-color: var(--accent-mid);
+}
+.chat-session-item-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-mid) 14%, var(--bg-elevated));
+  color: var(--accent-mid);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.chat-session-item-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-session-item-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}

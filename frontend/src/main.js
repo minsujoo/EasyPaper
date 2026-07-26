@@ -1,7 +1,7 @@
 import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
@@ -24,7 +24,7 @@ window.fetch = async function (...args) {
 
 // ── 상태 ──────────────────────────────────────────
 const state = {
-  currentLibraryTab: 'archive', // 'archive' (보관함) 또는 'history' (히스토리)
+  currentLibraryTab: 'archive', // 'archive'(보관함) / 'history'(히스토리) / 'trash'(휴지통) / 'chat'(채팅)
   previousLibraryTab: 'archive', // 휴지통 진입 전 이전 탭 기억용
   currentDocId: null,
   currentDocMetadata: {},
@@ -184,8 +184,14 @@ const libraryCountBadge = $('library-count-badge')
 const libTabArchive     = $('lib-tab-archive')
 const libTabHistory     = $('lib-tab-history')
 const libTabTrash       = $('lib-tab-trash')
+const libTabChat        = $('lib-tab-chat')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
+const librarySearchBox  = $('library-search-box')
+const libraryChatSection = $('library-chat-section')
+const chatSubtabAssistant = $('chat-subtab-assistant')
+const chatSubtabCompare   = $('chat-subtab-compare')
+const chatSessionList     = $('chat-session-list')
 
 const libCompareToggleBtn   = $('lib-compare-toggle-btn')
 const compareSelectBar      = $('compare-select-bar')
@@ -3337,11 +3343,12 @@ async function loadLibraryCount() {
 function updateTabUI(activeTab) {
   state.currentLibraryTab = activeTab
   activeCategoryFilter = 'ALL'
-  
+
   if (libTabArchive) libTabArchive.classList.toggle('active', activeTab === 'archive')
   if (libTabHistory) libTabHistory.classList.toggle('active', activeTab === 'history')
   if (libTabTrash) libTabTrash.classList.toggle('active', activeTab === 'trash')
-  
+  if (libTabChat) libTabChat.classList.toggle('active', activeTab === 'chat')
+
   if (libEmptyTrashBtn) {
     if (activeTab === 'trash') {
       libEmptyTrashBtn.classList.remove('hidden')
@@ -3350,18 +3357,28 @@ function updateTabUI(activeTab) {
     }
   }
 
-  // 휴지통 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
+  // 휴지통/채팅 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
   if (libUploadBtn) {
-    if (activeTab === 'trash') {
+    if (activeTab === 'trash' || activeTab === 'chat') {
       libUploadBtn.classList.add('hidden')
     } else {
       libUploadBtn.classList.remove('hidden')
     }
   }
   if (libCompareToggleBtn) {
-    libCompareToggleBtn.classList.toggle('hidden', activeTab === 'trash')
+    libCompareToggleBtn.classList.toggle('hidden', activeTab === 'trash' || activeTab === 'chat')
   }
   setCompareSelectMode(false)
+
+  // 채팅 탭은 문서 그리드 대신 채팅 세션 목록을 보여주므로, 검색/필터 등
+  // 논문 목록 전용 UI는 숨긴다.
+  const isChatTab = activeTab === 'chat'
+  if (libraryGrid) libraryGrid.classList.toggle('hidden', isChatTab)
+  if (libraryChatSection) libraryChatSection.classList.toggle('hidden', !isChatTab)
+  if (librarySearchBox) librarySearchBox.classList.toggle('hidden', isChatTab)
+  if (librarySearchStatus && isChatTab) librarySearchStatus.classList.add('hidden')
+  if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', isChatTab)
+  if (libraryStatsContainer && isChatTab) libraryStatsContainer.classList.add('hidden')
 
   renderLibrary()
 }
@@ -3386,6 +3403,12 @@ if (libTabTrash) {
       state.previousLibraryTab = state.currentLibraryTab
       updateTabUI('trash')
     }
+  })
+}
+if (libTabChat) {
+  libTabChat.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'chat') return
+    updateTabUI('chat')
   })
 }
 
@@ -3745,6 +3768,11 @@ if (compareBackBtn) {
 }
 
 async function renderLibrary() {
+  if (state.currentLibraryTab === 'chat') {
+    await renderChatSessions()
+    return
+  }
+
   // 탭 전환 등으로 목록을 새로 불러올 때는 검색 상태를 초기화한다 - 검색
   // 결과가 다른 탭의 목록과 뒤섞여 보이는 것을 방지
   if (librarySearchInput) librarySearchInput.value = ''
@@ -3861,6 +3889,101 @@ async function renderLibrary() {
     console.error(err)
     libraryGrid.innerHTML = `<div class="lib-empty"><p style="color:var(--error)">라이브러리 불러오기 실패</p></div>`
   }
+}
+
+// ── 채팅 세션 조회 (AI 어시스턴트 / 논문 비교 대화 목록) ────────────────
+let chatSessionSubtab = 'assistant' // 'assistant' 또는 'compare'
+
+function updateChatSubtabUI() {
+  if (chatSubtabAssistant) chatSubtabAssistant.classList.toggle('active', chatSessionSubtab === 'assistant')
+  if (chatSubtabCompare) chatSubtabCompare.classList.toggle('active', chatSessionSubtab === 'compare')
+}
+
+function formatChatSessionTime(isoString) {
+  if (!isoString) return ''
+  return new Date(isoString).toLocaleString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+async function renderChatSessions() {
+  updateChatSubtabUI()
+  if (!chatSessionList) return
+  chatSessionList.innerHTML = `<div class="lib-empty"><p>불러오는 중...</p></div>`
+
+  try {
+    if (chatSessionSubtab === 'assistant') {
+      const data = await getChatSessionsAPI()
+      renderAssistantChatSessions(data.sessions || [])
+    } else {
+      const data = await getCompareChatSessionsAPI()
+      renderCompareChatSessions(data.sessions || [])
+    }
+  } catch (err) {
+    console.error('채팅 세션 목록 로드 실패:', err)
+    chatSessionList.innerHTML = `<div class="lib-empty"><p style="color:var(--error)">채팅 세션을 불러오지 못했습니다</p></div>`
+  }
+}
+
+if (chatSubtabAssistant) {
+  chatSubtabAssistant.addEventListener('click', () => {
+    if (chatSessionSubtab === 'assistant') return
+    chatSessionSubtab = 'assistant'
+    renderChatSessions()
+  })
+}
+if (chatSubtabCompare) {
+  chatSubtabCompare.addEventListener('click', () => {
+    if (chatSessionSubtab === 'compare') return
+    chatSessionSubtab = 'compare'
+    renderChatSessions()
+  })
+}
+
+function renderAssistantChatSessions(sessions) {
+  if (sessions.length === 0) {
+    chatSessionList.innerHTML = `<div class="lib-empty"><p>AI 어시스턴트와 나눈 대화가 없습니다</p></div>`
+    return
+  }
+  chatSessionList.innerHTML = ''
+  sessions.forEach(session => {
+    const item = document.createElement('div')
+    item.className = 'chat-session-item'
+    item.innerHTML = `
+      <div class="chat-session-item-icon">${icon('messageCircle', 17)}</div>
+      <div class="chat-session-item-body">
+        <div class="chat-session-item-title">${escapeHtml(session.title)}</div>
+        <div class="chat-session-item-meta">${formatChatSessionTime(session.last_message_at)}</div>
+      </div>
+    `
+    item.addEventListener('click', () => {
+      location.hash = `#viewer?id=${encodeURIComponent(session.doc_id)}&chat=1`
+    })
+    chatSessionList.appendChild(item)
+  })
+}
+
+function renderCompareChatSessions(sessions) {
+  if (sessions.length === 0) {
+    chatSessionList.innerHTML = `<div class="lib-empty"><p>논문 비교 대화가 없습니다</p></div>`
+    return
+  }
+  chatSessionList.innerHTML = ''
+  sessions.forEach(session => {
+    const item = document.createElement('div')
+    item.className = 'chat-session-item'
+    const titleText = (session.titles || []).join(' · ')
+    item.innerHTML = `
+      <div class="chat-session-item-icon">${icon('compare', 17)}</div>
+      <div class="chat-session-item-body">
+        <div class="chat-session-item-title">${escapeHtml(titleText)}</div>
+        <div class="chat-session-item-meta">${formatChatSessionTime(session.last_message_at)}</div>
+      </div>
+    `
+    item.addEventListener('click', () => {
+      const idsParam = session.doc_ids.map(id => encodeURIComponent(id)).join(',')
+      location.hash = `#compare?ids=${idsParam}`
+    })
+    chatSessionList.appendChild(item)
+  })
 }
 
 let currentLibraryDocs = []
@@ -7090,6 +7213,22 @@ function toggleChatSidebar() {
   }
 }
 
+// 라이브러리의 채팅 세션 조회 목록에서 AI 어시스턴트 대화를 클릭해 들어올 때
+// 처럼, 이미 사이드바가 열려 있는지와 무관하게 "펼쳐진 상태"를 보장해야 하는
+// 경우 사용한다 (toggleChatSidebar는 매번 상태를 반전시켜 이미 열려 있으면
+// 오히려 닫혀버린다).
+function openChatSidebar() {
+  if (!state.sessionId || !chatSidebar) return
+  if (!chatSidebar.classList.contains('hidden')) return
+  chatSidebar.classList.remove('hidden')
+  if (chatResizer) chatResizer.classList.remove('hidden')
+  chatToggleBtn.classList.add('active')
+  chatInput.focus()
+  setTimeout(() => {
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  }, 100)
+}
+
 function resetChatUI() {
   chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
   chatInput.value = ''
@@ -9749,16 +9888,20 @@ async function handleRouting() {
     console.log("[Router] handleRouting triggered. Current hash:", hash)
     
     if (hash.startsWith('#viewer?id=')) {
-      const docId = hash.split('?id=')[1]
+      const params = new URLSearchParams(hash.slice('#viewer?'.length))
+      const docId = params.get('id')
+      const wantChatOpen = params.get('chat') === '1'
       if (docId) {
         if (state.sessionId === docId && viewerScreen.classList.contains('active')) {
           console.log("[Router] Viewer already active for document:", docId)
+          if (wantChatOpen) openChatSidebar()
           return
         }
         console.log("[Router] Routing to viewer for document:", docId)
         const doc = await fetchLibraryDoc(docId)
         if (doc) {
           await openFromLibrary(doc, false)
+          if (wantChatOpen) openChatSidebar()
           return
         }
       }
