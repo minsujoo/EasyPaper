@@ -4006,6 +4006,19 @@ body.light-theme .custom-confirm-modal {
 .floating-memo:hover .floating-memo-color-picker {
   opacity: 1;
 }
+
+.floating-memo-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+/* 접기 상태: 헤더(제목 탭)만 남기고 본문은 숨긴다 */
+.floating-memo.collapsed .floating-memo-body {
+  display: none;
+}
+
 .color-dot {
   width: 10px;
   height: 10px;
@@ -4358,6 +4371,16 @@ body.light-theme .sentence-active-box {
 }
 body.light-theme .sentence-memo-box {
   background-color: rgba(245, 158, 11, 0.14);
+}
+/* 숨겨진 메모의 하이라이트 - 클릭하면 메모 카드가 다시 나타난다 (부모
+   .pdf-highlight-overlay는 pointer-events:none이지만 이 상자만 auto로
+   되돌려 클릭을 받는다 - .citation-marker-box와 동일한 패턴) */
+.sentence-memo-box.hidden-memo {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+.sentence-memo-box.hidden-memo:hover {
+  background-color: rgba(245, 158, 11, 0.32);
 }
 
 /* 독립 수식 호버 상자 */

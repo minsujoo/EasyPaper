@@ -234,6 +234,7 @@ const zoomOutBtn        = $('zoom-out-btn')
 const zoomLabel         = $('zoom-level')
 const syncScrollBtn     = $('sync-scroll-btn')
 const exportBtn         = $('export-btn')
+const memosHideAllBtn   = $('memos-hide-all-btn')
 const retranslateBtn    = $('retranslate-btn')
 const captureAreaBtn    = $('capture-area-btn')
 const cancelTransBtn    = $('cancel-trans-btn')
@@ -4651,6 +4652,8 @@ async function openFromLibrary(doc, shouldPushState = true) {
       history.pushState({ screen: 'viewer', docId: doc.id }, '', `#viewer?id=${doc.id}`)
     }
     state.sessionId  = doc.id
+    allMemosHidden = loadAllMemosHiddenState(doc.id)
+    updateMemosHideAllBtnUI()
     loadDocumentImages(doc.id)
     loadDocumentReferences(doc.id)
     state.filename   = doc.filename
@@ -5370,6 +5373,47 @@ function saveMemos(sessionId, memos) {
   localStorage.setItem(key, JSON.stringify(memos))
 }
 
+// 툴바의 "전체 숨기기" 토글 - 개별 memo.hidden 필드와는 별개로, 문서를 보는 동안만
+// 켜고 끄는 순수 화면 표시 상태(번역창 접기의 isTransPaneCollapsed와 동일한 패턴).
+// 문서(세션)별로 마지막 상태를 기억해두되, 각 메모의 저장된 내용에는 손대지 않는다.
+let allMemosHidden = false
+
+function getAllMemosHiddenKey(sessionId) {
+  return `easypaper_memos_all_hidden_${sessionId}`
+}
+
+function loadAllMemosHiddenState(sessionId) {
+  if (!sessionId) return false
+  return localStorage.getItem(getAllMemosHiddenKey(sessionId)) === 'true'
+}
+
+function updateMemosHideAllBtnUI() {
+  if (!memosHideAllBtn) return
+  memosHideAllBtn.classList.toggle('active', allMemosHidden)
+  memosHideAllBtn.title = allMemosHidden
+    ? '숨긴 메모 모두 표시'
+    : '작성된 모든 메모 숨기기 (하이라이트만 표시)'
+}
+
+function redrawAllPageMemos() {
+  document.querySelectorAll('.pdf-page-wrapper').forEach(wrapper => {
+    const pageNum = parseInt(wrapper.dataset.page, 10)
+    if (!isNaN(pageNum)) renderPageMemos(pageNum)
+  })
+}
+
+if (memosHideAllBtn) {
+  memosHideAllBtn.addEventListener('click', () => {
+    allMemosHidden = !allMemosHidden
+    if (state.sessionId) {
+      localStorage.setItem(getAllMemosHiddenKey(state.sessionId), String(allMemosHidden))
+    }
+    updateMemosHideAllBtnUI()
+    redrawAllPageMemos()
+    showToast(allMemosHidden ? '모든 메모가 숨겨졌습니다.' : '숨겼던 메모를 모두 표시합니다.', 'info')
+  })
+}
+
 function updateMemoConnectorLine(pageWrapper, memo) {
   let svg = pageWrapper.querySelector('.memo-connector-svg')
   if (!svg) {
@@ -5491,21 +5535,54 @@ function renderPageMemos(pageNum) {
     clearOverlayBoxes(overlay, 'sentence-memo-box')
   }
   pageWrapper.querySelectorAll('.pdf-sentence-has-memo').forEach(el => {
-    el.classList.remove('pdf-sentence-has-memo')
+    el.classList.remove('pdf-sentence-has-memo', 'pdf-sentence-has-memo-hidden')
+    delete el.dataset.memoId
   })
+
+  // 폴백(VTM 미사용) 경로에서 숨겨진 메모의 하이라이트 클릭 시 다시 보이기.
+  // .pdf-sentence 스팬은 이 함수가 다시 호출돼도 파괴/재생성되지 않고 그대로
+  // 남아있는 요소라, 매번 element에 직접 리스너를 추가하면 재렌더링될 때마다
+  // 리스너가 계속 쌓인다. 그래서 pageWrapper 하나당 한 번만 위임 리스너를 걸고,
+  // 클릭 시점에 최신 memo 목록을 다시 읽어서 처리한다.
+  if (!pageWrapper.dataset.memoRevealBound) {
+    pageWrapper.dataset.memoRevealBound = '1'
+    pageWrapper.addEventListener('click', (e) => {
+      const target = e.target.closest('.pdf-sentence-has-memo-hidden')
+      if (!target || !target.dataset.memoId) return
+      e.stopPropagation()
+      const pNum = parseInt(pageWrapper.dataset.page, 10)
+      const allMemosObj = loadMemos(state.sessionId)
+      const memos = allMemosObj[`page_${pNum}`] || []
+      const targetMemo = memos.find(m => m.id === target.dataset.memoId)
+      if (targetMemo) {
+        targetMemo.hidden = false
+        saveMemos(state.sessionId, allMemosObj)
+        renderPageMemos(pNum)
+      }
+    })
+  }
 
   if (!state.sessionId) return
   const allMemos = loadMemos(state.sessionId)
   const pageMemos = allMemos[`page_${pageNum}`] || []
 
   pageMemos.forEach(memo => {
-    const memoEl = document.createElement('div')
-    memoEl.className = `floating-memo color-${memo.color || 'default'}`
-    memoEl.setAttribute('data-id', memo.id)
-    memoEl.style.left = `${memo.x}%`
-    memoEl.style.top = `${memo.y}%`
+    // 개별 "숨기기"(memo.hidden) 또는 툴바의 "전체 숨기기"(allMemosHidden) 중
+    // 하나라도 켜져 있으면 카드는 그리지 않고 PDF 본문의 하이라이트만 남긴다.
+    // 전체 숨기기는 순수 화면 표시 상태라 하이라이트를 클릭해도 개별 메모만
+    // 되살아나지 않도록, "클릭해서 다시 보이기"는 개별 숨김에만 적용한다.
+    const isHiddenIndividually = !!memo.hidden
+    const isHidden = isHiddenIndividually || allMemosHidden
 
-    // VTM 기반 메모 하이라이트 (비파괴 시스템)
+    const revealHiddenMemo = () => {
+      memo.hidden = false
+      const allMemosObj = loadMemos(state.sessionId)
+      allMemosObj[`page_${pageNum}`] = pageMemos
+      saveMemos(state.sessionId, allMemosObj)
+      renderPageMemos(pageNum)
+    }
+
+    // VTM 기반 메모 하이라이트 (비파괴 시스템) - 카드 표시 여부와 무관하게 항상 그린다
     const vtmForMemo = state.virtualTextMaps && state.virtualTextMaps[pageNum]
     const memoSentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum]
     let sentenceText = memo.sentenceText || ''
@@ -5521,7 +5598,19 @@ function renderPageMemos(pageNum) {
         if (memoTextLayer) {
           const memoOverlay = getOrCreateOverlay(pageWrapper)
           const memoRects = getSentenceRects(memoSRange, vtmForMemo, memoTextLayer)
-          renderSentenceOverlay(memoOverlay, memoRects, 'sentence-memo-box')
+          memoRects.forEach(r => {
+            const box = document.createElement('div')
+            box.className = isHiddenIndividually ? 'sentence-memo-box hidden-memo' : 'sentence-memo-box'
+            box.style.left = `${r.left}px`
+            box.style.top = `${r.top}px`
+            box.style.width = `${r.width}px`
+            box.style.height = `${r.height}px`
+            if (isHiddenIndividually) {
+              box.title = '숨겨진 메모 다시 표시'
+              box.addEventListener('click', (e) => { e.stopPropagation(); revealHiddenMemo() })
+            }
+            memoOverlay.appendChild(box)
+          })
         }
       }
     } else {
@@ -5531,10 +5620,28 @@ function renderPageMemos(pageNum) {
         sentenceText = sentenceEl.textContent.trim()
         const { pdfElements } = getMappedElementsAndIndices(sentenceEl, pageNum, memo.sentenceIdx)
         if (pdfElements) {
-          pdfElements.forEach(el => el.classList.add('pdf-sentence-has-memo'))
+          pdfElements.forEach(el => {
+            el.classList.add('pdf-sentence-has-memo')
+            if (isHiddenIndividually) {
+              // 클릭 시 되살리기는 pageWrapper에 위임된 리스너(위 참고)가 처리한다 -
+              // 이 요소는 재렌더링 때마다 파괴되지 않고 남아있어 직접 리스너를
+              // 달면 호출될 때마다 중복으로 쌓이기 때문
+              el.classList.add('pdf-sentence-has-memo-hidden')
+              el.dataset.memoId = memo.id
+              el.title = '숨겨진 메모 다시 표시'
+            }
+          })
         }
       }
     }
+
+    if (isHidden) return // 카드/커넥터는 그리지 않고 하이라이트만 남긴다
+
+    const memoEl = document.createElement('div')
+    memoEl.className = `floating-memo color-${memo.color || 'default'}${memo.collapsed ? ' collapsed' : ''}`
+    memoEl.setAttribute('data-id', memo.id)
+    memoEl.style.left = `${memo.x}%`
+    memoEl.style.top = `${memo.y}%`
 
     let isEditing = !memo.content.trim()
 
@@ -5626,6 +5733,18 @@ function renderPageMemos(pageNum) {
 
         actions.querySelector('.edit-btn').addEventListener('click', (e) => {
           e.stopPropagation()
+          if (memo.collapsed) {
+            memo.collapsed = false
+            memoEl.classList.remove('collapsed')
+            const collapseBtnEl = memoEl.querySelector('.collapse-btn')
+            if (collapseBtnEl) {
+              collapseBtnEl.innerHTML = icon('chevronUp', 12)
+              collapseBtnEl.title = '메모 접기'
+            }
+            const allMemosObj = loadMemos(state.sessionId)
+            allMemosObj[`page_${pageNum}`] = pageMemos
+            saveMemos(state.sessionId, allMemosObj)
+          }
           isEditing = true
           updateCardContent()
         })
@@ -5665,12 +5784,44 @@ function renderPageMemos(pageNum) {
           <span class="color-dot blue ${memo.color === 'blue' ? 'selected' : ''}" data-color="blue" title="파랑"></span>
           <span class="color-dot red ${memo.color === 'red' ? 'selected' : ''}" data-color="red" title="빨강"></span>
         </div>
+        <div class="floating-memo-toggles">
+          <button class="floating-memo-action-btn collapse-btn" title="${memo.collapsed ? '메모 펼치기' : '메모 접기'}">
+            ${icon(memo.collapsed ? 'chevronDown' : 'chevronUp', 12)}
+          </button>
+          <button class="floating-memo-action-btn hide-btn" title="메모 숨기기 (하이라이트만 표시)">
+            ${icon('eyeOff', 12)}
+          </button>
+        </div>
         <div class="floating-memo-actions"></div>
       </div>
       <div class="floating-memo-body"></div>
     `
 
     updateCardContent()
+
+    const collapseBtn = memoEl.querySelector('.collapse-btn')
+    collapseBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      memo.collapsed = !memo.collapsed
+      const allMemosObj = loadMemos(state.sessionId)
+      allMemosObj[`page_${pageNum}`] = pageMemos
+      saveMemos(state.sessionId, allMemosObj)
+
+      memoEl.classList.toggle('collapsed', memo.collapsed)
+      collapseBtn.innerHTML = icon(memo.collapsed ? 'chevronDown' : 'chevronUp', 12)
+      collapseBtn.title = memo.collapsed ? '메모 펼치기' : '메모 접기'
+      setTimeout(() => updateMemoConnectorLine(pageWrapper, memo), 0)
+    })
+
+    const hideBtn = memoEl.querySelector('.hide-btn')
+    hideBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      memo.hidden = true
+      const allMemosObj = loadMemos(state.sessionId)
+      allMemosObj[`page_${pageNum}`] = pageMemos
+      saveMemos(state.sessionId, allMemosObj)
+      renderPageMemos(pageNum)
+    })
 
     const body = memoEl.querySelector('.floating-memo-body')
     body.addEventListener('click', (e) => {
@@ -5690,8 +5841,8 @@ function renderPageMemos(pageNum) {
         colorDots.forEach(d => d.classList.remove('selected'))
         dot.classList.add('selected')
         
-        memoEl.className = `floating-memo color-${selectedColor}`
-        
+        memoEl.className = `floating-memo color-${selectedColor}${memo.collapsed ? ' collapsed' : ''}`
+
         memo.color = selectedColor
         const allMemosObj = loadMemos(state.sessionId)
         allMemosObj[`page_${pageNum}`] = pageMemos
