@@ -9232,35 +9232,18 @@ function segmentPdfElements(container, pageNum) {
     if (pageWrapper) {
       const overlay = getOrCreateOverlay(pageWrapper);
       clearOverlayBoxes(overlay, 'sentence-hover-box', 'sentence-active-box', 'sentence-memo-box', 'sentence-equation-box', 'sentence-pulse-box');
-      // 메모 하이라이트 재렌더링
-      renderMemoOverlay(pageWrapper, pageNum, overlay);
+      // 메모 카드/하이라이트 재렌더링 - 바로 위에서 방금 sentence-memo-box를
+      // 지웠기 때문에, segmentPdfElements를 호출하는 곳(번역 완료, 최초 텍스트
+      // 레이어 렌더링 등) 어디서든 이 시점에 반드시 다시 그려줘야 한다. 예전에는
+      // easypaper_annotations_*(하이라이트/언더라인)에만 있는 "memos" 필드를
+      // 잘못 참조하는 죽은 코드(renderMemoOverlay)가 대신 호출되고 있어서,
+      // 이 함수를 호출하는 경로 중 memo 재호출을 별도로 챙기지 않는 곳에서는
+      // 메모 하이라이트가 그대로 사라진 채 복구되지 않는 버그가 있었다.
+      renderPageMemos(pageNum);
     }
   } catch (err) {
     console.warn(`segmentPdfElements failed for p.${pageNum}:`, err);
   }
-}
-
-// 메모가 있는 문장의 오버레이 하이라이트를 렌더링
-function renderMemoOverlay(pageWrapper, pageNum, overlay) {
-  try {
-    const annotations = loadAnnotations(state.sessionId);
-    const memos = (annotations && annotations.memos) ? annotations.memos.filter(m => m.pageNum === pageNum) : [];
-    if (memos.length === 0) return;
-
-    const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum];
-    const sentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum];
-    if (!vtm || !sentenceRanges) return;
-
-    const container = pageWrapper.querySelector('.textLayer');
-    if (!container) return;
-
-    memos.forEach(memo => {
-      const sRange = sentenceRanges.find(r => r.sentenceIdx === memo.sentenceIdx);
-      if (!sRange) return;
-      const rects = getSentenceRects(sRange, vtm, container);
-      renderSentenceOverlay(overlay, rects, 'sentence-memo-box');
-    });
-  } catch (e) { /* no-op */ }
 }
 
 // 번역본용 문장 쪼개기
