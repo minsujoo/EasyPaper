@@ -90,13 +90,14 @@
       <div class="library-tabs-container">
         <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>보관함</button>
         <button id="lib-tab-history" class="library-tab-btn" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>히스토리</button>
+        <button id="lib-tab-chat" class="library-tab-btn" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>채팅</button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->
       <div id="library-stats-container" class="hidden" style="margin-bottom: 16px;"></div>
 
       <!-- 라이브러리 전체 검색 (파일명/제목/카테고리 + 번역된 본문 텍스트) -->
-      <div style="position: relative; margin-bottom: 14px;">
+      <div id="library-search-box" style="position: relative; margin-bottom: 14px;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="library-search-input" placeholder="논문 제목, 파일명, 번역된 내용 검색..." style="width: 100%; padding: 11px 40px 11px 38px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text-primary); outline: none; font-size: 13.5px;" />
         <button type="button" id="library-search-clear-btn" class="hidden" title="검색 지우기" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: flex;">
@@ -120,6 +121,15 @@
           <p>저장된 논문이 없습니다</p>
           <p style="font-size:13px;color:var(--text-muted);margin-top:8px">PDF를 업로드하면 자동으로 저장됩니다</p>
         </div>
+      </div>
+
+      <!-- 채팅 세션 조회 (AI 어시스턴트 / 논문 비교 채팅 세션 목록) -->
+      <div id="library-chat-section" class="hidden">
+        <div class="chat-session-subtabs">
+          <button id="chat-subtab-assistant" class="chat-session-subtab-btn active" data-subtab="assistant">AI 어시스턴트 대화</button>
+          <button id="chat-subtab-compare" class="chat-session-subtab-btn" data-subtab="compare">논문 비교 대화</button>
+        </div>
+        <div id="chat-session-list" class="chat-session-list"></div>
       </div>
     </div>
     <!-- 우하단 휴지통 비우기 플로팅 버튼 -->

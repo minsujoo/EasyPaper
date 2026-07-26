@@ -617,6 +617,24 @@ export async function getCompareChatHistoryAPI(docIds) {
 }
 
 /**
+ * AI 어시스턴트(단일 논문) 채팅 세션 목록을 반환합니다.
+ */
+export async function getChatSessionsAPI() {
+  const res = await fetch(`${API_BASE}/chat/sessions`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('채팅 세션 목록 로드 실패')
+  return res.json()
+}
+
+/**
+ * 논문 비교 채팅 세션 목록을 반환합니다.
+ */
+export async function getCompareChatSessionsAPI() {
+  const res = await fetch(`${API_BASE}/chat/compare-sessions`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('비교 채팅 세션 목록 로드 실패')
+  return res.json()
+}
+
+/**
  * Antigravity CLI 사용량 통계 조회
  */
 export async function getAgyUsageAPI() {

@@ -100,6 +100,21 @@ def init_db():
         )
         """)
 
+        # 7. compare_sessions 테이블 (논문 비교 채팅 세션 id ↔ 비교 대상 문서
+        #    id 목록 매핑). chats.doc_id에 쓰이는 "cmp_"+hash 값은 원본
+        #    doc_ids 조합을 역산할 수 없는 단방향 해시라서, 라이브러리에서
+        #    "이 비교 세션이 어떤 논문들의 비교인지"를 보여주려면 이 매핑을
+        #    별도로 저장해둬야 한다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS compare_sessions (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            doc_ids TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """)
+
         conn.commit()
         
     # 기본 관리자 계정 초기 생성
@@ -389,6 +404,93 @@ def db_clear_chat_history(doc_id: str) -> None:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM chats WHERE doc_id = ?", (doc_id,))
         conn.commit()
+
+
+def db_list_assistant_chat_sessions(username: str) -> List[Dict[str, Any]]:
+    """사용자가 AI 어시스턴트(단일 논문) 기능으로 대화한 채팅 세션 목록을,
+    최근 대화 시각 역순으로 반환합니다. 비교 채팅(doc_id가 "cmp_"로 시작)은
+    제외하고, 휴지통에 있거나 삭제된 문서의 대화도 제외합니다."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT d.id AS doc_id, d.filename, d.metadata, MAX(c.created_at) AS last_message_at
+            FROM chats c
+            JOIN documents d ON d.id = c.doc_id
+            WHERE d.username = ? AND d.is_deleted = 0 AND c.doc_id NOT LIKE 'cmp\\_%' ESCAPE '\\'
+            GROUP BY c.doc_id
+            ORDER BY last_message_at DESC
+            """,
+            (username,)
+        )
+        sessions = []
+        for r in cursor.fetchall():
+            row = dict(r)
+            metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+            title = metadata.get("title") or row["filename"]
+            sessions.append({
+                "doc_id": row["doc_id"],
+                "title": title,
+                "last_message_at": row["last_message_at"],
+            })
+        return sessions
+
+
+def db_upsert_compare_session(compare_id: str, username: str, doc_ids: List[str]) -> None:
+    """비교 채팅 세션 id와 그 대상 문서 id 목록의 매핑을 저장/갱신합니다."""
+    now = datetime.now(timezone.utc).isoformat()
+    doc_ids_json = json.dumps(doc_ids, ensure_ascii=False)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO compare_sessions (id, username, doc_ids, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
+            """,
+            (compare_id, username, doc_ids_json, now, now)
+        )
+        conn.commit()
+
+
+def db_list_compare_chat_sessions(username: str) -> List[Dict[str, Any]]:
+    """사용자가 논문 비교 기능으로 대화한 채팅 세션 목록을, 최근 대화 시각
+    역순으로 반환합니다. 각 세션의 doc_ids에 연결된 문서 제목도 함께 담습니다."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, doc_ids, updated_at FROM compare_sessions WHERE username = ? ORDER BY updated_at DESC",
+            (username,)
+        )
+        rows = cursor.fetchall()
+
+        sessions = []
+        for r in rows:
+            row = dict(r)
+            doc_ids = json.loads(row["doc_ids"])
+
+            titles = []
+            for doc_id in doc_ids:
+                cursor.execute(
+                    "SELECT filename, metadata FROM documents WHERE id = ? AND username = ?",
+                    (doc_id, username)
+                )
+                doc_row = cursor.fetchone()
+                if not doc_row:
+                    titles.append("(삭제된 논문)")
+                    continue
+                doc = dict(doc_row)
+                metadata = json.loads(doc["metadata"]) if doc["metadata"] else {}
+                titles.append(metadata.get("title") or doc["filename"])
+
+            sessions.append({
+                "id": row["id"],
+                "doc_ids": doc_ids,
+                "titles": titles,
+                "last_message_at": row["updated_at"],
+            })
+        return sessions
+
 
 # ── 페이지 인사이트 (키워드/단어, 요약) ─────────────────────────────────────────
 
