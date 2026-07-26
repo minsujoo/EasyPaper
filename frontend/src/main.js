@@ -185,6 +185,7 @@ const libTabArchive     = $('lib-tab-archive')
 const libTabHistory     = $('lib-tab-history')
 const libTabTrash       = $('lib-tab-trash')
 const libTabChat        = $('lib-tab-chat')
+const libTabAnnotations = $('lib-tab-annotations')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 const librarySearchBox  = $('library-search-box')
@@ -192,6 +193,11 @@ const libraryChatSection = $('library-chat-section')
 const chatSubtabAssistant = $('chat-subtab-assistant')
 const chatSubtabCompare   = $('chat-subtab-compare')
 const chatSessionList     = $('chat-session-list')
+const libraryAnnotationsSection = $('library-annotations-section')
+const annotationSubtabMemo      = $('annotation-subtab-memo')
+const annotationSubtabHighlight = $('annotation-subtab-highlight')
+const annotationSubtabUnderline = $('annotation-subtab-underline')
+const annotationList            = $('annotation-list')
 
 const libCompareToggleBtn   = $('lib-compare-toggle-btn')
 const compareSelectBar      = $('compare-select-bar')
@@ -3349,6 +3355,7 @@ function updateTabUI(activeTab) {
   if (libTabHistory) libTabHistory.classList.toggle('active', activeTab === 'history')
   if (libTabTrash) libTabTrash.classList.toggle('active', activeTab === 'trash')
   if (libTabChat) libTabChat.classList.toggle('active', activeTab === 'chat')
+  if (libTabAnnotations) libTabAnnotations.classList.toggle('active', activeTab === 'annotations')
 
   if (libEmptyTrashBtn) {
     if (activeTab === 'trash') {
@@ -3358,28 +3365,32 @@ function updateTabUI(activeTab) {
     }
   }
 
-  // 휴지통/채팅 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
+  // 휴지통/채팅/주석 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
+  const isListOnlyTab = activeTab === 'trash' || activeTab === 'chat' || activeTab === 'annotations'
   if (libUploadBtn) {
-    if (activeTab === 'trash' || activeTab === 'chat') {
+    if (isListOnlyTab) {
       libUploadBtn.classList.add('hidden')
     } else {
       libUploadBtn.classList.remove('hidden')
     }
   }
   if (libCompareToggleBtn) {
-    libCompareToggleBtn.classList.toggle('hidden', activeTab === 'trash' || activeTab === 'chat')
+    libCompareToggleBtn.classList.toggle('hidden', isListOnlyTab)
   }
   setCompareSelectMode(false)
 
-  // 채팅 탭은 문서 그리드 대신 채팅 세션 목록을 보여주므로, 검색/필터 등
-  // 논문 목록 전용 UI는 숨긴다.
+  // 채팅/주석 탭은 문서 그리드 대신 목록을 보여주므로, 검색/필터 등 논문 목록
+  // 전용 UI는 숨긴다.
   const isChatTab = activeTab === 'chat'
-  if (libraryGrid) libraryGrid.classList.toggle('hidden', isChatTab)
+  const isAnnotationsTab = activeTab === 'annotations'
+  const hidesGrid = isChatTab || isAnnotationsTab
+  if (libraryGrid) libraryGrid.classList.toggle('hidden', hidesGrid)
   if (libraryChatSection) libraryChatSection.classList.toggle('hidden', !isChatTab)
-  if (librarySearchBox) librarySearchBox.classList.toggle('hidden', isChatTab)
-  if (librarySearchStatus && isChatTab) librarySearchStatus.classList.add('hidden')
-  if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', isChatTab)
-  if (libraryStatsContainer && isChatTab) libraryStatsContainer.classList.add('hidden')
+  if (libraryAnnotationsSection) libraryAnnotationsSection.classList.toggle('hidden', !isAnnotationsTab)
+  if (librarySearchBox) librarySearchBox.classList.toggle('hidden', hidesGrid)
+  if (librarySearchStatus && hidesGrid) librarySearchStatus.classList.add('hidden')
+  if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', hidesGrid)
+  if (libraryStatsContainer && hidesGrid) libraryStatsContainer.classList.add('hidden')
 
   renderLibrary()
 }
@@ -3410,6 +3421,12 @@ if (libTabChat) {
   libTabChat.addEventListener('click', () => {
     if (state.currentLibraryTab === 'chat') return
     updateTabUI('chat')
+  })
+}
+if (libTabAnnotations) {
+  libTabAnnotations.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'annotations') return
+    updateTabUI('annotations')
   })
 }
 
@@ -3773,6 +3790,10 @@ async function renderLibrary() {
     await renderChatSessions()
     return
   }
+  if (state.currentLibraryTab === 'annotations') {
+    await renderAnnotationsBrowser()
+    return
+  }
 
   // 탭 전환 등으로 목록을 새로 불러올 때는 검색 상태를 초기화한다 - 검색
   // 결과가 다른 탭의 목록과 뒤섞여 보이는 것을 방지
@@ -4004,6 +4025,146 @@ function renderCompareChatSessions(sessions) {
       }
     })
     chatSessionList.appendChild(item)
+  })
+}
+
+// ── 주석 조회 (메모 / 하이라이트 / 언더라인 목록) ───────────────────────
+// 메모와 하이라이트/언더라인은 서버 DB가 아니라 문서(세션)별 localStorage에만
+// 저장되므로(easypaper_memos_*, easypaper_annotations_*), 라이브러리 전체
+// 문서 목록을 한 번 불러온 뒤 각 문서의 localStorage를 순회해 모아 보여준다.
+let annotationBrowserSubtab = 'memo' // 'memo' | 'highlight' | 'underline'
+
+function updateAnnotationSubtabUI() {
+  if (annotationSubtabMemo) annotationSubtabMemo.classList.toggle('active', annotationBrowserSubtab === 'memo')
+  if (annotationSubtabHighlight) annotationSubtabHighlight.classList.toggle('active', annotationBrowserSubtab === 'highlight')
+  if (annotationSubtabUnderline) annotationSubtabUnderline.classList.toggle('active', annotationBrowserSubtab === 'underline')
+}
+
+function truncateForList(text, maxLen) {
+  if (!text) return ''
+  const trimmed = text.trim()
+  return trimmed.length > maxLen ? trimmed.substring(0, maxLen) + '...' : trimmed
+}
+
+async function renderAnnotationsBrowser() {
+  updateAnnotationSubtabUI()
+  if (!annotationList) return
+  annotationList.innerHTML = `<div class="lib-empty"><p>불러오는 중...</p></div>`
+
+  try {
+    const data = await fetchLibrary(getTranslationOptions())
+    const docs = data.documents || []
+    const items = []
+
+    docs.forEach(doc => {
+      const docTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+
+      if (annotationBrowserSubtab === 'memo') {
+        const memosByPage = loadMemos(doc.id)
+        Object.keys(memosByPage).forEach(pageKey => {
+          const pageNum = parseInt(pageKey.replace('page_', ''), 10)
+          if (isNaN(pageNum)) return
+          memosByPage[pageKey].forEach(memo => items.push({ doc, docTitle, pageNum, memo }))
+        })
+      } else {
+        const annotationsByPage = loadAnnotations(doc.id)
+        Object.keys(annotationsByPage).forEach(pageKey => {
+          const pageNum = parseInt(pageKey.replace('page_', ''), 10)
+          if (isNaN(pageNum)) return
+          annotationsByPage[pageKey].forEach(ann => {
+            if (ann.type === annotationBrowserSubtab) items.push({ doc, docTitle, pageNum, annotation: ann })
+          })
+        })
+      }
+    })
+
+    if (annotationBrowserSubtab === 'memo') {
+      // 메모 id에 생성 시각(Date.now())이 들어있어 최근 순으로 정렬 가능
+      items.sort((a, b) => String(b.memo.id).localeCompare(String(a.memo.id)))
+    } else {
+      items.sort((a, b) => a.docTitle.localeCompare(b.docTitle) || a.pageNum - b.pageNum)
+    }
+
+    renderAnnotationItems(items)
+  } catch (err) {
+    console.error('주석 목록 로드 실패:', err)
+    annotationList.innerHTML = `<div class="lib-empty"><p style="color:var(--error)">주석 목록을 불러오지 못했습니다</p></div>`
+  }
+}
+
+if (annotationSubtabMemo) {
+  annotationSubtabMemo.addEventListener('click', () => {
+    if (annotationBrowserSubtab === 'memo') return
+    annotationBrowserSubtab = 'memo'
+    renderAnnotationsBrowser()
+  })
+}
+if (annotationSubtabHighlight) {
+  annotationSubtabHighlight.addEventListener('click', () => {
+    if (annotationBrowserSubtab === 'highlight') return
+    annotationBrowserSubtab = 'highlight'
+    renderAnnotationsBrowser()
+  })
+}
+if (annotationSubtabUnderline) {
+  annotationSubtabUnderline.addEventListener('click', () => {
+    if (annotationBrowserSubtab === 'underline') return
+    annotationBrowserSubtab = 'underline'
+    renderAnnotationsBrowser()
+  })
+}
+
+// 메모/하이라이트/언더라인 항목을 클릭하면 해당 논문을 열고 해당 페이지로 이동한다.
+async function openAnnotationTarget(doc, pageNum) {
+  try {
+    const freshDoc = await fetchLibraryDoc(doc.id)
+    await openFromLibrary(freshDoc)
+    scrollToPage(viewerScrollContainer, pageNum)
+  } catch (err) {
+    console.error('주석에서 논문 열기 실패:', err)
+    showToast('논문을 불러오지 못했습니다.', 'error')
+  }
+}
+
+function renderAnnotationItems(items) {
+  const emptyMessages = {
+    memo: 'AI 논문에 남긴 메모가 없습니다',
+    highlight: '하이라이트한 내용이 없습니다',
+    underline: '밑줄 친 내용이 없습니다',
+  }
+
+  if (items.length === 0) {
+    annotationList.innerHTML = `<div class="lib-empty"><p>${emptyMessages[annotationBrowserSubtab]}</p></div>`
+    return
+  }
+
+  annotationList.innerHTML = ''
+  items.forEach(entry => {
+    const { doc, docTitle, pageNum } = entry
+    const item = document.createElement('div')
+    item.className = 'chat-session-item'
+
+    let iconHtml, snippet, iconBg
+    if (entry.memo) {
+      iconHtml = icon('messageCircle', 17)
+      snippet = truncateForList(entry.memo.content, 70) || truncateForList(entry.memo.sentenceText, 70) || '(내용 없음)'
+      iconBg = ''
+    } else {
+      const isHighlight = annotationBrowserSubtab === 'highlight'
+      iconHtml = icon(isHighlight ? 'highlighter' : 'underline', 17)
+      snippet = truncateForList(entry.annotation.text, 70) || '(내용 없음)'
+      iconBg = entry.annotation.color ? `background:${hexToRgba(entry.annotation.color, 0.22)};color:${entry.annotation.color}` : ''
+    }
+
+    item.innerHTML = `
+      <div class="chat-session-item-icon" style="${iconBg}">${iconHtml}</div>
+      <div class="chat-session-item-body">
+        <div class="chat-session-item-title">${escapeHtml(docTitle)} · ${pageNum}페이지</div>
+        <div class="chat-session-item-meta">${escapeHtml(snippet)}</div>
+      </div>
+    `
+    item.addEventListener('click', () => openAnnotationTarget(doc, pageNum))
+    annotationList.appendChild(item)
   })
 }
 

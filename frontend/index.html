@@ -91,6 +91,7 @@
         <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>보관함</button>
         <button id="lib-tab-history" class="library-tab-btn" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>히스토리</button>
         <button id="lib-tab-chat" class="library-tab-btn" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>채팅</button>
+        <button id="lib-tab-annotations" class="library-tab-btn" data-tab="annotations"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>주석</button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->
@@ -130,6 +131,16 @@
           <button id="chat-subtab-compare" class="chat-session-subtab-btn" data-subtab="compare">논문 비교</button>
         </div>
         <div id="chat-session-list" class="chat-session-list"></div>
+      </div>
+
+      <!-- 주석 조회 (메모 / 하이라이트 / 언더라인 목록) -->
+      <div id="library-annotations-section" class="hidden">
+        <div class="chat-session-subtabs">
+          <button id="annotation-subtab-memo" class="chat-session-subtab-btn active" data-subtab="memo">메모</button>
+          <button id="annotation-subtab-highlight" class="chat-session-subtab-btn" data-subtab="highlight">하이라이트</button>
+          <button id="annotation-subtab-underline" class="chat-session-subtab-btn" data-subtab="underline">언더라인</button>
+        </div>
+        <div id="annotation-list" class="chat-session-list"></div>
       </div>
     </div>
     <!-- 우하단 휴지통 비우기 플로팅 버튼 -->
