@@ -5046,3 +5046,28 @@ body.light-theme .figure-preview-tooltip {
   color: var(--text-muted);
   margin-top: 4px;
 }
+.annotation-item-meta.expanded {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.annotation-expand-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.annotation-expand-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-mid);
+  background: var(--bg-hover);
+}
