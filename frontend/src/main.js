@@ -935,13 +935,15 @@ function renderTransContent(pageNum, text, cached = false) {
   const textLayerDiv = document.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"] .textLayer`)
   if (textLayerDiv) {
     segmentElementIntoSentences(textLayerDiv, pageNum, 'pdf-sentence')
-    
-    // 주석(Annotation) 하이라이트 복원
+
+    // 주석(하이라이트/언더라인) 및 메모 하이라이트 복원 - 위 재세그멘테이션으로
+    // VirtualTextMap/문장 매핑이 통째로 새로 만들어지기 때문에, 이 페이지에 저장된
+    // 하이라이트/언더라인이 없더라도(메모만 있는 경우) 반드시 다시 그려줘야 한다.
+    // 예전에는 annotations[page_N]이 있을 때만 재렌더링해서, 메모만 있고 하이라이트/
+    // 언더라인은 없는 페이지에서 번역 로딩이 끝나면 메모 하이라이트가 사라지는
+    // 버그가 있었다.
     if (state.sessionId) {
-      const annotations = loadAnnotations(state.sessionId)
-      if (annotations[`page_${pageNum}`]) {
-        reRenderPageAnnotations(textLayerDiv, pageNum)
-      }
+      reRenderPageAnnotations(textLayerDiv, pageNum)
     }
   }
   
@@ -4144,26 +4146,45 @@ function renderAnnotationItems(items) {
     const item = document.createElement('div')
     item.className = 'chat-session-item'
 
-    let iconHtml, snippet, iconBg
+    let iconHtml, fullText, iconBg
     if (entry.memo) {
       iconHtml = icon('messageCircle', 17)
-      snippet = truncateForList(entry.memo.content, 70) || truncateForList(entry.memo.sentenceText, 70) || '(내용 없음)'
+      fullText = (entry.memo.content && entry.memo.content.trim()) || entry.memo.sentenceText || '(내용 없음)'
       iconBg = ''
     } else {
       const isHighlight = annotationBrowserSubtab === 'highlight'
       iconHtml = icon(isHighlight ? 'highlighter' : 'underline', 17)
-      snippet = truncateForList(entry.annotation.text, 70) || '(내용 없음)'
+      fullText = entry.annotation.text || '(내용 없음)'
       iconBg = entry.annotation.color ? `background:${hexToRgba(entry.annotation.color, 0.22)};color:${entry.annotation.color}` : ''
     }
+
+    const shortText = truncateForList(fullText, 70)
+    const canExpand = fullText.trim().length > shortText.replace(/\.\.\.$/, '').length
 
     item.innerHTML = `
       <div class="chat-session-item-icon" style="${iconBg}">${iconHtml}</div>
       <div class="chat-session-item-body">
         <div class="chat-session-item-title">${escapeHtml(docTitle)} · ${pageNum}페이지</div>
-        <div class="chat-session-item-meta">${escapeHtml(snippet)}</div>
+        <div class="chat-session-item-meta annotation-item-meta">${escapeHtml(shortText)}</div>
       </div>
+      ${canExpand ? `<button class="annotation-expand-btn" title="전체 내용 보기">${icon('chevronDown', 12)}</button>` : ''}
     `
     item.addEventListener('click', () => openAnnotationTarget(doc, pageNum))
+
+    if (canExpand) {
+      const expandBtn = item.querySelector('.annotation-expand-btn')
+      const metaEl = item.querySelector('.annotation-item-meta')
+      let expanded = false
+      expandBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        expanded = !expanded
+        metaEl.textContent = expanded ? fullText : shortText
+        metaEl.classList.toggle('expanded', expanded)
+        expandBtn.innerHTML = icon(expanded ? 'chevronUp' : 'chevronDown', 12)
+        expandBtn.title = expanded ? '접기' : '전체 내용 보기'
+      })
+    }
+
     annotationList.appendChild(item)
   })
 }
