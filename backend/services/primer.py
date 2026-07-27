@@ -6,7 +6,14 @@
   1. 훅 문장 / 예측 질문 3개 / 체크리스트 3개 (LLM, llm_client.generate_reading_primer)
   2. 대표 Figure 크롭 이미지 (pdf_parser.extract_pdf_images + render_image_crop)
   3. 내 라이브러리 안에서 이 논문의 참고문헌과 겹치는 논문 매칭 (외부 API 없이 텍스트 매칭)
-  4. 내 라이브러리에 없는 참고문헌 중 최대 3건만 OpenAlex로 확장 조회
+  4. LLM이 직접 추천한 관련 논문(최대 5개)을 OpenAlex로 실존 여부 검증 후 채택
+
+4번은 원래 이 논문의 참고문헌 목록을 그대로 외부 검색해 매칭하는 방식이었으나,
+인용 형식이 지저분하거나 따옴표로 감싼 제목이 없는 스타일이면 매칭 개수가 너무
+적고("참고문헌으로 한정" - 진짜 "관련성"과는 다름), 결과 품질도 들쭉날쭉했다.
+LLM이 primer 생성 시점에 자기 지식으로 직접 관련 논문을 추천하게 하고, 그 제목을
+OpenAlex로 재검색해 실제로 존재하고 제목이 충분히 일치하는 것만 채택하는 방식으로
+바꿔 개수와 관련성을 모두 개선했다.
 """
 import json
 import re
@@ -22,9 +29,9 @@ from services.library import (
 from services.reference_parser import extract_reference_list
 from services.llm_client import generate_reading_primer
 
-_EXTERNAL_MATCH_LIMIT = 3
-_EXTERNAL_ATTEMPT_LIMIT = 5
+_RECOMMENDATION_LIMIT = 5
 _LIBRARY_MATCH_THRESHOLD = 0.7
+_DUPLICATE_TITLE_THRESHOLD = 0.6
 _STOPWORDS = {
     "the", "a", "an", "of", "for", "and", "or", "on", "in", "to", "with",
     "using", "via", "based", "towards", "toward", "from", "into", "at", "by",
@@ -36,7 +43,7 @@ def _normalize_words(text: str) -> set:
     return {w for w in words if len(w) > 2 and w not in _STOPWORDS}
 
 
-def _match_library_references(reference_map: dict, doc_id: str, username: str) -> tuple[list, set]:
+def _match_library_references(reference_map: dict, doc_id: str, username: str) -> list:
     """참고문헌 원문 목록을 내 라이브러리의 다른 논문 제목과 텍스트 매칭한다.
     외부 API를 쓰지 않아 업로드마다 항상 실행해도 부담이 없다."""
     candidates = []
@@ -51,7 +58,6 @@ def _match_library_references(reference_map: dict, doc_id: str, username: str) -
 
     matches = []
     matched_doc_ids = set()
-    matched_ref_nums = set()
     for ref_num, ref_text in reference_map.items():
         ref_words = _normalize_words(ref_text)
         if not ref_words:
@@ -62,39 +68,48 @@ def _match_library_references(reference_map: dict, doc_id: str, username: str) -
             if len(words & ref_words) / len(words) >= _LIBRARY_MATCH_THRESHOLD:
                 matches.append({"ref_num": ref_num, "doc_id": cand_doc_id, "title": title})
                 matched_doc_ids.add(cand_doc_id)
-                matched_ref_nums.add(ref_num)
                 break
-    return matches, matched_ref_nums
+    return matches
 
 
-def _is_plausible_match(ref_text: str, resolved: dict) -> bool:
-    """참고문헌 검색(reference_linker.resolve_reference)이 지저분한 인용 문자열
-    때문에 엉뚱한 논문을 최상위로 반환하는 경우가 있어(실제로 EEG 논문 테스트에서
-    무관한 논문이 매칭된 사례를 확인함), 연도가 인용 원문에 그대로 등장하거나
-    제목 단어가 인용 원문과 충분히 겹칠 때만 신뢰할 만한 매칭으로 받아들인다."""
+def _is_plausible_match(query_text: str, resolved: dict) -> bool:
+    """resolve_reference() 검색 결과가 실제로 찾으려던 논문이 맞는지 검증한다.
+    참고문헌 검색은 지저분한 인용 문자열 때문에, LLM 추천 검증은 환각(존재하지 않는
+    논문 제목을 지어내거나 부정확하게 기억)때문에 엉뚱한 논문이 최상위로 반환될 수
+    있어(실제로 EEG 논문 테스트에서 무관한 논문이 매칭된 사례를 확인함), 연도가 원문에
+    그대로 등장하거나 제목 단어가 원문과 충분히 겹칠 때만 신뢰할 만한 매칭으로 받아들인다."""
     year = resolved.get("year")
-    if year and str(year) in (ref_text or ""):
+    if year and str(year) in (query_text or ""):
         return True
     title_words = _normalize_words(resolved.get("title", ""))
     if not title_words:
         return False
-    ref_words = _normalize_words(ref_text)
-    return len(title_words & ref_words) / len(title_words) >= 0.5
+    query_words = _normalize_words(query_text)
+    return len(title_words & query_words) / len(title_words) >= 0.5
 
 
-async def _resolve_external_references(reference_map: dict, matched_ref_nums: set) -> list:
+async def _resolve_recommended_titles(titles: list, exclude_title_words: list) -> list:
+    """LLM이 추천한 논문 제목들을 OpenAlex로 검증해 실제로 존재하는 논문만 채택한다.
+    LLM은 환각으로 없는 논문을 만들어내거나 제목을 부정확하게 기억할 수 있으므로,
+    검색 결과 제목이 추천받은 제목과 충분히 일치할 때만(_is_plausible_match) 신뢰한다.
+    이미 내 라이브러리 매칭으로 뜬 논문과 같은 논문을 추천했다면 중복 표시하지 않는다."""
     from services.reference_linker import resolve_reference
     results = []
-    attempts = 0
-    for ref_num, ref_text in reference_map.items():
-        if len(results) >= _EXTERNAL_MATCH_LIMIT or attempts >= _EXTERNAL_ATTEMPT_LIMIT:
-            break
-        if ref_num in matched_ref_nums:
+    seen_word_sets = list(exclude_title_words)
+    for title in titles[:_RECOMMENDATION_LIMIT]:
+        title = (title or "").strip()
+        if not title:
             continue
-        attempts += 1
-        resolved = await resolve_reference(ref_text)
-        if resolved and _is_plausible_match(ref_text, resolved):
-            results.append({"ref_num": ref_num, **resolved})
+        resolved = await resolve_reference(title)
+        if not resolved or not _is_plausible_match(title, resolved):
+            continue
+        result_words = _normalize_words(resolved.get("title", ""))
+        if not result_words:
+            continue
+        if any(len(result_words & seen) / len(result_words) >= _DUPLICATE_TITLE_THRESHOLD for seen in seen_word_sets):
+            continue
+        seen_word_sets.append(result_words)
+        results.append(resolved)
     return results
 
 
@@ -140,7 +155,7 @@ async def generate_primer(
         llm_part = await generate_reading_primer(title, combined_text, target_lang=target_lang, session_id=session_id)
     except Exception as e:
         print(f"[primer] LLM 생성 실패 ({doc_id}): {e}")
-        llm_part = {"hook": "", "questions": [], "checklist": []}
+        llm_part = {"hook": "", "questions": [], "checklist": [], "recommended_titles": []}
 
     try:
         reference_map = extract_reference_list(pages)
@@ -148,19 +163,21 @@ async def generate_primer(
         print(f"[primer] 참고문헌 파싱 실패 ({doc_id}): {e}")
         reference_map = {}
 
-    library_matches, matched_ref_nums = [], set()
+    library_matches = []
     if reference_map:
         try:
-            library_matches, matched_ref_nums = _match_library_references(reference_map, doc_id, username)
+            library_matches = _match_library_references(reference_map, doc_id, username)
         except Exception as e:
             print(f"[primer] 라이브러리 매칭 실패 ({doc_id}): {e}")
 
     external_matches = []
-    if reference_map:
+    recommended_titles = llm_part.get("recommended_titles", [])
+    if recommended_titles:
         try:
-            external_matches = await _resolve_external_references(reference_map, matched_ref_nums)
+            library_title_words = [_normalize_words(m["title"]) for m in library_matches]
+            external_matches = await _resolve_recommended_titles(recommended_titles, library_title_words)
         except Exception as e:
-            print(f"[primer] 외부 참고문헌 조회 실패 ({doc_id}): {e}")
+            print(f"[primer] 관련 논문 추천 검증 실패 ({doc_id}): {e}")
 
     figure = None
     try:
