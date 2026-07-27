@@ -7192,17 +7192,92 @@ function cropFigureFromCanvas(canvas, imgPercent) {
   return tempCanvas.toDataURL('image/png')
 }
 
+// 감지된 그림/표 오버레이 박스의 모서리 핸들을 드래그해 영역을 직접 조절할 수
+// 있게 한다. 자동 감지 bbox가 실제 표/그림보다 너무 크거나 작게 잡히는
+// 경우(레이아웃이 특이한 논문 등)가 있어, 캡처 전에 사용자가 직접 보정할
+// 수 있어야 한다. imgPercent는 state.documentImages 안의 객체를 그대로
+// 참조하므로, 여기서 좌표를 갱신하면 이후 클릭 시 크롭(cropFigureFromCanvas)과
+// 참조 오버레이 미리보기(renderFigureCrop)에도 그대로 반영된다.
+const _FIGURE_OVERLAY_MIN_SIZE_PCT = 3
+
+function _attachFigureOverlayResizeHandles(overlay, imgPercent, inner) {
+  const corners = ['nw', 'ne', 'sw', 'se']
+
+  corners.forEach(pos => {
+    const handle = document.createElement('div')
+    handle.className = `pdf-figure-overlay-handle pdf-figure-overlay-handle-${pos}`
+
+    // 핸들에서 시작된 클릭이 overlay의 click 리스너(크롭 트리거)까지
+    // 버블링되지 않도록 막는다 - 드래그 없이 핸들만 클릭했을 때 의도치
+    // 않게 캡처가 실행되는 것을 방지.
+    handle.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    })
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const containerRect = inner.getBoundingClientRect()
+      // 드래그하는 동안 고정되어야 할 반대쪽 모서리 (예: nw를 끌면 se가 고정점)
+      const fixedX = pos.includes('w') ? imgPercent.left + imgPercent.width : imgPercent.left
+      const fixedY = pos.includes('n') ? imgPercent.top + imgPercent.height : imgPercent.top
+
+      overlay.classList.add('resizing')
+      document.body.style.userSelect = 'none'
+
+      const onMove = (moveEvent) => {
+        let mx = ((moveEvent.clientX - containerRect.left) / containerRect.width) * 100
+        let my = ((moveEvent.clientY - containerRect.top) / containerRect.height) * 100
+        mx = Math.max(0, Math.min(100, mx))
+        my = Math.max(0, Math.min(100, my))
+
+        let width = Math.max(_FIGURE_OVERLAY_MIN_SIZE_PCT, Math.abs(mx - fixedX))
+        let height = Math.max(_FIGURE_OVERLAY_MIN_SIZE_PCT, Math.abs(my - fixedY))
+        let left = mx < fixedX ? fixedX - width : fixedX
+        let top = my < fixedY ? fixedY - height : fixedY
+
+        left = Math.max(0, Math.min(left, 100 - width))
+        top = Math.max(0, Math.min(top, 100 - height))
+
+        imgPercent.left = left
+        imgPercent.top = top
+        imgPercent.width = width
+        imgPercent.height = height
+
+        overlay.style.left = `${left}%`
+        overlay.style.top = `${top}%`
+        overlay.style.width = `${width}%`
+        overlay.style.height = `${height}%`
+      }
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        overlay.classList.remove('resizing')
+        document.body.style.userSelect = ''
+      }
+
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
+
+    overlay.appendChild(handle)
+  })
+}
+
 function renderImageOverlayLayer(textLayerDiv, pageNum) {
   const pageImages = (state.documentImages || []).filter(img => img.page === pageNum)
   const inner = textLayerDiv.parentElement
   if (!inner) return
-  
+
   // Remove existing layer if any
   const oldLayer = inner.querySelector('.pdf-image-overlay-layer')
   if (oldLayer) oldLayer.remove()
-  
+
   if (pageImages.length === 0) return
-  
+
   const layer = document.createElement('div')
   layer.className = 'pdf-image-overlay-layer'
   layer.style.position = 'absolute'
@@ -7212,7 +7287,7 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   layer.style.height = '100%'
   layer.style.pointerEvents = 'none'
   layer.style.zIndex = '3'
-  
+
   pageImages.forEach((imgPercent, idx) => {
     const overlay = document.createElement('div')
     overlay.className = 'pdf-figure-overlay'
@@ -7225,17 +7300,17 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
     overlay.style.height = `${imgPercent.height}%`
     overlay.style.pointerEvents = 'auto'
     overlay.style.cursor = 'pointer'
-    
+
     overlay.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // Clear text selection
       window.getSelection().removeAllRanges()
-      
+
       const canvas = inner.querySelector('canvas')
       if (!canvas) return
-      
+
       try {
         const base64Img = cropFigureFromCanvas(canvas, imgPercent)
         state.pendingFigureQuote = {
@@ -7243,7 +7318,7 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
           imgPercent: imgPercent,
           base64Img: base64Img
         }
-        
+
         // Show selection menu
         const rect = overlay.getBoundingClientRect()
         showSelectionMenu(rect, false) // false = hide annotation options
@@ -7251,10 +7326,12 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
         console.error("그림 크롭 실패:", err)
       }
     })
-    
+
+    _attachFigureOverlayResizeHandles(overlay, imgPercent, inner)
+
     layer.appendChild(overlay)
   })
-  
+
   inner.appendChild(layer)
 }
 

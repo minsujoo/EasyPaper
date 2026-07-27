@@ -3298,6 +3298,45 @@ body.light-theme .chat-quote-area {
   box-shadow: 0 0 3px rgba(126, 196, 232, 0.3);
 }
 
+/* 드래그 중에는 transition을 꺼서 마우스 움직임에 박스가 지연 없이 붙어오게 함 */
+.pdf-figure-overlay.resizing {
+  transition: none !important;
+}
+
+/* ── 감지된 그림/표 오버레이 크기 조절 핸들 ── */
+.pdf-figure-overlay-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px;
+  border-radius: 50%;
+  background: rgba(126, 196, 232, 0.9);
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out, transform 0.1s ease-in-out;
+}
+
+.pdf-figure-overlay:hover .pdf-figure-overlay-handle,
+.pdf-figure-overlay.resizing .pdf-figure-overlay-handle {
+  opacity: 1;
+}
+
+.pdf-figure-overlay-handle:hover {
+  transform: scale(1.3);
+}
+
+.pdf-figure-overlay-handle-nw { top: 0; left: 0; cursor: nwse-resize; }
+.pdf-figure-overlay-handle-ne { top: 0; left: 100%; cursor: nesw-resize; }
+.pdf-figure-overlay-handle-sw { top: 100%; left: 0; cursor: nesw-resize; }
+.pdf-figure-overlay-handle-se { top: 100%; left: 100%; cursor: nwse-resize; }
+
+body.light-theme .pdf-figure-overlay-handle {
+  border-color: #fff;
+}
+
 /* ── Capture Crop Mode Styling ── */
 #viewer-scroll-container.crop-mode .pdf-page-inner {
   cursor: crosshair !important;
@@ -3357,7 +3396,6 @@ body.light-theme .message-quote-img {
 }
 
 #viewer-scroll-container.crop-mode .textLayer,
-#viewer-scroll-container.crop-mode .pdf-figure-overlay,
 #viewer-scroll-container.crop-mode .pdf-sentence {
   pointer-events: none !important;
   user-select: none !important;
