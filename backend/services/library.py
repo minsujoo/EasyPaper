@@ -28,6 +28,9 @@ def _pdf_path(doc_id: str) -> str:
 def _cover_path(doc_id: str) -> str:
     return os.path.join(LIBRARY_DIR, doc_id, "cover.jpg")
 
+def _primer_figure_path(doc_id: str) -> str:
+    return os.path.join(LIBRARY_DIR, doc_id, "primer_figure.png")
+
 
 # ── 문서 저장 ─────────────────────────────────────────────────────────────────
 
@@ -338,6 +341,23 @@ def get_cover_path(doc_id: str) -> Optional[str]:
             print(f"[get_cover_path] 표지 이미지 생성 실패 ({doc_id}): {e}")
             return None
     return cover_path
+
+def get_primer_figure_path(doc_id: str) -> Optional[str]:
+    """읽기 전 브리핑에 쓰이는 대표 Figure 크롭 이미지 경로를 반환합니다. primer 생성
+    파이프라인(save_primer_figure)에서만 생성되므로, 아직 생성되지 않았다면 None."""
+    path = _primer_figure_path(doc_id)
+    return path if os.path.exists(path) else None
+
+
+def save_primer_figure(doc_id: str, pdf_path: str, page_num: int, bbox_percent: dict) -> bool:
+    """primer 생성 파이프라인에서 대표 Figure 영역을 크롭해 캐시합니다."""
+    from services.pdf_parser import render_image_crop
+    try:
+        return render_image_crop(pdf_path, page_num, bbox_percent, _primer_figure_path(doc_id))
+    except Exception as e:
+        print(f"[save_primer_figure] Figure 크롭 실패 ({doc_id}): {e}")
+        return False
+
 
 def update_document_metadata(doc_id: str, metadata: dict) -> None:
     """문서 메타데이터를 업데이트합니다."""

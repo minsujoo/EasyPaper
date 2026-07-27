@@ -1,6 +1,7 @@
 import uuid
 import os
 import shutil
+import asyncio
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import aiofiles
@@ -10,6 +11,7 @@ from config import UPLOAD_DIR, MAX_FILE_SIZE_MB
 from services.pdf_parser import extract_pages, get_pdf_metadata
 from services.library import save_document, get_document, get_pdf_path as lib_pdf_path, list_documents
 from services.translation_job import start_job, resume_incomplete_jobs, get_job_status
+from services.primer import generate_primer
 from models.schemas import UploadResponse
 
 router = APIRouter()
@@ -166,16 +168,35 @@ async def upload_pdf(
         "username": current_user,
     }
 
-    # 백그라운드 번역 잡 즉시 시작 (사용자 지정 번역 옵션 바인딩)
-    start_job(
-        session_id,
-        pages,
-        target_lang=target_lang,
-        style=style,
-        ignore_math=ignore_math,
-        ignore_table=ignore_table,
-        ignore_refs=ignore_refs
-    )
+    # 읽기 전 브리핑을 먼저 생성한 뒤 번역 잡을 시작한다. CLI(antigravity/claude_code/
+    # codex) provider는 문서(session_id)당 세션이 하나뿐이라 primer 생성과 번역이 그
+    # 세션을 동시에 쓸 수 없다 - primer를 완료한 뒤에만 번역이 세션을 점유하도록
+    # 순차 실행한다 (API 기반 provider는 세션 개념이 없어 이 순서가 지연을 조금
+    # 더할 뿐 문제가 되지 않는다).
+    async def _run_primer_then_translate():
+        try:
+            await generate_primer(
+                session_id,
+                pages,
+                metadata,
+                username=current_user,
+                pdf_path=pdf_path,
+                target_lang=target_lang,
+                session_id=session_id,
+            )
+        except Exception as e:
+            print(f"[Upload {session_id}] Primer 생성 실패: {e}")
+        start_job(
+            session_id,
+            pages,
+            target_lang=target_lang,
+            style=style,
+            ignore_math=ignore_math,
+            ignore_table=ignore_table,
+            ignore_refs=ignore_refs
+        )
+
+    asyncio.create_task(_run_primer_then_translate())
 
     return UploadResponse(
         session_id=session_id,

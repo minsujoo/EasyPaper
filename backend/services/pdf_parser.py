@@ -574,6 +574,31 @@ def _rect_mostly_inside_any(x0: float, y0: float, x1: float, y1: float, rects: L
     return False
 
 
+def render_image_crop(pdf_path: str, page_num: int, bbox_percent: Dict[str, float], output_path: str, zoom: float = 2.0) -> bool:
+    """
+    지정한 페이지에서 백분율 좌표(bbox_percent: left, top, width, height, extract_pdf_images와
+    동일한 형식)에 해당하는 영역만 잘라 이미지로 렌더링합니다. render_cover_image와 동일한
+    PyMuPDF 크롭 기법을 임의의 페이지/영역에 쓸 수 있도록 일반화한 버전입니다.
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        if page_num < 1 or page_num > doc.page_count:
+            return False
+        page = doc[page_num - 1]
+        rect = page.rect
+        x0 = rect.x0 + rect.width * (bbox_percent["left"] / 100)
+        y0 = rect.y0 + rect.height * (bbox_percent["top"] / 100)
+        x1 = x0 + rect.width * (bbox_percent["width"] / 100)
+        y1 = y0 + rect.height * (bbox_percent["height"] / 100)
+        clip = fitz.Rect(x0, y0, x1, y1)
+        matrix = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=matrix, clip=clip)
+        pix.save(output_path)
+        return True
+    finally:
+        doc.close()
+
+
 def render_cover_image(pdf_path: str, output_path: str, top_fraction: float = 0.45, zoom: float = 2.0) -> bool:
     """
     라이브러리 카드 미리보기용으로, 1페이지 상단(제목+저자+abstract가 보통 위치하는
