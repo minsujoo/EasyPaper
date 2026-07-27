@@ -51,7 +51,6 @@ const state = {
   referencesHeaderPageNum: null, // References/참고문헌 섹션이 시작되는 페이지 번호(감지 전엔 null)
   quotedImage: null,           // AI 질문 시 인용 이미지 보관용 (Base64)
   quotedImagePage: null,       // AI 질문 시 인용 이미지의 페이지 번호
-  pendingFigureQuote: null,    // 클릭 후 AI 질문 전 대기중인 인용 이미지 정보
   activeHighlightColor: '#eab308', // 기본 하이라이트 노란색
   activeUnderlineColor: '#ef4444',  // 기본 밑줄 빨간색
   isCropMode: false,           // 영역 캡처 모드 여부
@@ -344,7 +343,7 @@ function resetState() {
   Object.assign(state, {
     sessionId: null, filename: null, title: null, totalPages: 0, currentPage: 1,
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
-    chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null, pendingFigureQuote: null,
+    chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null,
     activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {},
     referencesHeaderPageNum: null
   })
@@ -6481,16 +6480,12 @@ function createSelectionMenu() {
 
   menu.querySelector('.ask-ai-btn').addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
-    if (state.pendingFigureQuote) {
-      askAIAssistantImage(state.pendingFigureQuote.base64Img, state.pendingFigureQuote.pageNum)
-    } else {
-      const selection = window.getSelection()
-      const text = extractSelectionText(selection).trim()
-      if (text) {
-        askAIAssistant(text)
-      }
-      selection.removeAllRanges()
+    const selection = window.getSelection()
+    const text = extractSelectionText(selection).trim()
+    if (text) {
+      askAIAssistant(text)
     }
+    selection.removeAllRanges()
     hideSelectionMenu()
   })
 
@@ -7052,7 +7047,6 @@ function hideSelectionMenu() {
     selectionMenu.classList.add('hidden')
     selectionMenu.querySelectorAll('.expand-wrapper').forEach(w => w.classList.remove('expanded'))
   }
-  state.pendingFigureQuote = null
   state.hoverSelectionDisabled = true
   if (sentenceHoverTimer) {
     clearTimeout(sentenceHoverTimer)
@@ -7330,17 +7324,16 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
 
       try {
         const base64Img = cropFigureFromCanvas(canvas, imgPercent)
-        state.pendingFigureQuote = {
-          pageNum: pageNum,
-          imgPercent: imgPercent,
-          base64Img: base64Img
-        }
-
-        // Show selection menu
-        const rect = overlay.getBoundingClientRect()
-        showSelectionMenu(rect, false) // false = hide annotation options
+        // 감지된 박스를 클릭하면 곧장 채팅 인용으로 넣어 바로 질문을 타이핑할
+        // 수 있게 한다 - 자유 드래그 캡처 도구(아래 initCropTool)와 동일한
+        // 패턴. 예전에는 클릭 시 작은 선택 메뉴를 띄우고 그 안의 "AI에게
+        // 질문" 버튼을 한 번 더 눌러야 했는데, 이 메뉴엔 그 버튼 하나뿐이라
+        // 불필요한 중간 단계였다.
+        toggleCropMode(false)
+        askAIAssistantImage(base64Img, pageNum)
       } catch (err) {
         console.error("그림 크롭 실패:", err)
+        showToast("캡처에 실패했습니다.", "error")
       }
     })
 
@@ -7668,17 +7661,36 @@ let figurePreviewTooltipEl = null
 let figurePreviewHideTimer = null
 let figurePreviewBoxEl = null
 let figurePreviewRequestId = 0
+// 리사이즈 드래그 도중, 아직 커지지 않은 박스 경계를 커서가 순간적으로
+// 벗어나 mouseleave가 튀는 경우가 있다 - 드래그 중엔 hide 스케줄 자체를
+// 완전히 무시해 박스가 리사이즈 도중 사라지는 것을 막는다.
+let figurePreviewIsResizing = false
 
 // showFigurePreviewTooltip이 마지막으로 그린 targets 배열 - 툴팁 안 개별
 // 항목을 클릭했을 때 어느 페이지로 이동할지 idx로 되찾기 위해 보관한다.
 let figurePreviewCurrentTargets = []
 
+// 이미지가 실제 그림/표보다 작아 보인다는 피드백에 따라, 참조 호버
+// 미리보기 툴팁 자체를 사용자가 드래그로 키울 수 있게 한다. 한 번 조절한
+// 크기는 localStorage에 저장해 다음 호버부터도 유지된다.
+const _FIGURE_PREVIEW_SIZE_KEY = 'easypaper_figure_preview_size'
+const _FIGURE_PREVIEW_MIN_WIDTH = 220
+const _FIGURE_PREVIEW_MIN_HEIGHT = 140
+
 function getOrCreateFigurePreviewTooltip() {
   if (figurePreviewTooltipEl) return figurePreviewTooltipEl
   const el = document.createElement('div')
   el.className = 'figure-preview-tooltip hidden'
-  el.innerHTML = `<div class="figure-preview-tooltip-items"></div>`
+  el.innerHTML = `<div class="figure-preview-tooltip-items"></div><div class="figure-preview-tooltip-resize-handle" title="드래그하여 크기 조절"></div>`
   document.body.appendChild(el)
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(_FIGURE_PREVIEW_SIZE_KEY) || 'null')
+    if (saved && saved.w >= _FIGURE_PREVIEW_MIN_WIDTH && saved.h >= _FIGURE_PREVIEW_MIN_HEIGHT) {
+      el.style.width = `${saved.w}px`
+      el.style.height = `${saved.h}px`
+    }
+  } catch {}
 
   el.addEventListener('mouseenter', () => {
     if (figurePreviewHideTimer) { clearTimeout(figurePreviewHideTimer); figurePreviewHideTimer = null }
@@ -7696,12 +7708,45 @@ function getOrCreateFigurePreviewTooltip() {
     scrollToPage(viewerScrollContainer, target.page)
   })
 
+  el.querySelector('.figure-preview-tooltip-resize-handle').addEventListener('mousedown', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const startX = e.clientX
+    const startY = e.clientY
+    const startWidth = el.offsetWidth
+    const startHeight = el.offsetHeight
+    el.classList.add('resizing')
+    figurePreviewIsResizing = true
+    if (figurePreviewHideTimer) { clearTimeout(figurePreviewHideTimer); figurePreviewHideTimer = null }
+
+    const onMove = (moveEvent) => {
+      const newWidth = Math.max(_FIGURE_PREVIEW_MIN_WIDTH, startWidth + (moveEvent.clientX - startX))
+      const newHeight = Math.max(_FIGURE_PREVIEW_MIN_HEIGHT, startHeight + (moveEvent.clientY - startY))
+      el.style.width = `${newWidth}px`
+      el.style.height = `${newHeight}px`
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      el.classList.remove('resizing')
+      figurePreviewIsResizing = false
+      localStorage.setItem(_FIGURE_PREVIEW_SIZE_KEY, JSON.stringify({ w: el.offsetWidth, h: el.offsetHeight }))
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  })
+
   figurePreviewTooltipEl = el
   return el
 }
 
 function positionFigurePreviewTooltip() {
   if (!figurePreviewTooltipEl || !figurePreviewBoxEl) return
+  // 사용자가 리사이즈 핸들을 드래그하는 도중에는 위치를 다시 계산하지 않는다 -
+  // 그 사이 이미지 로딩이 끝나 재배치가 걸리면(아래 showFigurePreviewTooltip의
+  // imgEl.onload) 커서 아래에서 박스가 튀어 리사이즈가 끊기는 문제가 있었다.
+  if (figurePreviewTooltipEl.classList.contains('resizing')) return
   const rect = figurePreviewBoxEl.getBoundingClientRect()
   const tw = figurePreviewTooltipEl.offsetWidth || 280
   const th = figurePreviewTooltipEl.offsetHeight || 160
@@ -7767,6 +7812,7 @@ function hideFigurePreviewTooltip() {
 }
 
 function scheduleFigurePreviewTooltipHide() {
+  if (figurePreviewIsResizing) return
   if (figurePreviewHideTimer) clearTimeout(figurePreviewHideTimer)
   figurePreviewHideTimer = setTimeout(hideFigurePreviewTooltip, 220)
 }
@@ -11228,4 +11274,3 @@ document.querySelectorAll('.onboarding-pull-model-btn').forEach((btn) => {
     )
   })
 })
-
