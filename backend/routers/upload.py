@@ -9,7 +9,7 @@ from services.auth import get_current_user
 from config import UPLOAD_DIR, MAX_FILE_SIZE_MB
 from services.pdf_parser import extract_pages, get_pdf_metadata
 from services.library import save_document, get_document, get_pdf_path as lib_pdf_path, list_documents
-from services.translation_job import start_job, resume_incomplete_jobs
+from services.translation_job import start_job, resume_incomplete_jobs, get_job_status
 from models.schemas import UploadResponse
 
 router = APIRouter()
@@ -35,7 +35,11 @@ def ensure_session(session_id: str) -> bool:
             return False
             
     try:
-        pages = extract_pages(pdf_path)
+        from services.cache import get_cached_pages, save_pages_cache
+        pages = get_cached_pages(session_id, pdf_path)
+        if pages is None:
+            pages = extract_pages(pdf_path)
+            save_pages_cache(session_id, pdf_path, pages)
         sessions[session_id] = {
             "pdf_path": pdf_path,
             "filename": doc["filename"],
@@ -67,27 +71,28 @@ def require_session_owner(session_id: str, current_user: str) -> dict:
 
 
 def restore_sessions_from_library():
-    """서버 시작 시 라이브러리의 문서들을 세션으로 복원하고 미완료 잡을 재개합니다."""
+    """서버 시작 시 미완료 번역 잡이 있는 문서만 세션으로 복원하고 잡을 재개합니다.
+
+    예전에는 라이브러리의 모든 문서를 매번 세션으로 복원했다(각 PDF를
+    처음부터 다시 extract_pages()로 텍스트 추출). 이러면 서버 기동 시간이
+    문서 수에 비례해 늘어나는데, Tauri 데스크톱 앱은 앱을 켤 때마다
+    백엔드 프로세스가 재시작되므로 이 지연을 매번 겪게 되고, 배포 서버도
+    문서가 쌓일수록 CI 헬스체크(재시작 후 30초 이내 응답) 타임아웃을
+    넘기기 시작했다.
+
+    부팅 시점에 실제로 필요한 건 "재개해야 할 미완료 번역 잡이 있는
+    문서"뿐이다 - 그 외 문서는 ensure_session()이 실제로 열람되는 시점에
+    그때 한 번만 추출해 캐싱하므로(require_session_owner 경유) 미리
+    준비해둘 필요가 없다. job_status.json 존재 여부만 확인하는 건 PDF를
+    열지 않는 가벼운 파일 I/O라 문서 수가 많아도 부담이 없다.
+    """
     for doc in list_documents():
         doc_id = doc["id"]
-        pdf_path = lib_pdf_path(doc_id)
-        if not pdf_path:
-            continue
-        try:
-            pages = extract_pages(pdf_path)
-            sessions[doc_id] = {
-                "pdf_path": pdf_path,
-                "filename": doc["filename"],
-                "pages": pages,
-                "total_pages": doc["total_pages"],
-                "metadata": doc.get("metadata", {}),
-                "from_library": True,
-                "username": doc.get("username", "admin"),
-            }
-        except Exception:
-            pass
+        job = get_job_status(doc_id)
+        if job and job.get("status") == "running":
+            ensure_session(doc_id)
 
-    # 미완료 번역 잡 재개
+    # 미완료 번역 잡 재개 (위에서 세션이 복원된 문서만 대상)
     resume_incomplete_jobs(sessions)
 
 
