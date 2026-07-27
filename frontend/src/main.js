@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -71,6 +71,9 @@ const state = {
   disableCitationOverlay: localStorage.getItem('easypaper_disable_citation_overlay') === 'true',
   // Figure/Table/수식 참조 표기 호버 미리보기를 끌지 여부.
   disableFigureOverlay: localStorage.getItem('easypaper_disable_figure_overlay') === 'true',
+  // 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 게이팅 모달을 끌지 여부. 꺼도
+  // 뷰어 툴바 버튼으로는 언제든 다시 열어볼 수 있다.
+  disablePrimer: localStorage.getItem('easypaper_disable_primer') === 'true',
   // pageNum_kind(예: "3_keywords") → 생성된 텍스트. 탭 재방문 시 재요청 방지용 캐시.
   pageInsightCache: {}
 }
@@ -139,6 +142,7 @@ const settingDisableBookmark = $('setting-disable-bookmark')
 const settingDisableInsights = $('setting-disable-insights')
 const settingDisableCitationOverlay = $('setting-disable-citation-overlay')
 const settingDisableFigureOverlay = $('setting-disable-figure-overlay')
+const settingDisablePrimer = $('setting-disable-primer')
 const clearCacheBtn       = $('clear-cache-btn')
 const clearPagesCacheBtn  = $('clear-pages-cache-btn')
 const settingAccentSwatches = $('setting-accent-swatches')
@@ -267,6 +271,27 @@ const outlineToggleBtn   = $('outline-toggle-btn')
 const outlineSidebar     = $('outline-sidebar')
 const outlineCloseBtn    = $('outline-close-btn')
 const outlineContent     = $('outline-content')
+const viewerPrimerBtn    = $('viewer-primer-btn')
+
+// 읽기 전 브리핑(Reading Primer) 모달
+const primerModal          = $('primer-modal')
+const primerCloseBtn       = $('primer-close-btn')
+const primerLoading        = $('primer-loading')
+const primerError          = $('primer-error')
+const primerBody           = $('primer-body')
+const primerTitle          = $('primer-title')
+const primerHookSection    = $('primer-hook-section')
+const primerHookText       = $('primer-hook-text')
+const primerQuestionsSection = $('primer-questions-section')
+const primerQuestions      = $('primer-questions')
+const primerFigureSection  = $('primer-figure-section')
+const primerFigureImg      = $('primer-figure-img')
+const primerChecklistSection = $('primer-checklist-section')
+const primerChecklist      = $('primer-checklist')
+const primerGraphSection   = $('primer-graph-section')
+const primerGraph          = $('primer-graph')
+const primerSkipBtn        = $('primer-skip-btn')
+const primerContinueBtn    = $('primer-continue-btn')
 const chatInput          = $('chat-input')
 const chatSendBtn        = $('chat-send-btn')
 
@@ -2298,6 +2323,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingDisableInsights.checked = state.disableInsights
   settingDisableCitationOverlay.checked = state.disableCitationOverlay
   settingDisableFigureOverlay.checked = state.disableFigureOverlay
+  settingDisablePrimer.checked = state.disablePrimer
   updateAccentSettingsUI(currentAccentColor)
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
@@ -2558,6 +2584,11 @@ settingDisableFigureOverlay.addEventListener('change', () => {
   state.disableFigureOverlay = settingDisableFigureOverlay.checked
   localStorage.setItem('easypaper_disable_figure_overlay', state.disableFigureOverlay)
   refreshAllPageOverlays()
+})
+
+settingDisablePrimer.addEventListener('change', () => {
+  state.disablePrimer = settingDisablePrimer.checked
+  localStorage.setItem('easypaper_disable_primer', state.disablePrimer)
 })
 
 // 시스템 설정 폼 제출
@@ -4797,6 +4828,163 @@ if (docPreviewOpenBtn) {
   })
 }
 
+// ── 읽기 전 브리핑(Reading Primer) 모달 ──────────────────────
+// mode: 'gate'면 논문을 처음 열 때 뷰어 진입을 가로막는 형태로 뜨며
+// (건너뛰기/읽으러 가기 둘 다 통과), 'toolbar'면 뷰어 툴바에서 언제든
+// 다시 열어보는 형태로 뜬다(닫기 버튼 하나만 노출). 어느 모드든 모달이
+// 닫히는 시점에 resolve되는 프로미스를 반환한다.
+let primerResolve = null
+
+function hidePrimerModal(result) {
+  primerModal.classList.add('hidden')
+  if (primerResolve) {
+    const resolve = primerResolve
+    primerResolve = null
+    resolve(result)
+  }
+}
+
+function renderPrimerCitationGraph(container, citationGraph, mode) {
+  const section = primerGraphSection
+  const libraryMatches = (citationGraph && citationGraph.library) || []
+  const externalMatches = (citationGraph && citationGraph.external) || []
+  const nodes = [
+    ...libraryMatches.map(m => ({ ...m, kind: 'library' })),
+    ...externalMatches.map(m => ({ ...m, kind: 'external' })),
+  ]
+  if (nodes.length === 0) {
+    section.classList.add('hidden')
+    container.innerHTML = ''
+    return
+  }
+  section.classList.remove('hidden')
+
+  const width = 460, height = 280, cx = width / 2, cy = height / 2
+  const nodeR = 40, centerR = 32
+  const radius = Math.min(width, height) / 2 - nodeR - 4
+  const angleStep = (2 * Math.PI) / nodes.length
+  const positioned = nodes.map((n, i) => {
+    const angle = -Math.PI / 2 + i * angleStep
+    return { ...n, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
+  })
+
+  const truncate = (s, n) => (s && s.length > n) ? `${s.slice(0, n)}…` : (s || '')
+  let svg = `<svg viewBox="0 0 ${width} ${height}" class="primer-graph-svg">`
+  for (const n of positioned) {
+    svg += `<line x1="${cx}" y1="${cy}" x2="${n.x}" y2="${n.y}" class="primer-graph-edge" />`
+  }
+  svg += `<circle cx="${cx}" cy="${cy}" r="${centerR}" class="primer-graph-node primer-graph-node-center" />`
+  svg += `<text x="${cx}" y="${cy}" class="primer-graph-node-text primer-graph-node-text-center">이 논문</text>`
+  positioned.forEach((n, i) => {
+    const cls = n.kind === 'library' ? 'primer-graph-node-library' : 'primer-graph-node-external'
+    svg += `<g class="primer-graph-node-group" data-idx="${i}">`
+    svg += `<circle cx="${n.x}" cy="${n.y}" r="${nodeR}" class="primer-graph-node ${cls}" />`
+    svg += `<text x="${n.x}" y="${n.y}" class="primer-graph-node-text">${escapeHtml(truncate(n.title, 16))}</text>`
+    svg += `</g>`
+  })
+  svg += `</svg>`
+  container.innerHTML = svg
+
+  container.querySelectorAll('.primer-graph-node-group').forEach(g => {
+    g.addEventListener('click', async () => {
+      const n = positioned[parseInt(g.dataset.idx, 10)]
+      if (n.kind === 'library') {
+        const targetDoc = await fetchLibraryDoc(n.doc_id).catch(() => null)
+        if (!targetDoc) return
+        if (mode === 'gate') {
+          // gate 모드는 openFromLibrary가 이 모달의 프로미스를 await하며 대기
+          // 중이므로, 여기서 곧장 openFromLibrary를 호출하면 원래 문서 로딩과
+          // 동시에 실행되어 state가 뒤섞인다. 대신 redirect 시그널로 resolve해
+          // 호출부가 원래 문서 로딩을 건너뛰고 순서대로 이 논문을 열게 한다.
+          hidePrimerModal({ redirect: targetDoc })
+        } else {
+          hidePrimerModal()
+          openFromLibrary(targetDoc)
+        }
+      } else if (n.url) {
+        window.open(n.url, '_blank', 'noopener')
+      }
+    })
+  })
+}
+
+function renderPrimerContent(doc, data, mode) {
+  const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
+  primerTitle.textContent = displayTitle
+
+  if (data.hook) {
+    primerHookText.textContent = data.hook
+    primerHookSection.classList.remove('hidden')
+  } else {
+    primerHookSection.classList.add('hidden')
+  }
+
+  const questions = data.questions || []
+  primerQuestions.innerHTML = questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')
+  primerQuestionsSection.classList.toggle('hidden', questions.length === 0)
+
+  const checklist = data.checklist || []
+  primerChecklist.innerHTML = checklist.map(c => `<li>${escapeHtml(c)}</li>`).join('')
+  primerChecklistSection.classList.toggle('hidden', checklist.length === 0)
+
+  if (data.figure) {
+    primerFigureImg.src = `/api/library/${doc.id}/primer-figure?ts=${Date.now()}`
+    primerFigureSection.classList.remove('hidden')
+  } else {
+    primerFigureSection.classList.add('hidden')
+  }
+
+  renderPrimerCitationGraph(primerGraph, data.citation_graph, mode)
+}
+
+async function showPrimerModal(doc, { mode = 'gate' } = {}) {
+  return new Promise((resolve) => {
+    primerResolve = resolve
+    primerModal.classList.remove('hidden')
+    primerLoading.classList.remove('hidden')
+    primerError.classList.add('hidden')
+    primerBody.classList.add('hidden')
+    primerSkipBtn.classList.toggle('hidden', mode !== 'gate')
+    primerContinueBtn.textContent = mode === 'gate' ? '읽으러 가기' : '닫기'
+
+    const targetLang = getTranslationOptions().targetLang
+    fetchPrimer(doc.id, targetLang)
+      .then(data => {
+        renderPrimerContent(doc, data, mode)
+        primerLoading.classList.add('hidden')
+        primerBody.classList.remove('hidden')
+      })
+      .catch(err => {
+        console.error('브리핑 로드 실패:', err)
+        primerLoading.classList.add('hidden')
+        primerError.classList.remove('hidden')
+      })
+  })
+}
+
+if (primerCloseBtn) primerCloseBtn.addEventListener('click', hidePrimerModal)
+if (primerSkipBtn) primerSkipBtn.addEventListener('click', hidePrimerModal)
+if (primerContinueBtn) primerContinueBtn.addEventListener('click', hidePrimerModal)
+if (primerModal) {
+  primerModal.addEventListener('click', (e) => {
+    if (e.target === primerModal) hidePrimerModal()
+  })
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && primerModal && !primerModal.classList.contains('hidden')) {
+    hidePrimerModal()
+  }
+})
+if (viewerPrimerBtn) {
+  viewerPrimerBtn.addEventListener('click', () => {
+    if (!state.currentDocId) return
+    showPrimerModal(
+      { id: state.currentDocId, metadata: state.currentDocMetadata, filename: state.filename },
+      { mode: 'toolbar' }
+    )
+  })
+}
+
 async function loadDocumentImages(docId) {
   try {
     const imgRes = await fetchLibraryDocImages(docId)
@@ -4869,6 +5057,36 @@ async function openFromLibrary(doc, shouldPushState = true) {
     state.filename   = doc.filename
     state.currentDocId = doc.id
     state.currentDocMetadata = doc.metadata || {}
+
+    // 읽기 전 브리핑 게이팅: 설정에서 껐거나 이미 이 문서의 브리핑을 본 적
+    // 있으면 건너뛴다. primer_shown 필드 자체가 없는 구버전 문서(이 기능
+    // 배포 전 업로드분)는 "이미 열람한 적 있는지"(독서완료 표시 또는 마지막
+    // 읽던 페이지 존재)로 판단해, 이미 여러 번 읽은 논문에 갑자기 브리핑이
+    // 뜨지 않도록 그 자리에서 primer_shown을 백필한다.
+    if (viewerPrimerBtn) viewerPrimerBtn.classList.toggle('hidden', state.disablePrimer)
+    if (!state.disablePrimer) {
+      const meta = state.currentDocMetadata
+      const alreadyShown = meta.primer_shown === true
+      if (!alreadyShown) {
+        const alreadyOpenedBefore = meta.read === true || Number.isInteger(meta.last_page)
+        if (alreadyOpenedBefore) {
+          state.currentDocMetadata.primer_shown = true
+          updateLibraryDocMetadata(doc.id, { primer_shown: true }).catch(() => {})
+        } else {
+          const gateResult = await showPrimerModal(doc, { mode: 'gate' })
+          state.currentDocMetadata.primer_shown = true
+          updateLibraryDocMetadata(doc.id, { primer_shown: true }).catch(() => {})
+          // 브리핑의 인용 그래프에서 내 라이브러리의 다른 논문으로 바로 이동한
+          // 경우 - 지금 열던 이 문서(doc)는 아직 로딩을 시작하지도 않았으므로
+          // 이어서 로딩하지 않고, 대신 그 논문을 새로 연다 (finally에서
+          // docOpeningId가 정리된 뒤에 호출해야 재진입 가드에 걸리지 않는다).
+          if (gateResult && gateResult.redirect) {
+            docOpeningId = null
+            return openFromLibrary(gateResult.redirect)
+          }
+        }
+      }
+    }
 
     if (viewerReadToggleBtn) {
       const isRead = state.currentDocMetadata.read === true
