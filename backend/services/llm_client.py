@@ -868,7 +868,7 @@ async def stream_page_insight(
 
 
 _PRIMER_LINE_RE = re.compile(
-    r'^[\s\-\*>]*\**\s*(HOOK|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3)\**\s*[:.\)]\s*(.+)$',
+    r'^[\s\-\*>]*\**\s*(HOOK|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|REC1|REC2|REC3|REC4|REC5)\**\s*[:.\)]\s*(.+)$',
     re.IGNORECASE,
 )
 
@@ -876,9 +876,17 @@ _PRIMER_LINE_RE = re.compile(
 async def generate_reading_primer(title: str, text: str, target_lang: str = "한국어", session_id: str = None) -> dict:
     """
     논문 제목과 도입부(초록 등) 원문으로 "읽기 전 브리핑" 콘텐츠(훅 문장, 예측 질문 3개,
-    읽으면서 확인할 체크리스트 3개)를 생성합니다. 채팅(Chat) 프로바이더/모델 설정을
-    재사용하며, stream_page_insight와 마찬가지로 세션이 지속되는 CLI provider는
-    번역/채팅/인사이트와 동일한 문서당 공유 세션(session_id)을 그대로 사용합니다.
+    읽으면서 확인할 체크리스트 3개, 관련 논문 추천 최대 5개)를 생성합니다. 채팅(Chat)
+    프로바이더/모델 설정을 재사용하며, stream_page_insight와 마찬가지로 세션이 지속되는
+    CLI provider는 번역/채팅/인사이트와 동일한 문서당 공유 세션(session_id)을 그대로
+    사용합니다.
+
+    관련 논문은 이 논문의 참고문헌 목록을 텍스트로 기계적으로 매칭하지 않고, LLM이 자기
+    지식으로 직접 추천하게 한다 - 참고문헌 목록 매칭 방식은 인용 형식이 지저분하거나
+    따옴표로 감싼 제목이 없는 스타일이면 매칭 개수가 너무 적고, 매칭되더라도 이 논문의
+    참고문헌으로 한정돼 "관련성"이 아니라 "우연히 잘 파싱된 것"에 가까웠다. LLM 추천은
+    환각 위험이 있으므로, 호출부(primer.py)에서 실제로 존재하는 논문인지 OpenAlex로
+    다시 검증한 뒤에만 채택한다.
     """
     instruction = (
         f"다음은 학술 논문 '{title}'의 도입부(초록 등) 원문입니다. 이 논문을 읽기 전 독자가 "
@@ -887,67 +895,89 @@ async def generate_reading_primer(title: str, text: str, target_lang: str = "한
         f"그대로 요약하지 말고 \"왜 이 문제가 어려운가/왜 흥미로운가\"를 짚어 궁금증을 유발하세요.\n"
         f"- Q1/Q2/Q3: 독자가 본문을 읽기 전 스스로 답을 예측해볼 만한 질문 3개. 각각 한 문장.\n"
         f"- CHECK1/CHECK2/CHECK3: 본문을 읽는 동안 확인하면 좋을 구체적인 포인트(예: 비교 대상, "
-        f"핵심 수치, 한계점 등) 3개. 각각 한 문장.\n\n"
-        f"반드시 아래 형식으로 정확히 7줄만 출력하세요. 다른 설명이나 서론은 절대 추가하지 마세요.\n"
-        f"HOOK: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\nCHECK1: <내용>\nCHECK2: <내용>\nCHECK3: <내용>"
+        f"핵심 수치, 한계점 등) 3개. 각각 한 문장.\n"
+        f"- REC1~REC5: 이 논문을 이해하는 데 도움이 되는, 실제로 존재하는 유명하거나 핵심적인 "
+        f"관련/선행 연구 논문 제목을 최대 5개까지 추천하세요. 반드시 실존하는 논문의 정확한 "
+        f"원제(영어 원문 그대로, 번역하지 말 것)만 쓰고, 확신이 없거나 제목이 정확히 기억나지 "
+        f"않으면 억지로 채우지 말고 그 줄은 생략하세요. 각 줄에는 논문 제목만 쓰고 저자·연도· "
+        f"설명은 붙이지 마세요.\n\n"
+        f"반드시 아래 형식으로만 출력하세요(REC 항목은 확신하는 만큼만, 0~5줄). 다른 설명이나 "
+        f"서론은 절대 추가하지 마세요.\n"
+        f"HOOK: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\nCHECK1: <내용>\nCHECK2: <내용>\n"
+        f"CHECK3: <내용>\nREC1: <논문 원제>\nREC2: <논문 원제>\n..."
     )
     prompt = f"{instruction}\n\n원문:\n{text[:3000]}"
 
     provider = get_chat_provider()
     model = get_chat_model()
 
-    tokens = []
-    if provider == "antigravity":
-        async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="primer"):
-            tokens.append(token)
-    elif provider == "claude_code":
-        async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="primer"):
-            tokens.append(token)
-    elif provider == "codex":
-        async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="primer"):
-            tokens.append(token)
-    elif provider in ("openai", "gemini", "claude"):
-        messages = [{"role": "user", "content": prompt}]
-        if provider == "openai":
-            async for token in stream_openai(messages, model=model, temperature=0.5):
+    async def _call_once() -> str:
+        tokens = []
+        if provider == "antigravity":
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="primer"):
                 tokens.append(token)
-        elif provider == "gemini":
-            async for token in stream_gemini(messages, model=model, temperature=0.5):
+        elif provider == "claude_code":
+            async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="primer"):
                 tokens.append(token)
+        elif provider == "codex":
+            async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="primer"):
+                tokens.append(token)
+        elif provider in ("openai", "gemini", "claude"):
+            messages = [{"role": "user", "content": prompt}]
+            if provider == "openai":
+                async for token in stream_openai(messages, model=model, temperature=0.5):
+                    tokens.append(token)
+            elif provider == "gemini":
+                async for token in stream_gemini(messages, model=model, temperature=0.5):
+                    tokens.append(token)
+            else:
+                async for token in stream_claude(messages, model=model, temperature=0.5):
+                    tokens.append(token)
         else:
-            async for token in stream_claude(messages, model=model, temperature=0.5):
-                tokens.append(token)
-    else:
-        # Ollama 폴백
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "options": {"temperature": 0.5},
-        }
-        # 스트리밍 없이 응답을 한 번에 기다리는 호출이라, 로컬 CPU 추론처럼 느린
-        # 환경에서도 끊기지 않도록 다른 ollama 스트리밍 호출들과 동일하게 360초를 준다
-        # (stream_page_insight의 120초는 페이지 단위라 상대적으로 짧아도 되지만, 이
-        # 함수는 문서 전체 도입부를 한 번에 처리해 응답이 더 오래 걸릴 수 있다).
-        async with httpx.AsyncClient(timeout=360.0) as client:
-            resp = await client.post(f"{get_ollama_host()}/api/chat", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            tokens.append(data.get("message", {}).get("content", ""))
+            # Ollama 폴백
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.5},
+            }
+            # 스트리밍 없이 응답을 한 번에 기다리는 호출이라, 로컬 CPU 추론처럼 느린
+            # 환경에서도 끊기지 않도록 다른 ollama 스트리밍 호출들과 동일하게 360초를 준다
+            # (stream_page_insight의 120초는 페이지 단위라 상대적으로 짧아도 되지만, 이
+            # 함수는 문서 전체 도입부를 한 번에 처리해 응답이 더 오래 걸릴 수 있다).
+            async with httpx.AsyncClient(timeout=360.0) as client:
+                resp = await client.post(f"{get_ollama_host()}/api/chat", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                tokens.append(data.get("message", {}).get("content", ""))
+        return "".join(tokens)
 
-    raw = "".join(tokens)
-    result = {"hook": "", "questions": [], "checklist": []}
-    for line in raw.splitlines():
-        m = _PRIMER_LINE_RE.match(line.strip())
-        if not m:
-            continue
-        key, value = m.group(1).upper(), m.group(2).strip().rstrip('*').strip()
-        if key == "HOOK":
-            result["hook"] = value
-        elif key in ("Q1", "Q2", "Q3"):
-            result["questions"].append(value)
-        else:
-            result["checklist"].append(value)
+    def _parse(raw: str) -> dict:
+        result = {"hook": "", "questions": [], "checklist": [], "recommended_titles": []}
+        for line in raw.splitlines():
+            m = _PRIMER_LINE_RE.match(line.strip())
+            if not m:
+                continue
+            key, value = m.group(1).upper(), m.group(2).strip().rstrip('*').strip()
+            if key == "HOOK":
+                result["hook"] = value
+            elif key in ("Q1", "Q2", "Q3"):
+                result["questions"].append(value)
+            elif key.startswith("CHECK"):
+                result["checklist"].append(value)
+            elif key.startswith("REC"):
+                result["recommended_titles"].append(value)
+        return result
+
+    # CLI 기반 provider(특히 claude_code)가 드물게 지시를 완전히 무시하고 입력
+    # 원문 일부를 그대로 돌려주는 현상을 실측으로 확인했다(같은 프롬프트를 5번
+    # 중 3번꼴로 실패, 재시도하면 정상 응답). 파싱 결과가 통째로 비어있으면(형식이
+    # 하나도 안 맞았다는 뜻) 한 번만 더 시도한다 - 매번 재시도하면 정상적으로
+    # "REC 항목 없음"처럼 일부만 비는 경우까지 불필요하게 다시 호출하게 되므로,
+    # 완전 실패로 보이는 경우로만 좁힌다.
+    result = _parse(await _call_once())
+    if not any((result["hook"], result["questions"], result["checklist"], result["recommended_titles"])):
+        result = _parse(await _call_once())
     return result
 
 
