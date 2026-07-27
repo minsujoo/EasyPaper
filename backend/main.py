@@ -16,6 +16,7 @@ from routers import jobs as jobs_router
 from routers import auth as auth_router
 from routers import agy as agy_router
 from routers import insight as insight_router
+from routers import primer as primer_router
 from services.auth import get_current_user
 
 app = FastAPI(
@@ -42,6 +43,7 @@ app.include_router(library_router.router, prefix="/api", dependencies=[Depends(g
 app.include_router(jobs_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Jobs"])
 app.include_router(agy_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["AGY"])
 app.include_router(insight_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Insight"])
+app.include_router(primer_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Primer"])
 
 
 @app.on_event("startup")

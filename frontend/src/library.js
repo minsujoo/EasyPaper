@@ -122,3 +122,9 @@ export async function deleteLibraryDocPermanently(docId) {
   if (!res.ok) throw new Error('영구 삭제 실패')
   return res.json()
 }
+
+export async function fetchPrimer(docId, targetLang = '한국어') {
+  const res = await fetch(`${API_BASE}/library/${docId}/primer?target_lang=${encodeURIComponent(targetLang)}`)
+  if (!res.ok) throw new Error('읽기 전 브리핑 조회 실패')
+  return res.json()
+}

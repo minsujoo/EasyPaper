@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import json
 import logging
+import re
 from typing import AsyncGenerator
 from config import (
     get_ollama_host,
@@ -88,12 +89,24 @@ def _start_stderr_drain(process):
 
 
 async def _finish_stderr_drain(stderr_task) -> str:
-    """stderr 드레인 태스크를 정리하고 지금까지 모인 내용을 문자열로 반환한다."""
+    """stderr 드레인 태스크를 정리하고 지금까지 모인 내용을 문자열로 반환한다.
+
+    process.wait()가 끝난 직후에도 stderr 파이프의 EOF 감지가 아주 살짝(수십~수백ms)
+    늦게 반영되어 stderr_task.done()이 아직 False일 수 있다(실측으로 확인됨) - 이걸
+    "멈춘 것"으로 보고 곧장 cancel해버리면, 이미 커널 파이프에는 다 도착해 있던 stderr
+    내용까지 통째로 버려진다(취소된 태스크를 await하면 CancelledError만 던지고 그동안
+    읽은 데이터는 사라짐). 그 결과 예를 들어 claude_code의 "No conversation found"
+    같은 실패 메시지를 못 읽어, 상위의 재시도(신규 세션 생성) 로직이 걸리지 않는 버그가
+    있었다. 정말 멈춘 경우와 구분하기 위해 짧게 유예 시간을 준 뒤에만 취소한다.
+    """
     if not stderr_task.done():
-        stderr_task.cancel()
+        try:
+            await asyncio.wait_for(stderr_task, timeout=2.0)
+        except Exception:
+            pass
     try:
-        data = await stderr_task
-    except (asyncio.CancelledError, Exception):
+        data = stderr_task.result()
+    except Exception:
         return ""
     return data.decode("utf-8", errors="replace") if data else ""
 
@@ -854,6 +867,90 @@ async def stream_page_insight(
         raise RuntimeError(f"Ollama HTTP 오류: {e.response.status_code}")
 
 
+_PRIMER_LINE_RE = re.compile(
+    r'^[\s\-\*>]*\**\s*(HOOK|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3)\**\s*[:.\)]\s*(.+)$',
+    re.IGNORECASE,
+)
+
+
+async def generate_reading_primer(title: str, text: str, target_lang: str = "한국어", session_id: str = None) -> dict:
+    """
+    논문 제목과 도입부(초록 등) 원문으로 "읽기 전 브리핑" 콘텐츠(훅 문장, 예측 질문 3개,
+    읽으면서 확인할 체크리스트 3개)를 생성합니다. 채팅(Chat) 프로바이더/모델 설정을
+    재사용하며, stream_page_insight와 마찬가지로 세션이 지속되는 CLI provider는
+    번역/채팅/인사이트와 동일한 문서당 공유 세션(session_id)을 그대로 사용합니다.
+    """
+    instruction = (
+        f"다음은 학술 논문 '{title}'의 도입부(초록 등) 원문입니다. 이 논문을 읽기 전 독자가 "
+        f"호기심을 갖고 몰입할 수 있도록 아래 형식에 맞춰 {target_lang}로 작성해주세요.\n\n"
+        f"- HOOK: 이 논문이 다루는 문제를 흥미로운 질문 형태로 재구성한 한두 문장. 초록을 "
+        f"그대로 요약하지 말고 \"왜 이 문제가 어려운가/왜 흥미로운가\"를 짚어 궁금증을 유발하세요.\n"
+        f"- Q1/Q2/Q3: 독자가 본문을 읽기 전 스스로 답을 예측해볼 만한 질문 3개. 각각 한 문장.\n"
+        f"- CHECK1/CHECK2/CHECK3: 본문을 읽는 동안 확인하면 좋을 구체적인 포인트(예: 비교 대상, "
+        f"핵심 수치, 한계점 등) 3개. 각각 한 문장.\n\n"
+        f"반드시 아래 형식으로 정확히 7줄만 출력하세요. 다른 설명이나 서론은 절대 추가하지 마세요.\n"
+        f"HOOK: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\nCHECK1: <내용>\nCHECK2: <내용>\nCHECK3: <내용>"
+    )
+    prompt = f"{instruction}\n\n원문:\n{text[:3000]}"
+
+    provider = get_chat_provider()
+    model = get_chat_model()
+
+    tokens = []
+    if provider == "antigravity":
+        async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="primer"):
+            tokens.append(token)
+    elif provider == "claude_code":
+        async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="primer"):
+            tokens.append(token)
+    elif provider == "codex":
+        async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="primer"):
+            tokens.append(token)
+    elif provider in ("openai", "gemini", "claude"):
+        messages = [{"role": "user", "content": prompt}]
+        if provider == "openai":
+            async for token in stream_openai(messages, model=model, temperature=0.5):
+                tokens.append(token)
+        elif provider == "gemini":
+            async for token in stream_gemini(messages, model=model, temperature=0.5):
+                tokens.append(token)
+        else:
+            async for token in stream_claude(messages, model=model, temperature=0.5):
+                tokens.append(token)
+    else:
+        # Ollama 폴백
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {"temperature": 0.5},
+        }
+        # 스트리밍 없이 응답을 한 번에 기다리는 호출이라, 로컬 CPU 추론처럼 느린
+        # 환경에서도 끊기지 않도록 다른 ollama 스트리밍 호출들과 동일하게 360초를 준다
+        # (stream_page_insight의 120초는 페이지 단위라 상대적으로 짧아도 되지만, 이
+        # 함수는 문서 전체 도입부를 한 번에 처리해 응답이 더 오래 걸릴 수 있다).
+        async with httpx.AsyncClient(timeout=360.0) as client:
+            resp = await client.post(f"{get_ollama_host()}/api/chat", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            tokens.append(data.get("message", {}).get("content", ""))
+
+    raw = "".join(tokens)
+    result = {"hook": "", "questions": [], "checklist": []}
+    for line in raw.splitlines():
+        m = _PRIMER_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        key, value = m.group(1).upper(), m.group(2).strip().rstrip('*').strip()
+        if key == "HOOK":
+            result["hook"] = value
+        elif key in ("Q1", "Q2", "Q3"):
+            result["questions"].append(value)
+        else:
+            result["checklist"].append(value)
+    return result
+
+
 async def check_ollama_health() -> dict:
     """Ollama 서버 상태를 확인합니다."""
     try:
@@ -928,6 +1025,15 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         dest_settings = os.path.join(claude_dir, "settings.json")
         if os.path.exists(orig_settings) and not os.path.exists(dest_settings):
             shutil.copy2(orig_settings, dest_settings)
+
+        # ~/.claude/ 안의 credentials/settings만으로는 부족하다 - 최신 Claude Code CLI는
+        # 최상위 ~/.claude.json(계정/세션 메타데이터)도 있어야 로그인 상태로 인식한다.
+        # 이게 빠지면 격리된 $HOME에서는 자격증명을 그대로 복사해도 "Not logged in"으로
+        # 실패한다.
+        orig_top_level_config = os.path.expanduser("~/.claude.json")
+        dest_top_level_config = os.path.join(home_dir, ".claude.json")
+        if os.path.exists(orig_top_level_config) and not os.path.exists(dest_top_level_config):
+            shutil.copy2(orig_top_level_config, dest_top_level_config)
 
         env["HOME"] = home_dir
 
