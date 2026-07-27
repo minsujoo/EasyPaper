@@ -23,8 +23,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-Ir7J-XCg.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-Ca9Rsbe5.css">
+  <script type="module" crossorigin src="/assets/index-C_G4vtnx.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DBOn9QUY.css">
 </head>
 <body>
 
@@ -91,13 +91,15 @@
       <div class="library-tabs-container">
         <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>보관함</button>
         <button id="lib-tab-history" class="library-tab-btn" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>히스토리</button>
+        <button id="lib-tab-chat" class="library-tab-btn" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>채팅</button>
+        <button id="lib-tab-annotations" class="library-tab-btn" data-tab="annotations"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>주석</button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->
       <div id="library-stats-container" class="hidden" style="margin-bottom: 16px;"></div>
 
       <!-- 라이브러리 전체 검색 (파일명/제목/카테고리 + 번역된 본문 텍스트) -->
-      <div style="position: relative; margin-bottom: 14px;">
+      <div id="library-search-box" style="position: relative; margin-bottom: 14px;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="library-search-input" placeholder="논문 제목, 파일명, 번역된 내용 검색..." style="width: 100%; padding: 11px 40px 11px 38px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text-primary); outline: none; font-size: 13.5px;" />
         <button type="button" id="library-search-clear-btn" class="hidden" title="검색 지우기" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: flex;">
@@ -121,6 +123,25 @@
           <p>저장된 논문이 없습니다</p>
           <p style="font-size:13px;color:var(--text-muted);margin-top:8px">PDF를 업로드하면 자동으로 저장됩니다</p>
         </div>
+      </div>
+
+      <!-- 채팅 세션 조회 (AI 어시스턴트 / 논문 비교 채팅 세션 목록) -->
+      <div id="library-chat-section" class="hidden">
+        <div class="chat-session-subtabs">
+          <button id="chat-subtab-assistant" class="chat-session-subtab-btn active" data-subtab="assistant">AI 어시스턴트</button>
+          <button id="chat-subtab-compare" class="chat-session-subtab-btn" data-subtab="compare">논문 비교</button>
+        </div>
+        <div id="chat-session-list" class="chat-session-list"></div>
+      </div>
+
+      <!-- 주석 조회 (메모 / 하이라이트 / 언더라인 목록) -->
+      <div id="library-annotations-section" class="hidden">
+        <div class="chat-session-subtabs">
+          <button id="annotation-subtab-memo" class="chat-session-subtab-btn active" data-subtab="memo">메모</button>
+          <button id="annotation-subtab-highlight" class="chat-session-subtab-btn" data-subtab="highlight">하이라이트</button>
+          <button id="annotation-subtab-underline" class="chat-session-subtab-btn" data-subtab="underline">언더라인</button>
+        </div>
+        <div id="annotation-list" class="chat-session-list"></div>
       </div>
     </div>
     <!-- 우하단 휴지통 비우기 플로팅 버튼 -->
@@ -190,6 +211,9 @@
         </button>
         <button id="outline-toggle-btn" class="icon-btn" title="논문 목차 보기" style="margin-left: 6px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
+        </button>
+        <button id="viewer-primer-btn" class="icon-btn hidden" title="읽기 전 브리핑 다시 보기" style="margin-left: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
         </button>
         <span id="doc-title" class="doc-title" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
         <button id="doc-title-edit-btn" class="doc-title-edit-btn" title="제목 수정" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; justify-content: center; opacity: 0.6; transition: opacity 0.2s;">
@@ -263,6 +287,9 @@
           </button>
           <button id="export-btn" class="icon-btn" title="번역본 내보내기">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+          </button>
+          <button id="memos-hide-all-btn" class="icon-btn" title="작성된 모든 메모 숨기기 (하이라이트만 표시)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
           </button>
         </div>
 
@@ -625,6 +652,9 @@
               <label class="checkbox-label">
                 <input type="checkbox" id="setting-disable-figure-overlay" /> Figure/Table/수식 참조 표기 호버 미리보기 끄기
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="setting-disable-primer" /> 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 팝업 끄기 (툴바 버튼으로는 계속 다시 볼 수 있음)
+              </label>
             </div>
           </div>
 
@@ -633,6 +663,10 @@
             <button type="button" id="clear-cache-btn" class="btn btn-secondary" style="width: 100%; color: var(--error); border-color: rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); font-weight: 600;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>브라우저 번역 캐시 비우기
             </button>
+            <button type="button" id="clear-pages-cache-btn" class="btn btn-secondary" style="width: 100%; margin-top: 8px; color: var(--error); border-color: rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); font-weight: 600;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>서버 PDF 추출 캐시 비우기
+            </button>
+            <p style="font-size: 11px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.5;">서버(또는 앱) 재시작 후 문서를 처음 열 때 빠르게 뜨도록 저장해두는 캐시입니다. 비워도 데이터가 사라지지 않고, 다음에 열람할 때 자동으로 다시 채워집니다.</p>
           </div>
           
           <div class="form-actions" style="margin-top: 15px;">
@@ -667,6 +701,18 @@
             <div class="form-group" id="setting-claude-key-group" style="display: none;">
               <label for="setting-claude-key">Claude API Key</label>
               <input type="password" id="setting-claude-key" placeholder="sk-ant-..." style="width: 100%; padding: 12px 16px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text-primary); outline: none; font-size: 14px;" />
+            </div>
+          </div>
+
+          <!-- 참고문헌 링크 조회(OpenAlex) 설정 -->
+          <div style="border-top: 1px solid var(--border); padding-top: 15px; margin-top: 15px;">
+            <h4 style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; display: flex; align-items: center; gap: 4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>참고문헌 링크 조회 설정</h4>
+            <div class="form-group">
+              <label for="setting-openalex-mailto">연락 가능한 이메일 (선택 사항)</label>
+              <input type="email" id="setting-openalex-mailto" placeholder="you@example.com" style="width: 100%; padding: 12px 16px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; color: var(--text-primary); outline: none; font-size: 14px;" />
+              <p style="font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5;">
+                본문 인용 오버레이와 읽기 전 브리핑의 참고문헌 링크 조회는 <a href="https://openalex.org" target="_blank" rel="noopener" style="color: var(--accent-mid);">OpenAlex</a>를 사용합니다. 별도 가입이나 API 키 발급 없이 이메일만 입력해도 더 넉넉한 요청 한도("polite pool")가 적용됩니다 — 자세한 내용은 <a href="https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication" target="_blank" rel="noopener" style="color: var(--accent-mid);">공식 문서</a>를 참고하세요.
+              </p>
             </div>
           </div>
 
@@ -900,7 +946,15 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><strong>데스크탑 앱 업데이트:</strong><br>
               아래 버튼을 누르면 새 버전이 있는지 확인합니다. 새 버전이 있으면 다운로드 후 설치하고 앱을 자동으로 재시작합니다.
             </div>
-            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12.5px; color: var(--text-secondary); white-space: nowrap;">자동 업데이트 확인</span>
+                <select id="setting-tauri-update-check-interval" class="form-select" style="width: auto; min-width: 110px;">
+                  <option value="daily">매일</option>
+                  <option value="weekly">매주</option>
+                  <option value="never">사용 안 함</option>
+                </select>
+              </div>
               <span id="tauri-current-version-label" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);"></span>
             </div>
             <div id="tauri-update-notes-box" class="update-changelog-box hidden" style="margin-bottom: 12px;">
@@ -972,6 +1026,76 @@
         </div>
       </div>
       <button id="doc-preview-open-btn" class="doc-preview-open-btn">열기</button>
+    </div>
+  </div>
+
+  <!-- 읽기 전 브리핑(Reading Primer) 모달 -->
+  <div id="primer-modal" class="modal-overlay hidden">
+    <div class="primer-content">
+      <button id="primer-close-btn" class="close-btn primer-close-btn" title="닫기">&times;</button>
+
+      <div id="primer-loading" class="primer-loading">
+        <div class="spinner"></div>
+        <p>읽기 전 브리핑을 준비하고 있어요...</p>
+      </div>
+
+      <div id="primer-error" class="primer-error hidden">
+        <p>브리핑을 불러오지 못했습니다.</p>
+      </div>
+
+      <div id="primer-body" class="primer-body hidden">
+        <div class="primer-header">
+          <div class="primer-header-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+          </div>
+          <div class="primer-header-text">
+            <span class="primer-eyebrow">읽기 전 브리핑</span>
+            <h2 id="primer-title" class="primer-title"></h2>
+          </div>
+        </div>
+
+        <div id="primer-hook-section" class="primer-hook-section hidden">
+          <span class="primer-hook-quote">&ldquo;</span>
+          <p id="primer-hook-text" class="primer-hook-text"></p>
+        </div>
+
+        <div id="primer-questions-section" class="hidden">
+          <div class="primer-label">
+            <span class="primer-label-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+            <span>읽기 전에 스스로 답해보기</span>
+          </div>
+          <ol id="primer-questions" class="primer-list"></ol>
+        </div>
+
+        <div id="primer-figure-section" class="hidden">
+          <div class="primer-label">
+            <span class="primer-label-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+            <span>핵심 그림 먼저 보기</span>
+          </div>
+          <img id="primer-figure-img" class="primer-figure-img" src="" alt="대표 Figure" />
+        </div>
+
+        <div id="primer-checklist-section" class="hidden">
+          <div class="primer-label">
+            <span class="primer-label-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></span>
+            <span>읽으면서 확인할 것</span>
+          </div>
+          <ul id="primer-checklist" class="primer-checklist"></ul>
+        </div>
+
+        <div id="primer-graph-section" class="hidden">
+          <div class="primer-label">
+            <span class="primer-label-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4"/><path d="M12 12H5v4"/><path d="M12 12h7v4"/></svg></span>
+            <span>이 논문과 연결된 논문</span>
+          </div>
+          <div id="primer-graph" class="primer-graph"></div>
+        </div>
+      </div>
+
+      <div class="primer-footer">
+        <button id="primer-skip-btn" class="btn btn-secondary">건너뛰기</button>
+        <button id="primer-continue-btn" class="btn btn-primary">읽으러 가기</button>
+      </div>
     </div>
   </div>
 

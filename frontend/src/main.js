@@ -48,6 +48,7 @@ const state = {
   quotedText: null,            // AI 질문 시 인용구 보관용
   documentImages: [],          // 문서 내 이미지 좌표 목록
   referenceMap: {},            // 참고문헌 번호 -> 원문 텍스트 맵
+  citationStyle: null,         // 'number' | 'author-year' | 'mixed' | null(미감지) - detectCitationStyle 결과
   referencesHeaderPageNum: null, // References/참고문헌 섹션이 시작되는 페이지 번호(감지 전엔 null)
   quotedImage: null,           // AI 질문 시 인용 이미지 보관용 (Base64)
   quotedImagePage: null,       // AI 질문 시 인용 이미지의 페이지 번호
@@ -371,7 +372,7 @@ function resetState() {
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
     chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null,
     activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {},
-    referencesHeaderPageNum: null
+    citationStyle: null, referencesHeaderPageNum: null
   })
   if (typeof toggleCropMode === 'function') toggleCropMode(false)
   viewerScrollContainer.innerHTML = ''
@@ -5045,6 +5046,7 @@ async function loadDocumentReferences(docId) {
   try {
     const refRes = await fetchLibraryReferences(docId)
     state.referenceMap = refRes.references || {}
+    state.citationStyle = detectCitationStyle(state.referenceMap)
 
     // 이미 렌더링되어 있는 페이지들의 인용 오버레이 갱신
     document.querySelectorAll('.textLayer').forEach(textLayerDiv => {
@@ -5057,6 +5059,7 @@ async function loadDocumentReferences(docId) {
   } catch (e) {
     console.warn("참고문헌 목록 로드 실패:", e)
     state.referenceMap = {}
+    state.citationStyle = null
   }
 }
 
@@ -7597,15 +7600,18 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   inner.appendChild(layer)
 }
 
-// 본문 인용 표기 세 스타일을 지원한다:
-// 1) 번호 인용: [12], [12, 13], [12-14]
+// 본문 인용 표기 네 스타일을 지원한다:
+// 1) 번호 인용: [12], [12, 13], [12-14], [1,3,5-8](단일 번호와 범위 혼합)
 // 2) 키워드 인용(alpha 스타일 BibTeX): [BCV13], [BCV13, Dev86] - 저자 이니셜+
 //    연도 형태의 키(예: VAE 논문의 [BCV13], [Dev86])도 순수 숫자와 동일하게
 //    대괄호 토큰으로 취급한다. 백엔드 reference_parser.py의 _BRACKET_ENTRY_RE도
 //    동일한 키 형식을 파싱한다.
-// 3) 저자-연도 인용: (Smith, 2020), (Smith et al., 2020), (Smith & Jones, 2020),
-//    (Smith, 2020; Jones, 2019) 등 - 백엔드 reference_parser.py의
-//    _parse_author_year_entries와 동일하게 "저자 성(소문자)+연도"를 키로 매칭한다.
+// 3) 괄호형 저자-연도 인용: (Smith, 2020), (Smith et al., 2020),
+//    (Smith & Jones, 2020), (Smith, 2020; Jones, 2019) 등 - 백엔드
+//    reference_parser.py의 _parse_author_year_entries와 동일하게 "저자
+//    성(소문자)+연도"를 키로 매칭한다.
+// 4) 서술형 저자-연도 인용: 저자가 괄호 밖에 오고 연도만 괄호 안에 있는
+//    "Smith (2020)", "Li and Wang (2023)", "Smith et al. (2020)" 등.
 //
 // 대괄호 안 토큰 하나 - 순수 숫자(1~3자리) 또는 "BCV13"류 키워드 키(영문
 // 1~6자 + 선택적 "+" + 숫자 2~4자리 + 선택적 소문자 접미사)만 인정한다.
@@ -7618,7 +7624,7 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
 const CITATION_TOKEN_SRC = '(?:\\d{1,3}|[A-Za-z]{1,6}\\+?\\d{2,4}[a-z]?)'
 // 대괄호 목록의 항목 하나는 위 단일 키이거나, 숫자 범위("12-14")일 수 있다 -
 // 범위는 CITATION_TOKEN_SRC 모양에 안 맞으므로(하이픈 포함) 마커 탐지
-// 단계에서 별도 대안으로 허용해두고, 실제 펼치기는 parseCitationNumbers가 한다.
+// 단계에서 별도 대안으로 허용해두고, 실제 펼치기는 extractBracketCitationItems가 한다.
 const CITATION_LIST_ITEM_SRC = `(?:\\d{1,3}\\s*[-–]\\s*\\d{1,3}|${CITATION_TOKEN_SRC})`
 const CITATION_MARKER_RE = new RegExp(
   `\\[\\s*${CITATION_LIST_ITEM_SRC}(?:\\s*,\\s*${CITATION_LIST_ITEM_SRC})*\\s*\\]`, 'g'
@@ -7627,29 +7633,45 @@ const CITATION_MARKER_RE = new RegExp(
 // 있어야 인용으로 인정한다(오탐 방지 - 그냥 "(그림 2020년 기준)" 같은 일반
 // 괄호 문구가 걸리지 않도록 대문자 시작 + 연도 둘 다 요구).
 const CITATION_AUTHOR_YEAR_MARKER_RE = /\([A-ZÀ-Ö][^()]{2,160}?\d{4}[a-z]?[^()]{0,20}\)/g
+// 서술형 저자-연도: 저자명(과 "and"/"&"로 이어지는 공저자, 또는 "et al.")
+// 뒤에 곧바로 "(2020)"류 연도만 담긴 괄호가 온다. 콤마나 이니셜이 중간에
+// 끼면 REF_ENTRY_AUTHOR_YEAR_RE(참고문헌 목록 항목)이 담당할 형태이므로
+// 여기서는 매칭하지 않는다 - 두 정규식이 References 섹션 안에서 같은
+// 텍스트에 중복으로 걸리는 것을 방지.
+const CITATION_NARRATIVE_AUTHOR_YEAR_RE =
+  /\b([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+)(?:\s+(?:and|&)\s+[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+)?(?:\s+et\s+al\.?)?\s+\((\d{4})[a-z]?\)/g
 
-// "[12, 14-16]", "[BCV13, Dev86]" 형태의 대괄호 안 내용을 개별 참고문헌
-// 키 목록으로 펼친다. 숫자 범위("14-16")만 확장 대상이고, 키워드 키는
-// 범위 개념이 없으므로 토큰 그대로 유지한다.
-function parseCitationNumbers(bracketText) {
-  const inner = bracketText.slice(1, -1)
-  const nums = []
-  inner.split(',').forEach(part => {
-    const trimmed = part.trim()
-    const range = trimmed.match(/^(\d{1,3})\s*[-–]\s*(\d{1,3})$/)
+// "[12, 14-16]", "[BCV13, Dev86]", "[1,3,5-8]" 형태의 대괄호 안 내용을
+// 항목별 위치 정보와 함께 뽑아낸다. 쉼표로 나열된 각 항목은 독립적인
+// 오버레이를 갖는다("[1, 2, 3]" -> 각 번호마다 별도 오버레이). 단, "5-8"
+// 같은 범위 표기는 문서 상에서 하나로 붙어 있는 토큰이라 쪼갤 수 없으므로
+// 범위 전체가 하나의 오버레이를 갖되, 그 안에 펼쳐진 모든 번호를 함께
+// 담아 툴팁에서 전부 보여준다.
+const CITATION_ITEM_RE = new RegExp(CITATION_LIST_ITEM_SRC, 'g')
+function extractBracketCitationItems(fullText, match) {
+  const innerStart = match.index + 1
+  const innerEnd = match.index + match[0].length - 1
+  const inner = fullText.slice(innerStart, innerEnd)
+  const items = []
+  CITATION_ITEM_RE.lastIndex = 0
+  let m
+  while ((m = CITATION_ITEM_RE.exec(inner)) !== null) {
+    const start = innerStart + m.index
+    const end = start + m[0].length
+    const range = m[0].match(/^(\d{1,3})\s*[-–]\s*(\d{1,3})$/)
     if (range) {
-      const start = parseInt(range[1], 10)
-      const end = parseInt(range[2], 10)
+      const rangeStart = parseInt(range[1], 10)
+      const rangeEnd = parseInt(range[2], 10)
       // 비정상적으로 넓은 범위(오탐 - 예: 페이지/연도 범위 오인)는 무시
-      if (end >= start && end - start <= 50) {
-        for (let n = start; n <= end; n++) nums.push(String(n))
-      }
-      return
+      const keys = (rangeEnd >= rangeStart && rangeEnd - rangeStart <= 50)
+        ? Array.from({ length: rangeEnd - rangeStart + 1 }, (_, i) => String(rangeStart + i))
+        : []
+      items.push({ start, end, keys })
+    } else {
+      items.push({ start, end, keys: [m[0]] })
     }
-    const token = trimmed.match(new RegExp(`^${CITATION_TOKEN_SRC}$`))
-    if (token) nums.push(token[0])
-  })
-  return nums
+  }
+  return items
 }
 
 // 참고문헌 목록 항목 자체의 "시작 표기"를 찾기 위한 정규식들(대괄호가 없는
@@ -7667,21 +7689,50 @@ const REF_ENTRY_PLAIN_NUMBER_RE = /\b(\d{1,3})[.)]\s+(?=[A-Z가-힣])/g
 // 있는 문헌 목록 서식(APA류)을 겨냥한다.
 const REF_ENTRY_AUTHOR_YEAR_RE = /\b([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+),\s[^()]{0,160}?\((\d{4})[a-z]?\)/g
 
-// "(Smith, 2020; Jones et al., 2019)" 형태를 세미콜론 기준으로 나눠 각각에서
-// 앞쪽 저자 성과 끝쪽 연도만 앵커로 뽑는다(공저자 나열/"et al." 등 그 사이
-// 내용은 굳이 파싱하지 않아도 이 두 앵커만으로 백엔드 키와 매칭 가능).
-function parseAuthorYearKeys(parenText) {
-  const inner = parenText.slice(1, -1)
-  const keys = []
-  inner.split(';').forEach(part => {
-    const trimmed = part.trim()
-    const surnameMatch = trimmed.match(/^([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+)/)
-    const yearMatch = trimmed.match(/(\d{4})[a-z]?/)
-    if (surnameMatch && yearMatch) {
-      keys.push(`${surnameMatch[1].toLowerCase()}${yearMatch[1]}`)
-    }
+// "(Smith, 2020; Jones et al., 2019)" 형태를 세미콜론 기준으로 나눠, 각
+// 항목의 위치 정보와 함께 반환한다 - 항목마다 독립적인 오버레이를 걸기
+// 위함이다("(Morrill et al., 2021; Kidger et al., 2020)" -> 각 인용마다
+// 별도 오버레이). 공저자 나열/"et al." 등 세부 내용은 굳이 파싱하지 않고
+// 앞쪽 저자 성과 끝쪽 연도만 앵커로 뽑는다.
+function extractAuthorYearClauses(fullText, match) {
+  const innerStart = match.index + 1
+  const innerEnd = match.index + match[0].length - 1
+  const inner = fullText.slice(innerStart, innerEnd)
+  const clauses = []
+  let cursor = 0
+  inner.split(';').forEach(rawPart => {
+    const partStart = cursor
+    cursor += rawPart.length + 1 // ';' 구분자 1글자만큼 다음 조각 시작 위치를 밀어줌
+    const leading = rawPart.match(/^\s*/)[0].length
+    const trailing = rawPart.match(/\s*$/)[0].length
+    const text = rawPart.slice(leading, rawPart.length - trailing)
+    if (!text) return
+    const surnameMatch = text.match(/^([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+)/)
+    const yearMatch = text.match(/(\d{4})[a-z]?/)
+    if (!surnameMatch || !yearMatch) return
+    clauses.push({
+      start: innerStart + partStart + leading,
+      end: innerStart + partStart + rawPart.length - trailing,
+      key: `${surnameMatch[1].toLowerCase()}${yearMatch[1]}`,
+    })
   })
-  return keys
+  return clauses
+}
+
+// 참고문헌 맵의 키 형식(순수 숫자 vs "저자성+연도")으로 이 논문이 Number
+// Citation 스타일인지 Author-Year 스타일인지 판단한다. 스타일을 미리
+// 알면 반대 스타일 정규식은 아예 돌리지 않아, "Dimension = [64, 128, 256]"
+// 같은 숫자 배열이 Author-Year 논문에서 대괄호 인용으로 오인되는 등의
+// 오탐을 원천적으로 줄일 수 있다. 두 스타일이 섞여 있거나 아직 참고문헌이
+// 없으면(null) 두 스타일을 모두 검사하는 기존 동작으로 안전하게 폴백한다.
+function detectCitationStyle(refMap) {
+  const keys = Object.keys(refMap)
+  if (keys.length === 0) return null
+  let numeric = 0, authorYear = 0
+  keys.forEach(k => { /^\d+$/.test(k) ? numeric++ : authorYear++ })
+  if (numeric > 0 && authorYear === 0) return 'number'
+  if (authorYear > 0 && numeric === 0) return 'author-year'
+  return 'mixed'
 }
 
 // References/Bibliography/참고문헌 섹션 헤더 판별 - 백엔드 reference_parser.py의
@@ -7728,7 +7779,22 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
 
   const referencesSectionStart = detectReferencesSectionStart(vtm, pageNum)
 
-  const addCitationBox = (charStart, charEnd, refKey) => {
+  // 이 문서가 Number 스타일인지 Author-Year 스타일인지 미리 알면, 반대
+  // 스타일 정규식은 아예 돌리지 않는다 - 예를 들어 문서가 Author-Year
+  // 스타일이면 "[64, 128, 256]" 같은 순수 숫자 배열은 애초에 대괄호 인용
+  // 후보로 검사조차 하지 않으므로 오탐 여지가 없다. 스타일이 섞여 있거나
+  // (mixed) 아직 판별하지 못했으면(null) 기존처럼 두 스타일 모두 검사한다.
+  const citationStyle = state.citationStyle
+  const checkNumberStyle = citationStyle !== 'author-year'
+  const checkAuthorYearStyle = citationStyle !== 'number'
+
+  // refKeys(여러 개일 수 있음)를 받아 하나의 오버레이 박스를 그린다. 툴팁에는
+  // refMap에 실제로 존재하는 키의 원문을 전부 이어붙여 보여준다("[66-69]"
+  // 같은 범위 인용이 여러 참고문헌을 한 번에 가리키는 경우를 위함). "원문
+  // 링크 찾기"/Google Scholar 검색은 첫 번째 키를 기준으로 동작한다.
+  const addCitationBox = (charStart, charEnd, refKeys) => {
+    const validKeys = refKeys.filter(k => refMap[k])
+    if (validKeys.length === 0) return
     const rects = getSentenceRects({ charStart, charEnd }, vtm, textLayerDiv)
     rects.forEach(r => {
       const box = document.createElement('div')
@@ -7737,8 +7803,8 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.style.top    = `${r.top}px`
       box.style.width  = `${r.width}px`
       box.style.height = `${r.height}px`
-      box.dataset.refNum = refKey
-      box.addEventListener('mouseenter', () => showCitationTooltip(docId, refKey, refMap[refKey] || '', box))
+      box.dataset.refNum = validKeys.join(',')
+      box.addEventListener('mouseenter', () => showCitationTooltip(docId, validKeys, refMap, box))
       box.addEventListener('mouseleave', scheduleCitationTooltipHide)
       // 클릭도 항상 툴팁을 띄운다(호버가 없는 터치 기기 대응). 실제 마우스
       // 클릭은 브라우저가 클릭 직전에 mouseenter를 먼저 쏘므로, 여기서 굳이
@@ -7748,53 +7814,69 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showCitationTooltip(docId, refKey, refMap[refKey] || '', box)
+        showCitationTooltip(docId, validKeys, refMap, box)
       })
       overlay.appendChild(box)
     })
   }
 
-  // 대괄호 안에 여러 번호가 있어도([12, 13]) 툴팁은 첫 번째 매칭 번호 기준으로만
-  // 보여준다 - 대부분 단일 인용이고, 여러 개를 한 번에 보여주면 오히려 복잡해진다.
-  CITATION_MARKER_RE.lastIndex = 0
   let match
-  while ((match = CITATION_MARKER_RE.exec(vtm.fullText)) !== null) {
-    const nums = parseCitationNumbers(match[0]).filter(n => refMap[n])
-    if (nums.length === 0) continue
-    addCitationBox(match.index, match.index + match[0].length, nums[0])
+
+  if (checkNumberStyle) {
+    // "[1, 2, 3]"은 번호마다, "[66-69]"는 범위 전체가 하나로(내부에 66~69
+    // 전부 담아) 독립적인 오버레이를 갖는다. "[1,3,5-8]" 같은 혼합 표현도
+    // 항목 단위로 처리되므로 자연스럽게 지원된다.
+    CITATION_MARKER_RE.lastIndex = 0
+    while ((match = CITATION_MARKER_RE.exec(vtm.fullText)) !== null) {
+      extractBracketCitationItems(vtm.fullText, match).forEach(item => {
+        addCitationBox(item.start, item.end, item.keys)
+      })
+    }
   }
 
-  CITATION_AUTHOR_YEAR_MARKER_RE.lastIndex = 0
-  while ((match = CITATION_AUTHOR_YEAR_MARKER_RE.exec(vtm.fullText)) !== null) {
-    const keys = parseAuthorYearKeys(match[0]).filter(k => refMap[k])
-    if (keys.length === 0) continue
-    addCitationBox(match.index, match.index + match[0].length, keys[0])
+  if (checkAuthorYearStyle) {
+    // "(Morrill et al., 2021; Kidger et al., 2020; Walker et al., 2024)"처럼
+    // 세미콜론으로 묶인 여러 인용도 각각 독립적인 오버레이를 갖는다.
+    CITATION_AUTHOR_YEAR_MARKER_RE.lastIndex = 0
+    while ((match = CITATION_AUTHOR_YEAR_MARKER_RE.exec(vtm.fullText)) !== null) {
+      extractAuthorYearClauses(vtm.fullText, match).forEach(clause => {
+        addCitationBox(clause.start, clause.end, [clause.key])
+      })
+    }
+
+    // "Smith (2020)", "Li and Wang (2023)" 같은 서술형 인용
+    CITATION_NARRATIVE_AUTHOR_YEAR_RE.lastIndex = 0
+    while ((match = CITATION_NARRATIVE_AUTHOR_YEAR_RE.exec(vtm.fullText)) !== null) {
+      const key = `${match[1].toLowerCase()}${match[2]}`
+      addCitationBox(match.index, match.index + match[0].length, [key])
+    }
   }
 
-  // 참고문헌 목록 자체(대괄호가 없는 스타일)에도 오버레이를 건다 - 위 두
-  // 정규식은 대괄호 인용([12]) 또는 괄호로 묶인 저자-연도 인용((Smith, 2020))만
-  // 잡아내는데, 참고문헌 목록의 각 항목 시작 표기는 스타일에 따라 그 어느
-  // 쪽에도 안 걸리는 경우가 있다("12. Author..." 같은 번호형, "Author, A.
-  // (2020). Title..." 같은 저자-연도형). 참고문헌 목록을 훑어보다가 바로 그
-  // 자리에서 원문 링크/Scholar 검색을 쓸 수 있도록, References 헤더 이후
+  // 참고문헌 목록 자체(대괄호가 없는 스타일)에도 오버레이를 건다 - 위 정규식들은
+  // 대괄호 인용([12]) 또는 괄호/서술형 저자-연도 인용((Smith, 2020), Smith
+  // (2020))만 잡아내는데, 참고문헌 목록의 각 항목 시작 표기는 스타일에 따라
+  // 그 어느 쪽에도 안 걸리는 경우가 있다("12. Author..." 같은 번호형, "Author,
+  // A. (2020). Title..." 같은 저자-연도형). 참고문헌 목록을 훑어보다가 바로
+  // 그 자리에서 원문 링크/Scholar 검색을 쓸 수 있도록, References 헤더 이후
   // 영역에서만 이 두 표기도 추가로 인용 표기로 인정한다(섹션 밖에서 걸면
   // "2. Introduction" 같은 절 번호나 "Smith (2020)는..." 같은 서술형 문장까지
   // 오탐될 위험이 크다).
   if (referencesSectionStart >= 0) {
-    REF_ENTRY_PLAIN_NUMBER_RE.lastIndex = 0
-    while ((match = REF_ENTRY_PLAIN_NUMBER_RE.exec(vtm.fullText)) !== null) {
-      if (match.index < referencesSectionStart) continue
-      const num = match[1]
-      if (!refMap[num]) continue
-      addCitationBox(match.index, match.index + match[0].length, num)
+    if (checkNumberStyle) {
+      REF_ENTRY_PLAIN_NUMBER_RE.lastIndex = 0
+      while ((match = REF_ENTRY_PLAIN_NUMBER_RE.exec(vtm.fullText)) !== null) {
+        if (match.index < referencesSectionStart) continue
+        addCitationBox(match.index, match.index + match[0].length, [match[1]])
+      }
     }
 
-    REF_ENTRY_AUTHOR_YEAR_RE.lastIndex = 0
-    while ((match = REF_ENTRY_AUTHOR_YEAR_RE.exec(vtm.fullText)) !== null) {
-      if (match.index < referencesSectionStart) continue
-      const key = `${match[1].toLowerCase()}${match[2]}`
-      if (!refMap[key]) continue
-      addCitationBox(match.index, match.index + match[0].length, key)
+    if (checkAuthorYearStyle) {
+      REF_ENTRY_AUTHOR_YEAR_RE.lastIndex = 0
+      while ((match = REF_ENTRY_AUTHOR_YEAR_RE.exec(vtm.fullText)) !== null) {
+        if (match.index < referencesSectionStart) continue
+        const key = `${match[1].toLowerCase()}${match[2]}`
+        addCitationBox(match.index, match.index + match[0].length, [key])
+      }
     }
   }
 }
@@ -7830,7 +7912,7 @@ function normalizeFigureTableKind(keyword) {
 }
 
 // "1", "1, 2", "3-5", "1 and 2", "1, 2 and 3", "I", "I and II" 같은 숫자(아라비아
-// 또는 로마) 나열을 개별 번호 목록으로 펼친다 (본문 인용 파싱의 parseCitationNumbers와
+// 또는 로마) 나열을 개별 번호 목록으로 펼친다 (본문 인용 파싱의 extractBracketCitationItems와
 // 동일한 원칙). 로마 숫자는 범위("I-III") 표기는 흔치 않아 지원하지 않고, backend가
 // 라벨을 항상 대문자로 저장하므로(_find_page_captions) 매칭을 위해 대문자로 맞춘다.
 function parseFigureTableNumberList(text) {
@@ -8158,17 +8240,29 @@ function positionCitationTooltip() {
   citationTooltipEl.style.top = `${top}px`
 }
 
-function showCitationTooltip(docId, refNum, refText, boxEl) {
+// refKeys가 여러 개면(예: "[66-69]" 범위 인용, "(A, 2020; B, 2019)" 나열)
+// 각 항목을 "[키] 원문" 형태로 구분해 전부 보여준다. "원문 링크 찾기"/
+// Google Scholar 검색용 textContent에서도 항목 사이가 구분되도록 줄바꿈으로
+// 이어붙인다.
+function buildCitationTooltipHtml(refKeys, refMap) {
+  if (refKeys.length === 1) return renderBoldText(refMap[refKeys[0]] || '')
+  return refKeys
+    .map(k => `<div class="citation-tooltip-multi-item"><span class="citation-tooltip-multi-key">[${escapeHtml(k)}]</span> ${renderBoldText(refMap[k] || '')}</div>`)
+    .join('\n')
+}
+
+function showCitationTooltip(docId, refKeys, refMap, boxEl) {
   // 텍스트 드래그 선택 중에 마우스가 마커 박스 위를 스쳐 지나가도(mouseenter)
   // 미리보기가 뜨지 않도록 막는다 - 다른 호버 오버레이들과 동일한 가드.
   if (state.isSelectionDragging) return
   if (citationTooltipHideTimer) { clearTimeout(citationTooltipHideTimer); citationTooltipHideTimer = null }
   citationTooltipDocId = docId
-  citationTooltipRefNum = refNum
+  // "원문 링크 찾기"/Google Scholar 검색은 여러 키 중 첫 번째를 기준으로 동작한다.
+  citationTooltipRefNum = refKeys[0]
   citationTooltipBoxEl = boxEl
 
   const tooltip = getOrCreateCitationTooltip()
-  tooltip.querySelector('.citation-tooltip-text').innerHTML = renderBoldText(refText)
+  tooltip.querySelector('.citation-tooltip-text').innerHTML = buildCitationTooltipHtml(refKeys, refMap)
   const resultEl = tooltip.querySelector('.citation-tooltip-result')
   resultEl.className = 'citation-tooltip-result hidden'
   resultEl.innerHTML = ''
