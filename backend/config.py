@@ -35,6 +35,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
+# OpenAlex(참고문헌 링크 연결 기능)는 API 키가 아예 필요 없지만, 요청에 연락
+# 가능한 이메일을 mailto 파라미터로 실어 보내면 더 여유로운 한도의 "polite
+# pool"로 분류된다. 선택 사항이라 비워둬도 정상 동작한다.
+OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "")
+
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
@@ -154,6 +159,9 @@ def get_gemini_api_key() -> str:
 def get_claude_api_key() -> str:
     return CLAUDE_API_KEY
 
+def get_openalex_mailto() -> str:
+    return OPENALEX_MAILTO
+
 def update_system_settings(
     ollama_host: str,
     trans_provider: str,
@@ -162,10 +170,11 @@ def update_system_settings(
     chat_model: str,
     openai_api_key: str = "",
     gemini_api_key: str = "",
-    claude_api_key: str = ""
+    claude_api_key: str = "",
+    openalex_mailto: str = ""
 ):
-    global OLLAMA_HOST, TRANS_PROVIDER, TRANS_MODEL, CHAT_PROVIDER, CHAT_MODEL, OPENAI_API_KEY, GEMINI_API_KEY, CLAUDE_API_KEY
-    
+    global OLLAMA_HOST, TRANS_PROVIDER, TRANS_MODEL, CHAT_PROVIDER, CHAT_MODEL, OPENAI_API_KEY, GEMINI_API_KEY, CLAUDE_API_KEY, OPENALEX_MAILTO
+
     OLLAMA_HOST = ollama_host
     TRANS_PROVIDER = trans_provider
     TRANS_MODEL = trans_model
@@ -174,7 +183,8 @@ def update_system_settings(
     OPENAI_API_KEY = openai_api_key
     GEMINI_API_KEY = gemini_api_key
     CLAUDE_API_KEY = claude_api_key
-    
+    OPENALEX_MAILTO = openalex_mailto
+
     env_path = os.path.join(_get_config_dir(), ".env")
     settings = {
         "OLLAMA_HOST": ollama_host,
@@ -184,7 +194,8 @@ def update_system_settings(
         "CHAT_MODEL": chat_model,
         "OPENAI_API_KEY": openai_api_key,
         "GEMINI_API_KEY": gemini_api_key,
-        "CLAUDE_API_KEY": claude_api_key
+        "CLAUDE_API_KEY": claude_api_key,
+        "OPENALEX_MAILTO": openalex_mailto
     }
 
     if not os.path.exists(env_path):

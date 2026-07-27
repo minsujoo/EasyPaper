@@ -6,7 +6,7 @@
   1. 훅 문장 / 예측 질문 3개 / 체크리스트 3개 (LLM, llm_client.generate_reading_primer)
   2. 대표 Figure 크롭 이미지 (pdf_parser.extract_pdf_images + render_image_crop)
   3. 내 라이브러리 안에서 이 논문의 참고문헌과 겹치는 논문 매칭 (외부 API 없이 텍스트 매칭)
-  4. 내 라이브러리에 없는 참고문헌 중 최대 3건만 Semantic Scholar로 확장 조회
+  4. 내 라이브러리에 없는 참고문헌 중 최대 3건만 OpenAlex로 확장 조회
 """
 import json
 import re
@@ -68,9 +68,9 @@ def _match_library_references(reference_map: dict, doc_id: str, username: str) -
 
 
 def _is_plausible_match(ref_text: str, resolved: dict) -> bool:
-    """Semantic Scholar 공개 검색은 API 키 없이 쓰다 보니 지저분한 인용 문자열에
-    엉뚱한 논문을 최상위로 반환하는 경우가 있다(실제로 EEG 논문 테스트에서 안과
-    수술 논문이 매칭된 사례를 확인함). 연도가 인용 원문에 그대로 등장하거나,
+    """참고문헌 검색(reference_linker.resolve_reference)이 지저분한 인용 문자열
+    때문에 엉뚱한 논문을 최상위로 반환하는 경우가 있어(실제로 EEG 논문 테스트에서
+    무관한 논문이 매칭된 사례를 확인함), 연도가 인용 원문에 그대로 등장하거나
     제목 단어가 인용 원문과 충분히 겹칠 때만 신뢰할 만한 매칭으로 받아들인다."""
     year = resolved.get("year")
     if year and str(year) in (ref_text or ""):

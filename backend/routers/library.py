@@ -348,7 +348,7 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
 
 @router.get("/library/{doc_id}/references/{ref_num}")
 async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str = Depends(get_current_user)):
-    """특정 번호의 참고문헌을 외부(Semantic Scholar, 가능하면 arXiv)에서
+    """특정 번호의 참고문헌을 외부(OpenAlex, 가능하면 arXiv)에서
     검색해 링크를 반환합니다. 결과(성공/실패 모두)는 캐시해 같은 항목을
     반복 조회하지 않습니다."""
     _require_owned_document(doc_id, current_user)

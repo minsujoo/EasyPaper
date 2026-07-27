@@ -26,6 +26,7 @@ from config import (
     get_openai_api_key,
     get_gemini_api_key,
     get_claude_api_key,
+    get_openalex_mailto,
     get_translation_prompt_template,
     update_translation_prompt_template,
     get_agy_path,
@@ -237,6 +238,7 @@ class SystemSettingsRequest(BaseModel):
     openai_api_key: str = ""
     gemini_api_key: str = ""
     claude_api_key: str = ""
+    openalex_mailto: str = ""
     translation_prompt_template: str = ""
 
 @router.get("/settings/system")
@@ -254,6 +256,7 @@ async def get_system_settings(current_user: str = Depends(get_current_user)):
         "openai_api_key": get_openai_api_key(),
         "gemini_api_key": get_gemini_api_key(),
         "claude_api_key": get_claude_api_key(),
+        "openalex_mailto": get_openalex_mailto(),
         "translation_prompt_template": get_translation_prompt_template()
     }
 
@@ -277,7 +280,8 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
         chat_model=data.chat_model.strip(),
         openai_api_key=data.openai_api_key.strip(),
         gemini_api_key=data.gemini_api_key.strip(),
-        claude_api_key=data.claude_api_key.strip()
+        claude_api_key=data.claude_api_key.strip(),
+        openalex_mailto=data.openalex_mailto.strip()
     )
     
     # 고급 설정: 번역 프롬프트 템플릿 저장
