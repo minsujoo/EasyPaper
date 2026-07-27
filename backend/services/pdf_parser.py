@@ -602,8 +602,16 @@ def render_cover_image(pdf_path: str, output_path: str, top_fraction: float = 0.
 # lookahead((?=[MDCLXVI]))는 그룹이 전부 빈 문자열로만 매칭되어 공백 문자열이
 # "로마 숫자"로 인정되는 것을 막기 위함이다.
 _ROMAN_NUMERAL_RE = r"(?=[MDCLXVI])M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})"
+# 캡션 번호 뒤에 오는 문자를 제한하는 lookahead. "Table 5: ..."(구두점),
+# "TABLE III"(그 자체로 줄 끝), "Table 1 Comparison..."(구두점 없이 대문자로
+# 시작하는 타이틀 케이스 캡션)는 모두 허용해야 하지만, "Table 5 shows more
+# results..."나 "Figure 6, we present..."처럼 본문 문단이 우연히 "Figure N"/
+# "Table N"으로 시작하는 문장(번호 뒤에 소문자 동사가 곧장 이어짐)은 캡션이
+# 아니므로 걸러내야 한다. re.IGNORECASE가 걸린 상태에서도 이 판별만은
+# 대소문자를 구분해야 하므로 (?-i:...)로 지역 범위에서 대소문자 구분을 켠다.
+_CAPTION_FOLLOW_RE = r"(?=\s*(?:[:.\-–—*]|$|(?-i:[A-Z0-9])))"
 _CAPTION_RE = re.compile(
-    rf"^\s*(Fig(?:ure)?|Table)\.?\s*(\d+|{_ROMAN_NUMERAL_RE})\b\.?\s*[:.\-]?\s*", re.IGNORECASE
+    rf"^\s*(Fig(?:ure)?|Table)\.?\s*(\d+|{_ROMAN_NUMERAL_RE})\b{_CAPTION_FOLLOW_RE}", re.IGNORECASE
 )
 # 수식 번호: 줄 끝에 "(3)"처럼 소괄호 숫자(또는 로마 숫자)만 단독으로 오는 경우만
 # 인정한다. 인용 연도("...(2020)")와 헷갈리지 않도록 자릿수를 1~3자리로 제한한다
@@ -663,21 +671,29 @@ def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
     return captions
 
 
-def _match_caption_for_rect(rect: list, captions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _match_caption_for_rect(
+    rect: list, captions: List[Dict[str, Any]], allow_reverse: bool = False
+) -> Dict[str, Any]:
     """
     주어진 이미지/테이블 사각형과 가장 가까운 캡션을 찾아 라벨+전문을 반환합니다.
     캡션은 보통 그림 바로 아래, 표는 바로 위에 위치하므로 상하 인접 캡션을 모두
     후보로 보되, 가로 범위가 겹치고 세로 거리가 가장 짧은 것을 채택합니다.
 
-    단, 이 상/하 허용은 각 캡션의 종류(Table/Figure)에 맞는 방향으로만
-    적용해야 한다. 두 표가 세로로 가깝게 붙어 있으면(예: TABLE III 바로
-    아래 TABLE IV), 위쪽 표(TABLE III) 입장에서 자기 자신의 캡션(위쪽)보다
-    아래에 있는 TABLE IV의 캡션이 절대 거리상 오히려 더 가까운 경우가
-    있다. 방향을 구분하지 않고 최소 거리만으로 고르면 위쪽 표가 아래쪽
-    표의 캡션에 잘못 매칭되어, label_groups 병합 단계에서 두 표가 하나의
-    bbox로 합쳐져 버린다(실제로 합성 PDF로 재현됨 - TABLE III와 TABLE IV가
-    하나의 "Table IV" 오버레이로 크롭되는 버그). Table 캡션은 위에 있을
-    때만, Figure 캡션은 아래에 있을 때만 후보로 인정한다.
+    단, 이 상/하 허용은 기본적으로 각 캡션의 종류(Table/Figure)에 맞는
+    관례적 방향으로만 적용한다(allow_reverse=False). 두 표가 세로로
+    가깝게 붙어 있으면(예: TABLE III 바로 아래 TABLE IV), 위쪽 표(TABLE III)
+    입장에서 자기 자신의 캡션(위쪽)보다 아래에 있는 TABLE IV의 캡션이 절대
+    거리상 오히려 더 가까운 경우가 있다. 방향을 구분하지 않고 최소 거리만으로
+    고르면 위쪽 표가 아래쪽 표의 캡션에 잘못 매칭되어, label_groups 병합
+    단계에서 두 표가 하나의 bbox로 합쳐져 버린다(실제로 합성 PDF로 재현됨 -
+    TABLE III와 TABLE IV가 하나의 "Table IV" 오버레이로 크롭되는 버그).
+
+    다만 일부 논문(예: ICLR 포맷 일부)은 반대로 Table 캡션을 표 "아래"에
+    싣는다. 관례적 방향(Table=위, Figure=아래)으로 아무 캡션도 못 찾은
+    사각형에 한해 extract_pdf_images가 allow_reverse=True로 재호출해
+    반대 방향도 후보로 허용한다. 이미 관례적 방향 매칭에 성공한 사각형은
+    이 재호출 자체가 일어나지 않으므로, TABLE III/IV 같은 정상 케이스에는
+    영향이 없다.
 
     벡터 그래픽으로 그려진 다이어그램은 (숨겨진 배경 사각형 등으로 인해) 감지된
     bbox가 실제 그림 내용보다 아래/위로 더 뻗어 있어 캡션 줄과 겹쳐버리는
@@ -699,24 +715,24 @@ def _match_caption_for_rect(rect: list, captions: List[Dict[str, Any]]) -> Dict[
         clip_y0 = None
         clip_y1 = None
         if cy1 <= y0:
-            # 캡션이 사각형 위에 있는 경우 - Table 관례에만 부합
-            if not is_table_caption:
+            # 캡션이 사각형 위에 있는 경우 - 관례상 Table, allow_reverse면 Figure도 허용
+            if not is_table_caption and not allow_reverse:
                 continue
             dist = y0 - cy1
         elif cy0 >= y1:
-            # 캡션이 사각형 아래에 있는 경우 - Figure 관례에만 부합
-            if is_table_caption:
+            # 캡션이 사각형 아래에 있는 경우 - 관례상 Figure, allow_reverse면 Table도 허용
+            if is_table_caption and not allow_reverse:
                 continue
             dist = cy0 - y1
         elif cy1 <= y0 + edge_margin:
             # 사각형 상단 가장자리 부근까지 캡션이 파고든 경우 - 사실상 바로
-            # 위에 있는 캡션으로 보고 인정(Table 방향)하되, 캡션 끝 지점에서 잘라낸다
-            if not is_table_caption:
+            # 위에 있는 캡션으로 보고 인정하되, 캡션 끝 지점에서 잘라낸다
+            if not is_table_caption and not allow_reverse:
                 continue
             dist = 0.0
             clip_y0 = cy1
         elif cy0 >= y1 - edge_margin:
-            if is_table_caption:
+            if is_table_caption and not allow_reverse:
                 continue
             dist = 0.0
             clip_y1 = cy0
@@ -989,6 +1005,11 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
         for r in merged_rects:
             # 캡션 매칭은 패딩을 적용하기 전 원본 사각형 기준으로 수행 (더 정확한 인접도 판단)
             match = _match_caption_for_rect(r, page_captions)
+            if not match["label"]:
+                # 관례적 방향(Table=위/Figure=아래)으로 못 찾았다면, 캡션을
+                # 반대 방향에 싣는 논문(예: Table 캡션이 표 아래)을 위해
+                # 방향 제한 없이 한 번 더 시도한다.
+                match = _match_caption_for_rect(r, page_captions, allow_reverse=True)
 
             # 벡터 다이어그램 등에서 감지된 사각형이 실제 그림 내용보다 아래/위로
             # 더 뻗어 있어 캡션 줄과 겹쳤던 경우, 캡션 경계에서 잘라내 크롭이
@@ -1020,13 +1041,20 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
         # 그룹의 bbox가 커져 다음 패널과도 새로 인접할 수 있으므로 더 이상
         # 흡수할 것이 없을 때까지 반복한다.
         #
-        # 이 흡수는 Figure 전용이다 - Table은 항상 하나의 완결된 그리드라
-        # 서브패널을 다시 이어붙일 필요가 없고, 페이지 폭 전체를 차지하는
-        # 표(Table III 등) 바로 아래 40pt 이내에 있는, 전혀 무관한 다른
-        # 표/그림(예: 옆 칸에 나란히 놓인 Table IV의 차트)까지 "가로로 많이
-        # 겹친다"는 이유로 잘못 흡수해버리는 문제가 있었다 - 겹침 비율이
+        # Table 흡수는 "위쪽"만 허용한다 - 예를 들어 여러 개의 작은 서브테이블로
+        # 구성된 ablation 표(예: "(a) Structure design", "(b) Tube size" 등을
+        # 하나의 "Table 4" 캡션이 맨 아래에서 묶는 경우)는 캡션과 가장 가까운
+        # 서브테이블만 라벨이 매칭되고, 캡션에서 먼 위쪽 서브테이블은 라벨 없이
+        # 남는다. 이런 경우 라벨이 붙은 뭉치 바로 위에 촘촘히 붙어 있는 미매칭
+        # 사각형은 같은 표의 일부로 보고 흡수해도 안전하다.
+        #
+        # 반대로 "아래쪽" 흡수는 절대 허용하면 안 된다 - 페이지 폭 전체를
+        # 차지하는 표(Table III 등) 바로 아래 40pt 이내에 있는, 전혀 무관한
+        # 다른 표/그림(예: 옆 칸에 나란히 놓인 Table IV의 차트)까지 "가로로
+        # 많이 겹친다"는 이유로 잘못 흡수해버리는 문제가 있었다 - 겹침 비율이
         # 더 좁은 쪽(흡수 대상) 폭 기준이라, 폭이 넓은 표는 그 아래 있는
         # 어떤 좁은 요소와도 쉽게 "많이 겹치는" 것으로 계산되기 때문이다.
+        # Figure는 기존과 동일하게 위/아래 양방향 모두 허용한다.
         changed = True
         while changed and unlabeled_rects:
             changed = False
@@ -1034,9 +1062,9 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
             for u in unlabeled_rects:
                 absorbed = False
                 for label, g in label_groups.items():
-                    if label.startswith("Table"):
-                        continue
                     rect = g["rect"]
+                    if label.startswith("Table") and u[3] > rect[1]:
+                        continue
                     gap = _vertical_gap(rect, u)
                     if gap < 0 or gap > _PANEL_ABSORB_MAX_GAP:
                         continue

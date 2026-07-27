@@ -185,6 +185,77 @@ def test_wide_table_does_not_absorb_unrelated_figure_below(tmp_path):
     assert len(unlabeled) == 1
 
 
+def test_table_caption_below_table_is_recognized(tmp_path):
+    """일부 논문(예: ICLR 포맷의 일부)은 Table 캡션을 관례와 반대로 표
+    "아래"에 싣는다. 관례적 방향(Table=위)으로만 매칭을 시도하면 이런
+    표는 끝내 라벨 없이 남아 참조 오버레이(본문 "Table 1" 클릭 시 미리보기)
+    대상에서 빠지는 실사용 버그가 있었다(Uniformer 논문(arXiv:2201.04676)
+    다수 표에서 재현). 관례적 방향에서 못 찾으면 반대 방향도 허용해야 한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    page.draw_line(fitz.Point(50, 80), fitz.Point(545, 80), color=(0, 0, 0), width=1)
+    page.insert_text((60, 95), "method accuracy kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 105), fitz.Point(545, 105), color=(0, 0, 0), width=1)
+    page.insert_text((60, 117), "Ours 88.19 0.7155", fontsize=7)
+    page.draw_line(fitz.Point(50, 130), fitz.Point(545, 130), color=(0, 0, 0), width=1)
+
+    # 캡션이 표 바로 "아래"에 위치 (표 아래 캡션 관례)
+    page.insert_text((50, 150), "Table 1: Comparison to different methods.", fontsize=9)
+
+    path = tmp_path / "caption_below.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    result = extract_pdf_images(str(path))
+    table1_entries = [r for r in result if r.get("label") == "Table 1"]
+    assert len(table1_entries) == 1, f"캡션이 아래에 있어도 Table 1로 매칭되어야 하는데: {result}"
+
+
+def test_body_sentence_starting_with_table_number_is_not_treated_as_caption(tmp_path):
+    """"Table 1 shows the results in detail for readers to see clearly."처럼
+    본문 문단이 우연히 "Table N" 뒤에 구두점 없이 소문자 동사로 이어지는
+    문장으로 시작하면, 캡션 정규식이 이를 실제 캡션으로 오인해 별개의
+    가짜 캡션 후보를 만들어내는 버그가 있었다(Uniformer 논문에서 "Table 5
+    shows more results...", "Figure 6, we present..." 등으로 재현). 진짜
+    캡션("Table 1: ...", 구두점 있음)과 별도로 이런 문장이 있어도 실제
+    표는 여전히 정상적으로 하나만 매칭되어야 하고, 가짜 캡션 문단 자체가
+    새로운 표/그림으로 감지되면 안 된다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    page.draw_line(fitz.Point(50, 80), fitz.Point(545, 80), color=(0, 0, 0), width=1)
+    page.insert_text((60, 95), "method accuracy kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 105), fitz.Point(545, 105), color=(0, 0, 0), width=1)
+    page.insert_text((60, 117), "Ours 88.19 0.7155", fontsize=7)
+    page.draw_line(fitz.Point(50, 130), fitz.Point(545, 130), color=(0, 0, 0), width=1)
+    page.insert_text((50, 150), "Table 1: Comparison to different methods.", fontsize=9)
+
+    # 표와는 멀리 떨어진 본문 문단 - "Table 1"로 시작하지만 구두점 없이
+    # 소문자 동사로 이어지는 일반 문장일 뿐, 캡션이 아니다.
+    page.insert_text(
+        (50, 400),
+        "Table 1 shows the results in detail for readers to see clearly.",
+        fontsize=11,
+    )
+
+    path = tmp_path / "false_positive_caption.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    result = extract_pdf_images(str(path))
+    table1_entries = [r for r in result if r.get("label") == "Table 1"]
+    assert len(table1_entries) == 1, f"가짜 캡션 문장 때문에 Table 1이 중복/오매칭되면 안 되는데: {result}"
+
+    # 표 자체의 bbox가 멀리 떨어진 가짜 캡션 문단 쪽으로 늘어나면 안 된다
+    page_height = 842
+    entry = table1_entries[0]
+    entry_bottom_pct = entry["top"] + entry["height"]
+    assert entry_bottom_pct < (200 / page_height) * 100, (
+        f"Table 1의 bbox가 가짜 캡션 문단까지 뻗어나감: {entry}"
+    )
+
+
 def test_unrelated_unlabeled_regions_are_not_merged(tmp_path):
     """캡션에 매칭되지 않는(라벨이 없는) 영역들은 서로 다른 그림/표의 잔여
     조각일 수 있으므로 하나로 합쳐지면 안 되고, 감지된 개수만큼 개별
