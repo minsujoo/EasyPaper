@@ -672,28 +672,33 @@ def _find_page_captions(page: "fitz.Page") -> List[Dict[str, Any]]:
 
 
 def _match_caption_for_rect(
-    rect: list, captions: List[Dict[str, Any]], allow_reverse: bool = False
+    rect: list, captions: List[Dict[str, Any]], table_caption_below: bool = False
 ) -> Dict[str, Any]:
     """
     주어진 이미지/테이블 사각형과 가장 가까운 캡션을 찾아 라벨+전문을 반환합니다.
-    캡션은 보통 그림 바로 아래, 표는 바로 위에 위치하므로 상하 인접 캡션을 모두
-    후보로 보되, 가로 범위가 겹치고 세로 거리가 가장 짧은 것을 채택합니다.
+    캡션은 보통 그림 바로 아래에 위치하므로(Figure는 항상 이 방향으로 고정),
+    표는 문서 전체에서 통일된 한쪽 방향(table_caption_below로 결정)에 있다고
+    보고, 상하 인접 캡션 중 그 방향에 맞고 가로 범위가 겹치는 것들 가운데
+    세로 거리가 가장 짧은 것을 채택합니다.
 
-    단, 이 상/하 허용은 기본적으로 각 캡션의 종류(Table/Figure)에 맞는
-    관례적 방향으로만 적용한다(allow_reverse=False). 두 표가 세로로
-    가깝게 붙어 있으면(예: TABLE III 바로 아래 TABLE IV), 위쪽 표(TABLE III)
-    입장에서 자기 자신의 캡션(위쪽)보다 아래에 있는 TABLE IV의 캡션이 절대
-    거리상 오히려 더 가까운 경우가 있다. 방향을 구분하지 않고 최소 거리만으로
-    고르면 위쪽 표가 아래쪽 표의 캡션에 잘못 매칭되어, label_groups 병합
-    단계에서 두 표가 하나의 bbox로 합쳐져 버린다(실제로 합성 PDF로 재현됨 -
-    TABLE III와 TABLE IV가 하나의 "Table IV" 오버레이로 크롭되는 버그).
+    Table 방향은 이 함수를 사각형 하나하나에 대해 호출할 때마다 다시 판단하지
+    않고, extract_pdf_images가 문서 전체를 훑어 _resolve_table_caption_direction()으로
+    미리 확정한 값을 table_caption_below로 넘겨받아 고정으로 쓴다. 사각형 단위로
+    "관례 방향 우선 시도 후 실패하면 반대 방향도 허용" 식으로 처리했던 이전
+    구현은, 표가 여러 개 연속으로 배치된 문서(캡션이 표 아래에 오는 문서)에서
+    특정 표(예: Table 9)가 자기 위에 있는 "이전 표(Table 8)의 캡션"을 - 그
+    캡션이 실제로는 Table 8 소유인데도 - 관례 방향(위쪽)에 맞는다는 이유만으로
+    가로채 버리는 문제가 있었다(Table 8의 오버레이가 Table 9까지 통째로
+    삼켜버리는 실사용 버그로 재현됨). 문서 전체에서 어느 방향이 우세한지 먼저
+    통계적으로 정한 뒤 그 한 방향만 일관되게 적용하면, 애초에 "이전/다음 표의
+    캡션"이 후보로 잡히는 일 자체가 없어(그 캡션은 자기 자신의 표에만 있는
+    한 방향으로만 유효하므로) 이런 교차 오염이 발생하지 않는다.
 
-    다만 일부 논문(예: ICLR 포맷 일부)은 반대로 Table 캡션을 표 "아래"에
-    싣는다. 관례적 방향(Table=위, Figure=아래)으로 아무 캡션도 못 찾은
-    사각형에 한해 extract_pdf_images가 allow_reverse=True로 재호출해
-    반대 방향도 후보로 허용한다. 이미 관례적 방향 매칭에 성공한 사각형은
-    이 재호출 자체가 일어나지 않으므로, TABLE III/IV 같은 정상 케이스에는
-    영향이 없다.
+    두 표가 세로로 가깝게 붙어 있을 때(예: TABLE III 바로 위에 캡션, 그
+    아래 TABLE IV) 절대 거리만으로 고르면 엉뚱한 표의 캡션에 잘못 매칭되어
+    두 표가 하나의 bbox로 합쳐지는 문제도 있었는데(TABLE III/IV가 하나의
+    "Table IV" 오버레이로 크롭되는 버그), 이 역시 방향을 고정해 후보 자체를
+    좁히는 것으로 방지된다.
 
     벡터 그래픽으로 그려진 다이어그램은 (숨겨진 배경 사각형 등으로 인해) 감지된
     bbox가 실제 그림 내용보다 아래/위로 더 뻗어 있어 캡션 줄과 겹쳐버리는
@@ -712,27 +717,31 @@ def _match_caption_for_rect(
         if overlap <= 0:
             continue
         is_table_caption = cap["label"].startswith("Table")
+        # 이 캡션 종류가 이 방향(위/아래)에서 유효한지 여부. Table은 확정된
+        # 문서 전체 관례(table_caption_below)를 따르고, Figure는 항상 "아래"만 허용한다.
+        valid_above = (not table_caption_below) if is_table_caption else False
+        valid_below = table_caption_below if is_table_caption else True
         clip_y0 = None
         clip_y1 = None
         if cy1 <= y0:
-            # 캡션이 사각형 위에 있는 경우 - 관례상 Table, allow_reverse면 Figure도 허용
-            if not is_table_caption and not allow_reverse:
+            # 캡션이 사각형 위에 있는 경우
+            if not valid_above:
                 continue
             dist = y0 - cy1
         elif cy0 >= y1:
-            # 캡션이 사각형 아래에 있는 경우 - 관례상 Figure, allow_reverse면 Table도 허용
-            if is_table_caption and not allow_reverse:
+            # 캡션이 사각형 아래에 있는 경우
+            if not valid_below:
                 continue
             dist = cy0 - y1
         elif cy1 <= y0 + edge_margin:
             # 사각형 상단 가장자리 부근까지 캡션이 파고든 경우 - 사실상 바로
             # 위에 있는 캡션으로 보고 인정하되, 캡션 끝 지점에서 잘라낸다
-            if not is_table_caption and not allow_reverse:
+            if not valid_above:
                 continue
             dist = 0.0
             clip_y0 = cy1
         elif cy0 >= y1 - edge_margin:
-            if is_table_caption and not allow_reverse:
+            if not valid_below:
                 continue
             dist = 0.0
             clip_y1 = cy0
@@ -751,6 +760,75 @@ def _match_caption_for_rect(
     if best is None:
         return {"label": None, "text": None, "clip_y0": None, "clip_y1": None}
     return best
+
+
+def _resolve_table_caption_direction(pages_data: "List[tuple[List[Dict[str, Any]], List[list]]]") -> bool:
+    """문서 전체에서 Table 캡션이 표 "아래"(True)에 있는 관례인지, 기본값인
+    "위"(False)에 있는 관례인지 판별한다.
+
+    판별 방법: 두 가설("위" / "아래") 각각에 대해, 페이지별로 Table 캡션과
+    후보 사각형(가로로 겹치고 세로 거리 40pt 이내)을 전부 나열한 뒤 거리가
+    가까운 순으로 캡션 하나·사각형 하나가 서로 한 번씩만 쓰이도록(exclusive)
+    그리디 매칭한다. 두 가설 중 더 많은 캡션을 성공적으로 짝지은 쪽을
+    채택하고, 매칭 개수가 같으면 평균 거리가 더 가까운 쪽을 채택한다.
+
+    exclusive 매칭이 핵심이다 - 표가 여러 개 연속으로 있는 문서에서 "이전 표의
+    캡션이 우연히 다음 표와도 가깝다"는 이유로 잘못된 가설이 부풀려 매칭되는
+    것을 막아준다(각 캡션은 정확히 하나의 표에만 속하므로, 틀린 가설로는
+    일부 표만 우연히 맞고 나머지는 후보가 아예 없거나 이미 다른 표에 캡션을
+    빼앗겨 매칭에 실패하게 된다). 문서 전체를 대상으로 하는 이유는, 페이지
+    하나에 표가 한 개뿐이면 그 페이지만으로는 두 가설이 똑같이 그럴듯해
+    보일 수 있기 때문이다(문서 전체는 대개 한 가지 관례로 통일되어 있음).
+    """
+
+    def count_matches(prefer_below: bool) -> "tuple[int, float]":
+        candidates = []  # (dist, page_idx, cap_idx, rect_idx)
+        for page_idx, (page_captions, merged_rects) in enumerate(pages_data):
+            table_caps = [c for c in page_captions if c["label"].startswith("Table")]
+            for ci, cap in enumerate(table_caps):
+                cx0, cy0, cx1, cy1 = cap["bbox"]
+                for ri, r in enumerate(merged_rects):
+                    rx0, ry0, rx1, ry1 = r
+                    overlap = min(cx1, rx1) - max(cx0, rx0)
+                    if overlap <= 0:
+                        continue
+                    if prefer_below:
+                        # 캡션이 사각형 아래 => 사각형이 캡션보다 위
+                        if ry1 > cy0:
+                            continue
+                        dist = cy0 - ry1
+                    else:
+                        if ry0 < cy1:
+                            continue
+                        dist = ry0 - cy1
+                    if dist > 40.0:
+                        continue
+                    candidates.append((dist, page_idx, ci, ri))
+
+        candidates.sort(key=lambda t: t[0])
+        used_caps = set()
+        used_rects = set()
+        matched = 0
+        total_dist = 0.0
+        for dist, page_idx, ci, ri in candidates:
+            cap_key = (page_idx, ci)
+            rect_key = (page_idx, ri)
+            if cap_key in used_caps or rect_key in used_rects:
+                continue
+            used_caps.add(cap_key)
+            used_rects.add(rect_key)
+            matched += 1
+            total_dist += dist
+        return matched, total_dist
+
+    below_matched, below_dist = count_matches(True)
+    above_matched, above_dist = count_matches(False)
+
+    if below_matched != above_matched:
+        return below_matched > above_matched
+    if below_matched == 0:
+        return False  # 판단 근거가 전혀 없으면 기본값(위쪽) 유지
+    return below_dist < above_dist
 
 
 def _find_page_equations(page: "fitz.Page") -> List[Dict[str, Any]]:
@@ -877,20 +955,30 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
     PDF의 각 페이지에서 실제 그림/이미지(Figure) 및 테이블(Table)의 영역 정보를 추출합니다.
     인접한 이미지/테이블 요소를 그룹화(Merge)하고 마진(Padding)을 주어 크롭 시 잘림 현상을 방지합니다.
     가능한 경우 근처 캡션("Figure 1", "Table 2" 등)을 찾아 label로 함께 반환합니다.
+
+    캡션-사각형 매칭(4단계)은 문서 전체에서 Table 캡션이 어느 방향(위/아래)에
+    있는 관례인지를 먼저 확정한 뒤에야 할 수 있다(_resolve_table_caption_direction
+    참고 - 페이지 단위로 그때그때 판단하면 인접한 두 표가 서로의 캡션을
+    가로채는 문제가 생긴다). 그래서 이 함수는 두 단계로 나뉜다: 1단계에서
+    모든 페이지를 훑어 캡션/후보 사각형만 모으고, 방향을 확정한 뒤, 2단계에서
+    그 방향을 적용해 실제 매칭·그룹화·출력을 수행한다.
     """
     doc = fitz.open(pdf_path)
     images_data = []
 
+    # ── 1단계: 모든 페이지의 캡션과 후보 사각형을 먼저 수집 ──
+    pages_data = []
     for page_num in range(len(doc)):
         page = doc[page_num]
         page_width = page.rect.width
         page_height = page.rect.height
         if page_width == 0 or page_height == 0:
+            pages_data.append(None)
             continue
 
         page_captions = _find_page_captions(page)
         raw_rects = []
-        
+
         # 1. 래스터 이미지(Raster Images) 좌표 수집
         page_imgs = page.get_image_info(xrefs=True)
         for img in page_imgs:
@@ -991,7 +1079,21 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
 
         # 3. 바운딩 박스 그룹화 (인접 임계값을 4.0포인트로 대폭 좁혀서 과도하게 커지는 현상 방지)
         merged_rects = merge_bboxes(raw_rects, threshold=4.0)
-        
+
+        pages_data.append((page_num, page_width, page_height, page_captions, merged_rects))
+
+    # ── 방향 확정: 문서 전체의 Table 캡션/사각형 배치를 보고 한 번만 결정한다 ──
+    table_caption_below = _resolve_table_caption_direction(
+        [(pd[3], pd[4]) for pd in pages_data if pd is not None]
+    )
+
+    # ── 2단계: 확정된 방향으로 실제 매칭·그룹화·출력 ──
+    for entry in pages_data:
+        if entry is None:
+            continue
+        page_num, page_width, page_height, page_captions, merged_rects = entry
+        page = doc[page_num]
+
         # 4. 캡션 매칭 - 그림이 여러 서브플롯(sub-panel)으로 나뉘어 그려진
         # 경우(예: "왼쪽/오른쪽" 두 그래프로 구성된 Figure), 각 서브플롯이
         # 독립된 사각형으로 감지되어 같은 캡션 하나에 개별적으로 매칭될 수
@@ -1004,12 +1106,7 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
 
         for r in merged_rects:
             # 캡션 매칭은 패딩을 적용하기 전 원본 사각형 기준으로 수행 (더 정확한 인접도 판단)
-            match = _match_caption_for_rect(r, page_captions)
-            if not match["label"]:
-                # 관례적 방향(Table=위/Figure=아래)으로 못 찾았다면, 캡션을
-                # 반대 방향에 싣는 논문(예: Table 캡션이 표 아래)을 위해
-                # 방향 제한 없이 한 번 더 시도한다.
-                match = _match_caption_for_rect(r, page_captions, allow_reverse=True)
+            match = _match_caption_for_rect(r, page_captions, table_caption_below=table_caption_below)
 
             # 벡터 다이어그램 등에서 감지된 사각형이 실제 그림 내용보다 아래/위로
             # 더 뻗어 있어 캡션 줄과 겹쳤던 경우, 캡션 경계에서 잘라내 크롭이

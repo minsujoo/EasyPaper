@@ -140,6 +140,60 @@ def test_upper_table_does_not_match_lower_tables_caption(tmp_path):
     assert table3_bottom_pct < (218 / page_height) * 100
 
 
+def test_lower_table_does_not_match_upper_tables_caption_when_convention_is_below(tmp_path):
+    """test_upper_table_does_not_match_lower_tables_caption의 반대 방향 버전.
+
+    Table 캡션이 표 "아래"에 있는 문서(예: UniFormer 확장판 논문,
+    arXiv:2201.09450의 Table 8/Table 9)에서 두 표가 세로로 가깝게 붙어
+    있으면, 아래쪽 표(Table 9) 입장에서 자기 자신의 캡션(아래쪽)보다 위에
+    있는 앞 표(Table 8)의 캡션이 관례 방향(위)에 맞는다는 이유만으로
+    먼저 매칭되어 버리는 회귀 버그가 있었다(Table 8의 오버레이가 Table 9
+    데이터까지 통째로 삼켜, Table 9는 별도 오버레이가 아예 안 만들어짐).
+    문서 전체의 캡션 방향을 먼저 통계적으로 확정한 뒤 그 한 방향만
+    일관되게 적용해야 이런 교차 오염이 방지된다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    # Table 8: 캡션이 표 "아래"에 있음
+    page.draw_line(fitz.Point(50, 60), fitz.Point(545, 60), color=(0, 0, 0), width=1)
+    page.insert_text((60, 75), "method accuracy kappa", fontsize=7)
+    page.draw_line(fitz.Point(50, 85), fitz.Point(545, 85), color=(0, 0, 0), width=1)
+    page.insert_text((60, 97), "Ours 88.19 0.7155", fontsize=7)
+    page.draw_line(fitz.Point(50, 110), fitz.Point(545, 110), color=(0, 0, 0), width=1)
+    page.insert_text((50, 125), "Table 8: Semantic segmentation with semantic FPN.", fontsize=9)
+
+    # Table 9: Table 8 캡션 바로 아래(24pt 간격, 40pt 캡션 매칭 임계값 이내)에
+    # 시작하는 두 번째 표. 자기 자신의 캡션은 표 데이터보다 훨씬 아래에 있다.
+    page.draw_line(fitz.Point(50, 149), fitz.Point(545, 149), color=(0, 0, 0), width=1)
+    page.insert_text((60, 164), "method mIoU MS-mIoU", fontsize=7)
+    page.draw_line(fitz.Point(50, 174), fitz.Point(545, 174), color=(0, 0, 0), width=1)
+    page.insert_text((60, 186), "Ours 47.0 48.5", fontsize=7)
+    page.draw_line(fitz.Point(50, 199), fitz.Point(545, 199), color=(0, 0, 0), width=1)
+    page.insert_text((50, 214), "Table 9: Semantic segmentation with Upernet.", fontsize=9)
+
+    path = tmp_path / "stacked_below_caption_tables.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    result = extract_pdf_images(str(path))
+    labels = sorted(r.get("label") or "" for r in result)
+    assert labels == ["Table 8", "Table 9"], f"두 표가 별도 항목으로 남아야 하는데: {result}"
+
+    table8 = next(r for r in result if r["label"] == "Table 8")
+    table9 = next(r for r in result if r["label"] == "Table 9")
+    page_height = 842
+    # Table 8의 크롭 범위가 Table 9 영역(y=149 이후)까지 침범하면 안 된다
+    table8_bottom_pct = table8["top"] + table8["height"]
+    assert table8_bottom_pct < (149 / page_height) * 100, (
+        f"Table 8이 Table 9까지 흡수함: {table8}"
+    )
+    # Table 9의 크롭 범위도 Table 8 영역(y=110 이전)을 침범하면 안 된다
+    table9_top_pct = table9["top"]
+    assert table9_top_pct > (110 / page_height) * 100, (
+        f"Table 9가 Table 8까지 침범함: {table9}"
+    )
+
+
 def test_wide_table_does_not_absorb_unrelated_figure_below(tmp_path):
     """페이지 폭 전체를 차지하는 표(Table) 바로 아래 40pt 이내에, 그 표와는
     무관하게 옆 칸에 나란히 놓인 다른 그림/차트가 있을 수 있다. 서브패널
