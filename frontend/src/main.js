@@ -155,6 +155,7 @@ const settingOllamaHost    = $('setting-ollama-host')
 const settingOpenAIKey     = $('setting-openai-key')
 const settingGeminiKey     = $('setting-gemini-key')
 const settingClaudeKey     = $('setting-claude-key')
+const settingOpenAlexMailto = $('setting-openalex-mailto')
 const settingChatSameAsTrans = $('setting-chat-same-as-trans')
 
 // (provider/model selects are now custom ProviderModelPicker instances – see below)
@@ -2238,6 +2239,7 @@ async function refreshSystemSettings() {
     settingOpenAIKey.value = sys.openai_api_key || ''
     settingGeminiKey.value = sys.gemini_api_key || ''
     settingClaudeKey.value = sys.claude_api_key || ''
+    settingOpenAlexMailto.value = sys.openalex_mailto || ''
     
     viewerTransPicker.setValue(sys.trans_provider || 'antigravity', sys.trans_model)
     settingTransPicker.setValue(sys.trans_provider || 'antigravity', sys.trans_model)
@@ -2279,6 +2281,7 @@ async function changeProviderAndModel(type, newProvider, newModel) {
       openai_api_key: sys.openai_api_key || '',
       gemini_api_key: sys.gemini_api_key || '',
       claude_api_key: sys.claude_api_key || '',
+      openalex_mailto: sys.openalex_mailto || '',
       translation_prompt_template: sys.translation_prompt_template || ''
     }
     await saveSystemSettingsAPI(payload)
@@ -2626,6 +2629,7 @@ systemSettingsForm.addEventListener('submit', async (e) => {
     openai_api_key: settingOpenAIKey.value.trim(),
     gemini_api_key: settingGeminiKey.value.trim(),
     claude_api_key: settingClaudeKey.value.trim(),
+    openalex_mailto: settingOpenAlexMailto.value.trim(),
     translation_prompt_template: $('setting-prompt-template').value
   }
   
@@ -2673,6 +2677,7 @@ if (advancedSettingsForm) {
       openai_api_key: settingOpenAIKey.value.trim(),
       gemini_api_key: settingGeminiKey.value.trim(),
       claude_api_key: settingClaudeKey.value.trim(),
+      openalex_mailto: settingOpenAlexMailto.value.trim(),
       translation_prompt_template: $('setting-prompt-template').value
     }
     
