@@ -88,12 +88,24 @@ def _start_stderr_drain(process):
 
 
 async def _finish_stderr_drain(stderr_task) -> str:
-    """stderr 드레인 태스크를 정리하고 지금까지 모인 내용을 문자열로 반환한다."""
+    """stderr 드레인 태스크를 정리하고 지금까지 모인 내용을 문자열로 반환한다.
+
+    process.wait()가 끝난 직후에도 stderr 파이프의 EOF 감지가 아주 살짝(수십~수백ms)
+    늦게 반영되어 stderr_task.done()이 아직 False일 수 있다(실측으로 확인됨) - 이걸
+    "멈춘 것"으로 보고 곧장 cancel해버리면, 이미 커널 파이프에는 다 도착해 있던 stderr
+    내용까지 통째로 버려진다(취소된 태스크를 await하면 CancelledError만 던지고 그동안
+    읽은 데이터는 사라짐). 그 결과 예를 들어 claude_code의 "No conversation found"
+    같은 실패 메시지를 못 읽어, 상위의 재시도(신규 세션 생성) 로직이 걸리지 않는 버그가
+    있었다. 정말 멈춘 경우와 구분하기 위해 짧게 유예 시간을 준 뒤에만 취소한다.
+    """
     if not stderr_task.done():
-        stderr_task.cancel()
+        try:
+            await asyncio.wait_for(stderr_task, timeout=2.0)
+        except Exception:
+            pass
     try:
-        data = await stderr_task
-    except (asyncio.CancelledError, Exception):
+        data = stderr_task.result()
+    except Exception:
         return ""
     return data.decode("utf-8", errors="replace") if data else ""
 
@@ -928,6 +940,15 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
         dest_settings = os.path.join(claude_dir, "settings.json")
         if os.path.exists(orig_settings) and not os.path.exists(dest_settings):
             shutil.copy2(orig_settings, dest_settings)
+
+        # ~/.claude/ 안의 credentials/settings만으로는 부족하다 - 최신 Claude Code CLI는
+        # 최상위 ~/.claude.json(계정/세션 메타데이터)도 있어야 로그인 상태로 인식한다.
+        # 이게 빠지면 격리된 $HOME에서는 자격증명을 그대로 복사해도 "Not logged in"으로
+        # 실패한다.
+        orig_top_level_config = os.path.expanduser("~/.claude.json")
+        dest_top_level_config = os.path.join(home_dir, ".claude.json")
+        if os.path.exists(orig_top_level_config) and not os.path.exists(dest_top_level_config):
+            shutil.copy2(orig_top_level_config, dest_top_level_config)
 
         env["HOME"] = home_dir
 
