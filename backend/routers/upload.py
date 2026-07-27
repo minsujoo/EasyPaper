@@ -35,7 +35,11 @@ def ensure_session(session_id: str) -> bool:
             return False
             
     try:
-        pages = extract_pages(pdf_path)
+        from services.cache import get_cached_pages, save_pages_cache
+        pages = get_cached_pages(session_id, pdf_path)
+        if pages is None:
+            pages = extract_pages(pdf_path)
+            save_pages_cache(session_id, pdf_path, pages)
         sessions[session_id] = {
             "pdf_path": pdf_path,
             "filename": doc["filename"],

@@ -1,7 +1,7 @@
 import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference } from './library.js'
 import { icon } from './icons.js'
@@ -141,6 +141,7 @@ const settingDisableInsights = $('setting-disable-insights')
 const settingDisableCitationOverlay = $('setting-disable-citation-overlay')
 const settingDisableFigureOverlay = $('setting-disable-figure-overlay')
 const clearCacheBtn       = $('clear-cache-btn')
+const clearPagesCacheBtn  = $('clear-pages-cache-btn')
 const settingAccentSwatches = $('setting-accent-swatches')
 const settingAccentPicker   = $('setting-accent-picker')
 const settingAccentHex      = $('setting-accent-hex')
@@ -3266,6 +3267,22 @@ clearCacheBtn.addEventListener('click', async () => {
     location.reload()
   }
 })
+
+// 서버 측 PDF 텍스트 추출 결과 캐시 비우기 (재시작 후 첫 열람 가속용 - 지워도
+// 다음 열람 시 자동으로 다시 채워지므로 데이터 손실 없음)
+if (clearPagesCacheBtn) {
+  clearPagesCacheBtn.addEventListener('click', async () => {
+    const ok = await showCustomConfirm('서버에 저장된 PDF 텍스트 추출 캐시를 모두 삭제하시겠습니까?\n(문서를 다시 열면 그때 자동으로 다시 생성되므로 안전합니다.)', { title: '서버 캐시 비우기', confirmText: '삭제', danger: true })
+    if (!ok) return
+    try {
+      const result = await clearPagesCacheAPI()
+      const freedMb = ((result.freed_bytes || 0) / (1024 * 1024)).toFixed(1)
+      showToast(`캐시 파일 ${result.cleared_files || 0}개를 삭제했습니다. (${freedMb}MB 확보)`, 'success')
+    } catch (err) {
+      showToast(err.message || '캐시 삭제에 실패했습니다.', 'error')
+    }
+  })
+}
 
 // 계정 및 비밀번호 변경 제출
 changeCredentialsForm.addEventListener('submit', async (e) => {

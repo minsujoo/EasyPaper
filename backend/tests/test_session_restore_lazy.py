@@ -101,3 +101,24 @@ def test_ensure_session_still_lazily_restores_idle_document_on_demand(isolated_d
 
     assert upload_module.ensure_session("doc-idle") is True
     assert "doc-idle" in upload_module.sessions
+
+
+def test_ensure_session_reuses_disk_cache_across_simulated_restart(isolated_dirs, monkeypatch):
+    """재부팅(프로세스 재시작)해도 디스크 캐시가 있으면 PDF를 다시 파싱하지
+    않아야 한다. 인메모리 sessions dict를 비워 재부팅을 흉내낸 뒤, extract_pages를
+    호출하면 실패하도록 만들어 캐시가 실제로 재사용되는지 검증한다."""
+    _create_doc(isolated_dirs, "doc-idle", monkeypatch)
+
+    assert upload_module.ensure_session("doc-idle") is True
+    cached_pages = upload_module.sessions["doc-idle"]["pages"]
+
+    # 재부팅 시뮬레이션: 인메모리 세션만 사라지고, 디스크 캐시는 남아있음
+    upload_module.sessions.clear()
+
+    def _fail_if_called(pdf_path):
+        raise AssertionError("디스크 캐시가 있는데도 extract_pages()가 다시 호출됨")
+
+    monkeypatch.setattr(upload_module, "extract_pages", _fail_if_called)
+
+    assert upload_module.ensure_session("doc-idle") is True
+    assert upload_module.sessions["doc-idle"]["pages"] == cached_pages

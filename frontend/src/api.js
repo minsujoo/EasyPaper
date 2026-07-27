@@ -548,6 +548,25 @@ export async function clearTranslationCacheAPI(sessionId) {
 }
 
 /**
+ * 모든 문서의 PDF 텍스트 추출 결과 디스크 캐시를 삭제합니다(서버/앱 재시작
+ * 후 첫 열람 속도를 위한 캐시 - 지워도 다음 열람 시 자동으로 다시 채워짐).
+ */
+export async function clearPagesCacheAPI() {
+  const res = await fetch(`${API_BASE}/settings/clear-pages-cache`, {
+    method: 'POST'
+  })
+  if (!res.ok) {
+    try {
+      const err = await res.json()
+      throw new Error(err.detail || '캐시 삭제 실패')
+    } catch {
+      throw new Error('캐시 삭제 실패')
+    }
+  }
+  return res.json()
+}
+
+/**
  * 특정 문서의 이전 채팅 히스토리를 반환합니다.
  */
 export async function getChatHistoryAPI(sessionId) {
