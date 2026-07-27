@@ -287,13 +287,17 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
 
 @router.post("/settings/clear-pages-cache")
 async def clear_pages_cache(current_user: str = Depends(get_current_user)):
-    """모든 문서의 PDF 텍스트 추출 결과 디스크 캐시(extract_pages() 결과)를
-    삭제합니다. 이 캐시는 서버/앱 재시작 후 문서를 다시 열 때 PDF를 매번
-    재파싱하지 않도록 저장해두는 것으로, 지워도 다음 열람 시 자동으로
-    다시 채워지므로(ensure_session) 데이터 손실은 없습니다."""
-    from services.cache import clear_all_pages_cache
-    count, freed_bytes = clear_all_pages_cache()
-    return {"cleared_files": count, "freed_bytes": freed_bytes}
+    """모든 문서의 PDF 텍스트/이미지 추출 결과 디스크 캐시(extract_pages(),
+    extract_pdf_images() 결과)를 삭제합니다. 이 캐시는 서버/앱 재시작 후
+    문서를 다시 열 때 PDF를 매번 재파싱하지 않도록 저장해두는 것으로,
+    지워도 다음 열람 시 자동으로 다시 채워지므로 데이터 손실은 없습니다."""
+    from services.cache import clear_all_pages_cache, clear_all_images_cache
+    pages_count, pages_bytes = clear_all_pages_cache()
+    images_count, images_bytes = clear_all_images_cache()
+    return {
+        "cleared_files": pages_count + images_count,
+        "freed_bytes": pages_bytes + images_bytes,
+    }
 
 
 @router.get("/settings/ollama-status")

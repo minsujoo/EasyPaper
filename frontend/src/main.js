@@ -1576,11 +1576,18 @@ async function checkAuthentication() {
     globalLogoutBtn.classList.remove('hidden')
     globalSettingsBtn.classList.remove('hidden')
     if (location.hash && location.hash.startsWith('#viewer?id=')) {
+      // 뷰어로 바로 진입하는 경로라 라이브러리 화면이 렌더링되지 않으므로,
+      // 안읽음 배지/휴지통 탭 표시는 별도로 한 번 조회해서 채워야 한다.
       await handleRouting()
+      await loadLibraryCount()
     } else {
+      // showLibraryScreen() -> renderLibrary()가 이미 문서 목록을 받아와
+      // 배지/휴지통 탭까지 갱신하므로, 여기서 loadLibraryCount()를 또 불러
+      // GET /api/library(+trash)를 중복으로 쏠 필요가 없다. 앱 부팅 시마다
+      // 라이브러리 목록을 사실상 두 번 불러오던 게 체감 로딩을 늘리던
+      // 원인 중 하나였다.
       await showLibraryScreen()
     }
-    await loadLibraryCount()
     await refreshSystemSettings()
     maybeShowOnboarding()
     // 업데이트 직후(방금 재시작됨) 안내가 있으면 그것부터 먼저 보여주고, 없을
@@ -1644,7 +1651,6 @@ if (libEmptyTrashBtn) {
       await emptyLibraryTrash()
       showToast('휴지통이 비워졌습니다.', 'success')
       await renderLibrary()
-      await loadLibraryCount()
     } catch (err) {
       showToast('휴지통 비우기 실패: ' + err.message, 'error')
     }
@@ -3374,37 +3380,58 @@ checkAIStatus()
 setInterval(checkAIStatus, 30000)
 
 // ── 라이브러리 화면 ────────────────────────────────
-async function loadLibraryCount() {
-  try {
-    const data = await fetchLibrary(getTranslationOptions())
-    const docs = data.documents || []
-    const unreadCount = docs.filter(doc => doc.metadata?.read !== true).length
-    if (unreadCount > 0 && libraryCountBadge) {
-      libraryCountBadge.textContent = unreadCount
-      libraryCountBadge.classList.remove('hidden')
-    } else if (libraryCountBadge) {
-      libraryCountBadge.classList.add('hidden')
-    }
-  } catch {}
+// 이미 어딘가에서 fetchLibrary()로 받아온 문서 목록이 있을 때 그 결과로
+// 배지만 갱신한다(추가 네트워크 요청 없음). renderLibrary()와
+// loadLibraryCount() 양쪽에서 공유해서 쓰기 위해 분리했다 - 예전에는 이
+// 배지 갱신 로직이 양쪽에 중복 구현되어 있어서, "보관함 표시/삭제/복원"
+// 등 문서 하나를 조작할 때마다 renderLibrary()가 이미 새로 받아온 목록이
+// 있는데도 loadLibraryCount()가 GET /api/library를 한 번 더(+휴지통까지)
+// 쏴서 화면 갱신이 체감상 두 배로 느려졌었다.
+function updateUnreadBadge(docs) {
+  const unreadCount = docs.filter(doc => doc.metadata?.read !== true).length
+  if (unreadCount > 0 && libraryCountBadge && state.currentLibraryTab !== 'trash') {
+    libraryCountBadge.textContent = unreadCount
+    libraryCountBadge.classList.remove('hidden')
+  } else if (libraryCountBadge) {
+    libraryCountBadge.classList.add('hidden')
+  }
+}
 
-  // 동적 휴지통 탭 노출 여부 및 배지 카운트 표시 처리
+function updateTrashTabVisibility(trashDocs) {
+  if (!libTabTrash) return
+  const trashCount = trashDocs.length
+  if (trashCount > 0 || state.currentLibraryTab === 'trash') {
+    libTabTrash.classList.remove('hidden')
+    libTabTrash.title = `휴지통 (${trashCount}개 문서)`
+    libTabTrash.innerHTML = icon('trash2', 14)
+  } else {
+    libTabTrash.classList.add('hidden')
+  }
+}
+
+// 휴지통 탭 노출 여부/배지는 현재 보고 있는 탭이 무엇이든 항상 최신이어야
+// 하는데, 그러려면 archive/history 탭을 보고 있을 때도 휴지통 목록을 별도로
+// 조회해야 한다(현재 탭의 목록과는 다른 데이터라 재사용 불가). 화면
+// 갱신을 막지 않도록 호출부에서 await 없이 백그라운드로 실행한다.
+async function refreshTrashTabVisibility() {
   try {
     const trashData = await fetchLibraryTrash(getTranslationOptions())
-    const trashDocs = trashData.documents || []
-    const trashCount = trashDocs.length
-
-    if (libTabTrash) {
-      if (trashCount > 0 || state.currentLibraryTab === 'trash') {
-        libTabTrash.classList.remove('hidden')
-        libTabTrash.title = `휴지통 (${trashCount}개 문서)`
-        libTabTrash.innerHTML = icon('trash2', 14)
-      } else {
-        libTabTrash.classList.add('hidden')
-      }
-    }
+    updateTrashTabVisibility(trashData.documents || [])
   } catch (err) {
     console.error('휴지통 개수 조회 실패:', err)
   }
+}
+
+// 라이브러리 화면이 아직 렌더링되지 않은 상태(예: 뷰어 화면)에서 배지만
+// 갱신해야 할 때 쓰는, 처음부터 새로 fetch하는 버전. 라이브러리 화면이 이미
+// 최신 목록을 렌더링해둔 상태라면 이 함수 대신 updateUnreadBadge()+
+// refreshTrashTabVisibility()를 직접 쓰는 쪽이 중복 요청을 피할 수 있다.
+async function loadLibraryCount() {
+  try {
+    const data = await fetchLibrary(getTranslationOptions())
+    updateUnreadBadge(data.documents || [])
+  } catch {}
+  await refreshTrashTabVisibility()
 }
 
 // 탭 클릭 이벤트 리스너 등록
@@ -3880,12 +3907,17 @@ async function renderLibrary() {
     const allDocs = data.documents || []
 
     // 보관함 뱃지에는 안읽은 논문 개수 표시 (휴지통이 아닐 때만 적용하거나, archive 기준 개수 표시)
-    const unreadCount = allDocs.filter(doc => doc.metadata?.read !== true).length
-    if (unreadCount > 0 && libraryCountBadge && state.currentLibraryTab !== 'trash') {
-      libraryCountBadge.textContent = unreadCount
-      libraryCountBadge.classList.remove('hidden')
-    } else if (libraryCountBadge) {
-      libraryCountBadge.classList.add('hidden')
+    updateUnreadBadge(allDocs)
+
+    // 휴지통 탭 노출 여부/배지도 여기서 함께 최신화한다 - 문서 하나를
+    // 조작한 뒤(읽음 표시/삭제/복원 등) 호출부가 매번 loadLibraryCount()를
+    // 별도로 또 호출해 GET /api/library(+trash)를 중복으로 쏘지 않도록.
+    // 지금 보고 있는 탭이 마침 휴지통이면 이미 받아온 목록을 그대로 쓰고,
+    // 아니면 화면 갱신을 막지 않게 백그라운드로 별도 조회한다.
+    if (state.currentLibraryTab === 'trash') {
+      updateTrashTabVisibility(allDocs)
+    } else {
+      refreshTrashTabVisibility()
     }
 
     // 현재 선택된 탭에 따라 논문 목록 필터링
@@ -4541,7 +4573,6 @@ function wireDocItemEvents(container, doc, displayTitle) {
         await updateLibraryDocMetadata(doc.id, payload)
         showToast(nextReadState ? '읽은 논문으로 표시되었습니다.' : '보관함으로 이동되었습니다.', 'success')
         await renderLibrary()
-        await loadLibraryCount()
       } catch (err) {
         showToast('상태 변경 실패: ' + err.message, 'error')
       }
@@ -4571,7 +4602,6 @@ function wireDocItemEvents(container, doc, displayTitle) {
         await deleteLibraryDoc(doc.id)
         showToast('휴지통으로 이동되었습니다.', 'success')
         await renderLibrary()
-        await loadLibraryCount()
       } catch {
         showToast('삭제 실패', 'error')
       }
@@ -4586,7 +4616,6 @@ function wireDocItemEvents(container, doc, displayTitle) {
         await restoreLibraryDoc(doc.id)
         showToast('논문이 복원되었습니다.', 'success')
         await renderLibrary()
-        await loadLibraryCount()
       } catch (err) {
         showToast('복원 실패: ' + err.message, 'error')
       }

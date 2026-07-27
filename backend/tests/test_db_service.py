@@ -78,3 +78,32 @@ def test_app_meta_get_set_round_trip(isolated_dirs):
     # 같은 키를 다시 쓰면 덮어써야 한다 (INSERT가 아니라 upsert)
     db.db_set_meta("some_key", "value2")
     assert db.db_get_meta("some_key") == "value2"
+
+
+def test_bulk_translation_rows_groups_by_doc_id(isolated_dirs):
+    """list_documents()의 N+1 쿼리를 대체하는 벌크 조회 함수 - 문서마다 새
+    커넥션을 여는 대신 한 번의 커넥션으로 여러 문서의 번역 행을 모아온다."""
+    db = isolated_dirs["db"]
+    db.db_save_document("doc-1", "admin", "p1.pdf", "/x", 3, {})
+    db.db_save_document("doc-2", "admin", "p2.pdf", "/x", 3, {})
+    db.db_save_translation("doc-1", 1, "a", suffix="ko_formal")
+    db.db_save_translation("doc-1", 2, "b", suffix="ko_formal")
+    db.db_save_translation("doc-2", 5, "c", suffix="en_casual")
+
+    rows = db.db_bulk_translation_rows(["doc-1", "doc-2"])
+    assert sorted(r[0] for r in rows["doc-1"]) == [1, 2]
+    assert {r[1] for r in rows["doc-1"]} == {"ko_formal"}
+    assert sorted(r[0] for r in rows["doc-2"]) == [5]
+
+
+def test_bulk_translation_rows_returns_empty_list_for_doc_without_translations(isolated_dirs):
+    db = isolated_dirs["db"]
+    db.db_save_document("doc-1", "admin", "p1.pdf", "/x", 3, {})
+
+    rows = db.db_bulk_translation_rows(["doc-1"])
+    assert rows == {"doc-1": []}
+
+
+def test_bulk_translation_rows_empty_doc_ids_returns_empty_dict(isolated_dirs):
+    db = isolated_dirs["db"]
+    assert db.db_bulk_translation_rows([]) == {}

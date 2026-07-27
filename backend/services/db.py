@@ -9,8 +9,13 @@ from typing import Optional, List, Dict, Any
 DB_PATH = os.getenv("DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "easypaper.db")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    # busy_timeout: 번역 잡이 쓰기 커넥션을 잡고 있는 동안(db_save_translation)
+    # 라이브러리 목록 등 읽기 커넥션이 "database is locked"로 즉시 실패하지
+    # 않고 잠깐 대기하도록 한다. journal_mode는 커넥션 단위가 아니라 DB
+    # 파일에 영속되는 설정이라 init_db()에서 한 번만 WAL로 전환해두면 된다.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 def init_db():
@@ -115,7 +120,22 @@ def init_db():
         )
         """)
 
+        # 라이브러리 목록/문서 조회가 doc_id(+suffix)로 translations를,
+        # doc_id로 documents/page_insights/chats를 매번 훑는데(문서 수 x
+        # 페이지 수만큼 뻥튀기됨) 인덱스가 없어 전부 풀스캔이었다. 목록
+        # 화면을 열 때마다, 그리고 4초 폴링마다 이 비용을 반복해서 냈다.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_translations_doc_suffix ON translations(doc_id, suffix, page_num)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_translations_doc_saved ON translations(doc_id, saved_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_page_insights_doc ON page_insights(doc_id, kind, suffix)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_username_deleted ON documents(username, is_deleted, created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_doc ON chats(doc_id, id)")
+
         conn.commit()
+
+        # WAL: 여러 읽기 커넥션이 번역 잡의 쓰기 커넥션과 부딪혀 잠기는
+        # 문제를 줄인다. 커넥션 단위 PRAGMA가 아니라 DB 파일에 영속되는
+        # 설정이라 여기서 한 번만 켜두면 이후 모든 커넥션에 적용된다.
+        conn.execute("PRAGMA journal_mode=WAL")
         
     # 기본 관리자 계정 초기 생성
     from config import get_app_username, get_app_password_hash
@@ -367,6 +387,36 @@ def db_list_translated_pages(doc_id: str, suffix: str = "") -> List[int]:
             (doc_id, suffix)
         )
         return [r["page_num"] for r in cursor.fetchall()]
+
+
+def db_bulk_translation_rows(doc_ids: List[str]) -> Dict[str, List[tuple]]:
+    """여러 문서의 (page_num, suffix, saved_at) 행을 한 번의 커넥션으로 모아
+    doc_id별로 묶어 반환합니다.
+
+    라이브러리 목록 화면은 문서마다 번역 완료 페이지 목록을 보여주는데,
+    예전에는 문서 개수(N)만큼 매번 새 sqlite3 커넥션을 열어 최대 3개의
+    쿼리를 던졌다(list_documents 참고). 문서가 늘어날수록, 그리고 4초
+    폴링이 반복될수록 이 비용이 그대로 누적돼 라이브러리 화면 자체가
+    느려지는 원인이었다. IN절 변수 개수 제한(SQLITE_MAX_VARIABLE_NUMBER,
+    보통 999)을 넘지 않도록 청크 단위로 나눠 조회한다.
+    """
+    result: Dict[str, list] = {doc_id: [] for doc_id in doc_ids}
+    if not doc_ids:
+        return result
+
+    CHUNK = 500
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for i in range(0, len(doc_ids), CHUNK):
+            chunk = doc_ids[i:i + CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(
+                f"SELECT doc_id, page_num, suffix, saved_at FROM translations WHERE doc_id IN ({placeholders})",
+                chunk
+            )
+            for row in cursor.fetchall():
+                result[row["doc_id"]].append((row["page_num"], row["suffix"], row["saved_at"]))
+    return result
 
 
 # ── 채팅 (Chats) ──────────────────────────────────────────────────────────────

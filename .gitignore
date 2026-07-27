@@ -21,6 +21,8 @@ CLAUDE.md
 # EasyPaper Local Databases & Storage
 backend/easypaper.db
 backend/easypaper.db-journal
+backend/easypaper.db-wal
+backend/easypaper.db-shm
 /cache/
 backend/uploads/
 backend/library/
