@@ -232,9 +232,14 @@ async def export_annotated_pdf(
 
 @router.get("/library/{doc_id}/cover")
 async def get_library_cover(doc_id: str, current_user: str = Depends(get_current_user)):
-    """라이브러리 카드 미리보기용 1페이지 상단(제목+abstract) 캡쳐 이미지를 서빙합니다."""
+    """라이브러리 카드 미리보기용 1페이지 상단(제목+abstract) 캡쳐 이미지를 서빙합니다.
+
+    최초 1회만 PyMuPDF로 렌더링하고 이후엔 파일만 서빙하지만(get_cover_path
+    내부에서 이미 캐싱), 그 최초 렌더링 자체가 동기 CPU 작업이라 이벤트
+    루프를 블로킹하지 않도록 스레드로 넘긴다."""
+    import asyncio
     _require_owned_document(doc_id, current_user)
-    cover_path = get_cover_path(doc_id)
+    cover_path = await asyncio.to_thread(get_cover_path, doc_id)
     if not cover_path:
         raise HTTPException(status_code=404, detail="미리보기 이미지를 생성할 수 없습니다.")
     return FileResponse(cover_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
@@ -267,15 +272,30 @@ async def delete_library_document_permanently(doc_id: str, current_user: str = D
 
 @router.get("/library/{doc_id}/images")
 async def get_library_document_images(doc_id: str, current_user: str = Depends(get_current_user)):
-    """특정 문서의 모든 페이지에서 이미지/Figure 좌표 정보(백분율) 목록을 반환합니다."""
+    """특정 문서의 모든 페이지에서 이미지/Figure 좌표 정보(백분율) 목록을 반환합니다.
+
+    find_tables()/get_drawings() 등을 페이지마다 두 차례 훑는 무거운 연산이라,
+    extract_pages()와 동일하게 디스크에 캐싱해 서버 재시작 이후에도 문서를
+    다시 열 때마다 재계산하지 않게 한다. 또한 이 연산은 완전히 동기
+    CPU-bound(PyMuPDF, GIL 점유)라 캐시 미스 시 asyncio 이벤트 루프를 그대로
+    블로킹하면 그동안 다른 요청(라이브러리 목록 등)이 전부 멈추므로,
+    별도 스레드로 넘긴다."""
+    import asyncio
+    from services.cache import get_cached_images, save_images_cache
+
     _require_owned_document(doc_id, current_user)
     pdf_path = get_pdf_path(doc_id)
     if not pdf_path:
         raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
 
+    images = get_cached_images(doc_id, pdf_path)
+    if images is not None:
+        return {"images": images}
+
     try:
         from services.pdf_parser import extract_pdf_images
-        images = extract_pdf_images(pdf_path)
+        images = await asyncio.to_thread(extract_pdf_images, pdf_path)
+        save_images_cache(doc_id, pdf_path, images)
         return {"images": images}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"이미지 좌표 추출 실패: {str(e)}")
@@ -306,10 +326,18 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
     if not pdf_path:
         raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
 
+    import asyncio
+    from services.cache import get_cached_pages, save_pages_cache
     from services.pdf_parser import extract_pages
     from services.reference_parser import extract_reference_list
     try:
-        pages = extract_pages(pdf_path)
+        # ensure_session()/get_cached_pages()와 같은 디스크 캐시를 공유한다 -
+        # 그렇지 않으면 세션이 아직 복원되지 않은 상태(서버 재시작 직후 첫
+        # 열람)에서 텍스트를 한 번 더 처음부터 추출하게 된다.
+        pages = get_cached_pages(doc_id, pdf_path)
+        if pages is None:
+            pages = await asyncio.to_thread(extract_pages, pdf_path)
+            save_pages_cache(doc_id, pdf_path, pages)
         references = extract_reference_list(pages)
     except Exception:
         references = {}

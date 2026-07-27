@@ -133,3 +133,61 @@ def clear_all_pages_cache() -> "tuple[int, int]":
             except Exception:
                 pass
     return count, freed_bytes
+
+
+_IMAGES_CACHE_SUFFIX = "_images_extract.json"
+
+
+def _images_cache_path(doc_id: str) -> str:
+    return os.path.join(CACHE_DIR, f"{doc_id}{_IMAGES_CACHE_SUFFIX}")
+
+
+def get_cached_images(doc_id: str, pdf_path: str) -> Optional[list]:
+    """extract_pdf_images() 결과(그림/표 좌표)의 디스크 캐시를 반환합니다.
+    캐시가 없거나 원본 PDF의 mtime/크기가 저장 당시와 달라졌다면 None을
+    반환해 재추출을 유도합니다. get_cached_pages()와 동일한 방식이다 -
+    이 함수가 없으면 문서를 열 때마다 매번 PyMuPDF로 페이지별 표/그림
+    탐지(find_tables, get_drawings 등 비용이 큰 연산)를 처음부터 다시
+    수행하게 되어, 텍스트 추출 캐시가 있어도 열람이 계속 느리다."""
+    path = _images_cache_path(doc_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        stat = os.stat(pdf_path)
+        if data.get("mtime") != stat.st_mtime or data.get("size") != stat.st_size:
+            return None
+        return data.get("images")
+    except Exception:
+        return None
+
+
+def save_images_cache(doc_id: str, pdf_path: str, images: list) -> None:
+    """extract_pdf_images() 결과를 디스크에 캐싱합니다."""
+    try:
+        stat = os.stat(pdf_path)
+        atomic_write_text(_images_cache_path(doc_id), json.dumps({
+            "mtime": stat.st_mtime,
+            "size": stat.st_size,
+            "images": images,
+        }, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def clear_all_images_cache() -> "tuple[int, int]":
+    """모든 문서의 이미지/표 좌표 추출 캐시 파일을 삭제합니다.
+    (삭제한 파일 개수, 확보한 바이트 수)를 반환합니다."""
+    count = 0
+    freed_bytes = 0
+    for fname in os.listdir(CACHE_DIR):
+        if fname.endswith(_IMAGES_CACHE_SUFFIX):
+            path = os.path.join(CACHE_DIR, fname)
+            try:
+                freed_bytes += os.path.getsize(path)
+                os.remove(path)
+                count += 1
+            except Exception:
+                pass
+    return count, freed_bytes

@@ -19,8 +19,25 @@ from services.db import (
     db_get_page_insight,
     db_clear_page_insights,
     db_update_document_metadata,
-    get_db
+    db_bulk_translation_rows,
 )
+
+
+def _resolve_translated_pages(rows: list, suffix: Optional[str]) -> list:
+    """(page_num, suffix, saved_at) 행 목록에서 문서 하나의 "번역 완료 페이지"
+    목록을 계산합니다. 요청한 suffix로 번역된 페이지가 있으면 그걸 쓰고,
+    없으면 가장 최근에 저장된 suffix의 페이지로 대체합니다(예전 설정으로
+    번역해둔 문서를 다른 target_lang/style로 열어도 목록이 비어 보이지
+    않도록). 원래 services/db.py의 db_get_translation()과 동일한 fallback
+    규칙이다."""
+    if not rows:
+        return []
+    if suffix:
+        pages = sorted({r[0] for r in rows if r[1] == suffix})
+        if pages:
+            return pages
+    fallback_suffix = max(rows, key=lambda r: r[2])[1]
+    return sorted({r[0] for r in rows if r[1] == fallback_suffix})
 
 def _pdf_path(doc_id: str) -> str:
     return os.path.join(LIBRARY_DIR, doc_id, "document.pdf")
@@ -60,39 +77,9 @@ def get_document(
         suffix = None
         if target_lang is not None and style is not None:
             suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
-            
-        with get_db() as conn:
-            cursor = conn.cursor()
-            pages = []
-            if suffix:
-                cursor.execute(
-                    "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? AND suffix = ? ORDER BY page_num ASC",
-                    (doc_id, suffix)
-                )
-                pages = [r["page_num"] for r in cursor.fetchall()]
-            
-            if not pages:
-                # Fallback to the most recent suffix's pages
-                cursor.execute(
-                    "SELECT suffix FROM translations WHERE doc_id = ? ORDER BY saved_at DESC LIMIT 1",
-                    (doc_id,)
-                )
-                row = cursor.fetchone()
-                if row:
-                    fallback_suffix = row["suffix"]
-                    cursor.execute(
-                        "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? AND suffix = ? ORDER BY page_num ASC",
-                        (doc_id, fallback_suffix)
-                    )
-                    pages = [r["page_num"] for r in cursor.fetchall()]
-                else:
-                    # If no suffix found, query any pages
-                    cursor.execute(
-                        "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? ORDER BY page_num ASC",
-                        (doc_id,)
-                    )
-                    pages = [r["page_num"] for r in cursor.fetchall()]
-        doc["translated_pages"] = pages
+
+        rows = db_bulk_translation_rows([doc_id]).get(doc_id, [])
+        doc["translated_pages"] = _resolve_translated_pages(rows, suffix)
         return doc
     return None
 
@@ -106,46 +93,23 @@ def list_documents(
     ignore_refs: Optional[bool] = None,
     only_trash: bool = False
 ) -> list:
-    """라이브러리의 문서를 최신순으로 반환합니다 (필터링 가능)."""
+    """라이브러리의 문서를 최신순으로 반환합니다 (필터링 가능).
+
+    예전에는 문서마다 새 SQLite 커넥션을 열어 최대 3개의 쿼리를 던졌다(N+1).
+    문서 수와 4초 주기 폴링이 곱해지며 라이브러리 화면 자체가 느려지는
+    주 원인이었던 부분 - 이제 전체 문서의 번역 행을 한 번의 커넥션으로 모아
+    메모리에서 매칭한다."""
     docs = db_list_documents(username, only_trash=only_trash)
-    
+    if not docs:
+        return docs
+
     suffix = None
     if target_lang is not None and style is not None:
         suffix = f"{target_lang}_{style}_math{int(ignore_math)}_table{int(ignore_table)}_refs{int(ignore_refs)}"
 
+    rows_by_doc = db_bulk_translation_rows([doc["id"] for doc in docs])
     for doc in docs:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            pages = []
-            if suffix:
-                cursor.execute(
-                    "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? AND suffix = ? ORDER BY page_num ASC",
-                    (doc["id"], suffix)
-                )
-                pages = [r["page_num"] for r in cursor.fetchall()]
-            
-            if not pages:
-                # Fallback to the most recent suffix's pages
-                cursor.execute(
-                    "SELECT suffix FROM translations WHERE doc_id = ? ORDER BY saved_at DESC LIMIT 1",
-                    (doc["id"],)
-                )
-                row = cursor.fetchone()
-                if row:
-                    fallback_suffix = row["suffix"]
-                    cursor.execute(
-                        "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? AND suffix = ? ORDER BY page_num ASC",
-                        (doc["id"], fallback_suffix)
-                    )
-                    pages = [r["page_num"] for r in cursor.fetchall()]
-                else:
-                    # If no suffix found, query any pages
-                    cursor.execute(
-                        "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? ORDER BY page_num ASC",
-                        (doc["id"],)
-                    )
-                    pages = [r["page_num"] for r in cursor.fetchall()]
-        doc["translated_pages"] = pages
+        doc["translated_pages"] = _resolve_translated_pages(rows_by_doc.get(doc["id"], []), suffix)
     return docs
 
 
@@ -156,14 +120,13 @@ def search_documents(username: str, query: str, only_trash: bool = False) -> lis
     if not query:
         return []
     docs = db_search_documents(username, query, only_trash=only_trash)
+    if not docs:
+        return docs
+
+    rows_by_doc = db_bulk_translation_rows([doc["id"] for doc in docs])
     for doc in docs:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT DISTINCT page_num FROM translations WHERE doc_id = ? ORDER BY page_num ASC",
-                (doc["id"],)
-            )
-            doc["translated_pages"] = [r["page_num"] for r in cursor.fetchall()]
+        pages = sorted({r[0] for r in rows_by_doc.get(doc["id"], [])})
+        doc["translated_pages"] = pages
     return docs
 
 
