@@ -194,7 +194,7 @@
   <div id="viewer-screen" class="screen">
 
     <!-- 상단 바 -->
-    <header class="topbar">
+    <header class="topbar" id="viewer-topbar">
       <div class="topbar-left">
         <button id="back-btn" class="icon-btn" title="처음으로">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15,18 9,12 15,6"/></svg>
@@ -226,21 +226,6 @@
         </span>
       </div>
       <div class="topbar-right">
-        <!-- 번역 작업 상태 정보 -->
-        <div id="translation-progress-mini" class="progress-mini hidden">
-          <div class="progress-mini-bar" id="progress-mini-bar"></div>
-          <span id="progress-mini-text">0%</span>
-        </div>
-        <div class="translation-status" id="translation-status">
-          <div class="spinner hidden" id="translate-spinner"></div>
-          <span id="translate-status-text"></span>
-        </div>
-
-        <!-- AI 번역 모델 선택 드롭다운 -->
-        <div id="viewer-trans-provider"></div>
-
-        <div class="toolbar-divider"></div>
-
         <!-- 뷰 확대/축소 조작 그룹 -->
         <div class="toolbar-group view-group">
           <button id="zoom-out-btn" class="icon-btn" title="축소">
@@ -273,33 +258,60 @@
 
         <div class="toolbar-divider"></div>
 
-        <!-- 번역 작업 관리 그룹 -->
-        <div class="toolbar-group action-group">
-          <button id="retranslate-btn" class="icon-btn" title="처음부터 다시 번역하기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <!-- 추가 메뉴(케밥): 번역 상태/모델, 번역 관리(다시 번역/중지/이어서/다운로드),
+             메모 숨기기, 테마 전환을 한데 모아 툴바를 간결하게 유지한다. -->
+        <div class="kebab-wrapper">
+          <button id="toolbar-kebab-btn" class="icon-btn" title="추가 메뉴">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
           </button>
-          <button id="cancel-trans-btn" class="icon-btn hidden" title="번역 작업 중지" style="color: var(--error);">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-          </button>
-          <button id="resume-trans-btn" class="icon-btn hidden" title="중단된 부분부터 이어서 번역" style="color: var(--success);">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          </button>
-          <button id="export-btn" class="icon-btn" title="번역본 내보내기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-          </button>
-          <button id="memos-hide-all-btn" class="icon-btn" title="작성된 모든 메모 숨기기 (하이라이트만 표시)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
-          </button>
-        </div>
+          <div id="toolbar-kebab-menu" class="kebab-menu hidden">
+            <!-- 번역 작업 상태 정보 -->
+            <div id="translation-progress-mini" class="progress-mini hidden">
+              <div class="progress-mini-bar" id="progress-mini-bar"></div>
+              <span id="progress-mini-text">0%</span>
+            </div>
+            <div class="translation-status kebab-menu-status" id="translation-status">
+              <div class="spinner hidden" id="translate-spinner"></div>
+              <span id="translate-status-text">번역 대기 중</span>
+            </div>
 
-        <div class="toolbar-divider"></div>
+            <!-- AI 번역 모델 선택 드롭다운 -->
+            <div class="kebab-menu-row">
+              <span class="kebab-menu-label">번역 모델</span>
+              <div id="viewer-trans-provider"></div>
+            </div>
 
-        <!-- 기타 환경 조작 그룹 -->
-        <div class="toolbar-group config-group">
-          <button id="theme-toggle-btn" class="icon-btn" title="화이트/다크 테마 토글">
-            <svg class="sun-icon hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            <svg class="moon-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
+            <div class="kebab-menu-divider"></div>
+
+            <button id="retranslate-btn" class="kebab-menu-item" title="처음부터 다시 번역하기">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              <span>처음부터 다시 번역하기</span>
+            </button>
+            <button id="cancel-trans-btn" class="kebab-menu-item hidden" title="번역 작업 중지" style="color: var(--error);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+              <span>번역 작업 중지</span>
+            </button>
+            <button id="resume-trans-btn" class="kebab-menu-item hidden" title="중단된 부분부터 이어서 번역" style="color: var(--success);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>이어서 번역하기</span>
+            </button>
+            <button id="export-btn" class="kebab-menu-item" title="번역본 내보내기">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+              <span>번역본 다운로드</span>
+            </button>
+
+            <div class="kebab-menu-divider"></div>
+
+            <button id="memos-hide-all-btn" class="kebab-menu-item" title="작성된 모든 메모 숨기기 (하이라이트만 표시)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+              <span>메모 숨기기</span>
+            </button>
+            <button id="theme-toggle-btn" class="kebab-menu-item" title="화이트/다크 테마 토글">
+              <svg class="sun-icon hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <svg class="moon-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span>테마 전환</span>
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -320,6 +332,22 @@
       <!-- 단일 뷰어 스크롤 컨테이너 -->
       <div class="viewer-scroll-container" id="viewer-scroll-container">
         <!-- page-pair 요소가 동적으로 생성됨 -->
+      </div>
+
+      <!-- 우측 하단 floating 스크롤 내비게이션 -->
+      <div class="floating-scroll-nav" id="floating-scroll-nav">
+        <button id="scroll-top-btn" class="floating-nav-btn" title="맨 위로">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+        </button>
+        <button id="scroll-page-up-btn" class="floating-nav-btn" title="이전 페이지">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button id="scroll-page-down-btn" class="floating-nav-btn" title="다음 페이지">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button id="scroll-bottom-btn" class="floating-nav-btn" title="맨 아래로">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+        </button>
       </div>
 
       <!-- AI Chat Sidebar Resizer -->
@@ -597,6 +625,15 @@
           </div>
           
           <div class="form-group">
+            <label for="setting-translation-mode">번역 모드</label>
+            <select id="setting-translation-mode" class="form-select">
+              <option value="auto">업로드 시 자동 번역 (기본)</option>
+              <option value="pane">번역 창을 펼칠 때만 번역</option>
+              <option value="scroll">스크롤로 페이지를 볼 때 번역</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label>번역 제외 문서 요소</label>
             <div class="checkbox-group">
               <label class="checkbox-label">
@@ -663,6 +700,9 @@
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" id="setting-disable-primer" /> 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 팝업 끄기 (툴바 버튼으로는 계속 다시 볼 수 있음)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="setting-toolbar-autohide" /> 아래로 스크롤하면 상단 툴바 자동으로 숨기기 (위로 스크롤하면 다시 표시)
               </label>
             </div>
           </div>

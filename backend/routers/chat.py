@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List
 
 from routers.upload import sessions, ensure_session, require_session_owner
-from services.llm_client import stream_chat
+from services.llm_client import stream_chat, generate_suggested_questions
 from services.db import (
     db_save_chat_message,
     db_get_chat_history,
@@ -130,6 +130,35 @@ async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current
             "Connection": "keep-alive",
         }
     )
+
+
+@router.post("/chat/suggestions")
+async def chat_suggestions(data: ChatRequest, current_user: str = Depends(get_current_user)):
+    """직전 어시스턴트 답변과 논문 본문을 참고해 후속 질문 3개를 추천합니다. 채팅
+    기록(chats 테이블)에는 남기지 않는 보조 UI(추천 질문 칩) 전용 엔드포인트입니다."""
+    session_id = data.session_id
+    session = require_session_owner(session_id, current_user)
+
+    pages = session.get("pages", [])
+    paper_text = ""
+    for p in pages:
+        page_text = (p.get("text", "") or "").strip()
+        if page_text:
+            paper_text += f"\n\n{page_text}"
+            if len(paper_text) > 6000:
+                break
+
+    filename = session.get("filename", "알 수 없음")
+    history_messages = [{"role": msg.role, "content": msg.content} for msg in data.messages]
+
+    try:
+        questions = await generate_suggested_questions(
+            paper_text, history_messages, doc_title=filename, session_id=session_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"추천 질문 생성 실패: {str(e)}")
+
+    return {"questions": questions}
 
 
 # 아래 두 엔드포인트(/chat/compare/*)는 "/chat/{session_id}/history"보다

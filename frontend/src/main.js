@@ -1,7 +1,7 @@
 import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer } from './library.js'
 import { icon } from './icons.js'
@@ -75,6 +75,9 @@ const state = {
   // 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 게이팅 모달을 끌지 여부. 꺼도
   // 뷰어 툴바 버튼으로는 언제든 다시 열어볼 수 있다.
   disablePrimer: localStorage.getItem('easypaper_disable_primer') === 'true',
+  // 아래로 스크롤하면 상단 툴바를 자동으로 숨기고 위로 스크롤하면 다시 보여줄지
+  // 여부. 다른 편의 설정과 달리 새로 추가하는 화면 동작이라 기본값은 꺼짐(false).
+  toolbarAutoHide: localStorage.getItem('easypaper_toolbar_autohide') === 'true',
   // pageNum_kind(예: "3_keywords") → 생성된 텍스트. 탭 재방문 시 재요청 방지용 캐시.
   pageInsightCache: {}
 }
@@ -134,6 +137,7 @@ const tabPanes          = document.querySelectorAll('.tab-pane')
 const generalSettingsForm = $('general-settings-form')
 const settingTargetLang   = $('setting-target-lang')
 const settingTransStyle   = $('setting-trans-style')
+const settingTranslationMode = $('setting-translation-mode')
 const settingIgnoreMath   = $('setting-ignore-math')
 const settingIgnoreTable  = $('setting-ignore-table')
 const settingIgnoreRefs   = $('setting-ignore-refs')
@@ -145,6 +149,8 @@ const settingDisableInsights = $('setting-disable-insights')
 const settingDisableCitationOverlay = $('setting-disable-citation-overlay')
 const settingDisableFigureOverlay = $('setting-disable-figure-overlay')
 const settingDisablePrimer = $('setting-disable-primer')
+const settingToolbarAutoHide = $('setting-toolbar-autohide')
+const viewerTopbar = $('viewer-topbar')
 const clearCacheBtn       = $('clear-cache-btn')
 const clearPagesCacheBtn  = $('clear-pages-cache-btn')
 const settingAccentSwatches = $('setting-accent-swatches')
@@ -263,6 +269,8 @@ const progressMini          = $('translation-progress-mini')
 const progressMiniBar       = $('progress-mini-bar')
 const progressMiniText      = $('progress-mini-text')
 const toast                 = $('toast')
+const toolbarKebabBtn       = $('toolbar-kebab-btn')
+const toolbarKebabMenu      = $('toolbar-kebab-menu')
 
 // AI Chat Sidebar DOM references
 const chatToggleBtn      = $('chat-toggle-btn')
@@ -334,6 +342,14 @@ function applyToolbarPosition(pos) {
   if (pos !== 'top') document.body.classList.add(`toolbar-pos-${pos}`)
 }
 applyToolbarPosition(getToolbarPosition())
+
+// 번역 모드: 'auto'(업로드 시 전체 자동 번역, 기본값) / 'pane'(번역 창을 펼칠 때만
+// 시작) / 'scroll'(스크롤로 페이지가 보일 때마다 그 페이지만 번역). 대상 언어/문체와
+// 달리 캐시 접미사에 영향을 주지 않는 "언제 번역할지"만 다루는 옵션이라
+// getTranslationOptions()와는 별도로 관리한다.
+function getTranslationMode() {
+  return localStorage.getItem('easypaper_translation_mode') || 'auto'
+}
 
 // ── 토스트 ────────────────────────────────────────
 let toastTimer = null
@@ -462,7 +478,7 @@ async function handleFiles(files) {
     uploadItemSuccessIcon.classList.add('hidden')
 
     try {
-      const result = await uploadPDF(file, getTranslationOptions(), (pct) => {
+      const result = await uploadPDF(file, { ...getTranslationOptions(), translationMode: getTranslationMode() }, (pct) => {
         uploadItemProgressBar.style.width = `${pct}%`
         uploadItemStatus.textContent = `업로드 중... ${pct}%`
       })
@@ -556,6 +572,23 @@ function createPagePair(pageNum) {
   return pair
 }
 
+// 번역 모드가 'pane'일 때, 번역 창이 펼쳐진 시점에 전체 문서 백그라운드 번역
+// 잡을 시작한다. 이미 잡이 있으면(과거에 시작되었거나 완료됨) 아무 것도 하지
+// 않는다 - start_job은 동일 옵션으로 이미 완료된 잡이면 재시작하지 않고,
+// 실행 중인 잡을 다시 시작해도 캐시된 페이지는 건너뛰므로 여러 번 호출돼도
+// 안전하지만, 불필요한 네트워크 호출을 줄이기 위해 잡 존재 여부를 먼저 확인한다.
+async function ensureTranslationJobStarted() {
+  if (!state.sessionId) return
+  try {
+    const job = await getJobStatus(state.sessionId)
+    if (!job) {
+      await restartJobAPI(state.sessionId, getTranslationOptions())
+    }
+  } catch (err) {
+    console.warn('번역 잡 시작 확인 실패:', err)
+  }
+}
+
 // ── 스크롤 뷰어 초기화 ────────────────────────────
 async function initScrollViewer() {
   viewerScrollContainer.innerHTML = ''
@@ -592,29 +625,46 @@ async function initScrollViewer() {
           // 않도록, 이미 그려진 문장 분할 기준으로 메모를 다시 그려준다.
           renderPageMemos(pageNum)
         }
+      } else if (getTranslationMode() === 'scroll') {
+        // 번역 모드가 'scroll'이면 전체 문서 백그라운드 잡이 아예 시작되지
+        // 않으므로, 스크롤로 보이게 된 페이지를 그때그때 개별 번역한다.
+        translatePage(pageNum)
       }
 
       // 비동기 다음 페이지 번역 프리페칭 및 미리 렌더링
       const nextPage = pageNum + 1
-      if (nextPage <= state.totalPages && !state.translationCache[nextPage] && state.translatedPages.has(nextPage)) {
-        state.translationCache[nextPage] = '__fetching__'
-        const currentSessionId = state.sessionId
-        const opts = getTranslationOptions()
-        fetchLibraryTranslation(currentSessionId, nextPage, opts).then(res => {
-          if (state.sessionId === currentSessionId) {
-            state.translationCache[nextPage] = res.translation
-            state.translationSentences[nextPage] = res.sentences || []
-            renderTransContent(nextPage, res.translation, true)
-          }
-        }).catch(err => {
-          if (state.sessionId === currentSessionId) {
-            delete state.translationCache[nextPage]
-            renderPageMemos(nextPage)
-          }
-        })
+      if (nextPage <= state.totalPages && !state.translationCache[nextPage]) {
+        if (state.translatedPages.has(nextPage)) {
+          state.translationCache[nextPage] = '__fetching__'
+          const currentSessionId = state.sessionId
+          const opts = getTranslationOptions()
+          fetchLibraryTranslation(currentSessionId, nextPage, opts).then(res => {
+            if (state.sessionId === currentSessionId) {
+              state.translationCache[nextPage] = res.translation
+              state.translationSentences[nextPage] = res.sentences || []
+              renderTransContent(nextPage, res.translation, true)
+            }
+          }).catch(err => {
+            if (state.sessionId === currentSessionId) {
+              delete state.translationCache[nextPage]
+              renderPageMemos(nextPage)
+            }
+          })
+        } else if (getTranslationMode() === 'scroll') {
+          // 다음 페이지도 미리 번역해둬 스크롤이 도착했을 때 바로 보이게 한다.
+          translatePage(nextPage)
+        }
       }
     }
   })
+
+  // 번역 모드가 'pane'이고 번역 창이 이미 펼쳐진 상태로 문서를 열었다면,
+  // (예: 이전에 펼친 채로 남겨둔 경우) 폴링을 시작하기 전에 전체 문서 번역
+  // 잡을 지금 시작해둔다. 접힌 채로 열었다면 아래 trans-collapse-btn
+  // 클릭 핸들러가 나중에 펼칠 때 시작한다.
+  if (getTranslationMode() === 'pane' && !isTransPaneCollapsed) {
+    ensureTranslationJobStarted()
+  }
 
   // 백그라운드 잡 폴링 시작
   startJobPolling(state.sessionId)
@@ -801,9 +851,14 @@ function renderInsightContent(contentEl, kind, text) {
 }
 
 // ── 페이지 번역 ───────────────────────────────────
-// 폰링 중인 페이지를 플레이스홀더로 표시
+// 번역 모드가 'scroll'일 때 - 전체 문서 백그라운드 잡이 돌고 있지 않으므로 -
+// 스크롤로 보이게 된 페이지 하나만 그 자리에서 즉시 번역한다(/translate/{id}/{page}
+// SSE 엔드포인트, 캐시가 있으면 즉시 반환). 완료되면 job-polling 경로와 동일하게
+// state.translatedPages/translationCache/translationSentences를 채워 이후
+// 다시 방문했을 때는 재번역 없이 캐시를 바로 쓴다.
 function translatePage(pageNum) {
   if (state.translatingPages.has(pageNum) || state.translatedPages.has(pageNum)) return
+  if (!state.sessionId) return
   state.translatingPages.add(pageNum)
 
   const statusEl  = $(`trans-status-${pageNum}`)
@@ -814,9 +869,30 @@ function translatePage(pageNum) {
   contentEl.innerHTML = `
     <div class="trans-waiting">
       <div class="trans-wait-spinner"></div>
-      <span>백그라운드에서 번역 중...</span>
+      <span>번역 중...</span>
     </div>`
   if (statusEl) statusEl.textContent = '번역 중...'
+
+  const currentSessionId = state.sessionId
+  let buffer = ''
+  streamTranslation(
+    currentSessionId, pageNum, getTranslationOptions(),
+    (token) => { buffer += token },
+    (cached, sentences) => {
+      state.translatingPages.delete(pageNum)
+      if (state.sessionId !== currentSessionId) return
+      state.translatedPages.add(pageNum)
+      state.translationCache[pageNum] = buffer
+      state.translationSentences[pageNum] = sentences || []
+      renderTransContent(pageNum, buffer, false)
+    },
+    (err) => {
+      state.translatingPages.delete(pageNum)
+      if (state.sessionId !== currentSessionId) return
+      if (statusEl) statusEl.textContent = '번역 실패'
+      contentEl.innerHTML = `<div class="trans-error">번역 실패: ${escapeHtml(err.message)}</div>`
+    }
+  )
 }
 
 // ── 코드 블록 외부의 볼드체를 <strong> 태그로 미리 변환 ──
@@ -1133,6 +1209,31 @@ pageInput.addEventListener('blur', (e) => {
   pageInput.value = num
 })
 
+// ── 우측 하단 floating 스크롤 내비게이션 (맨 위로/이전 페이지/다음 페이지/맨 아래로) ──
+const scrollTopBtn      = $('scroll-top-btn')
+const scrollPageUpBtn   = $('scroll-page-up-btn')
+const scrollPageDownBtn = $('scroll-page-down-btn')
+const scrollBottomBtn   = $('scroll-bottom-btn')
+
+if (scrollTopBtn) {
+  scrollTopBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, 1))
+}
+if (scrollBottomBtn) {
+  scrollBottomBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, state.totalPages))
+}
+if (scrollPageUpBtn) {
+  scrollPageUpBtn.addEventListener('click', () => {
+    const target = Math.max(1, (parseInt(pageInput.value, 10) || 1) - 1)
+    scrollToPage(viewerScrollContainer, target)
+  })
+}
+if (scrollPageDownBtn) {
+  scrollPageDownBtn.addEventListener('click', () => {
+    const target = Math.min(state.totalPages, (parseInt(pageInput.value, 10) || 1) + 1)
+    scrollToPage(viewerScrollContainer, target)
+  })
+}
+
 // ── 줌 ────────────────────────────────────────────
 // 클램핑 + 라벨 갱신만 즉시 수행하는 가벼운 버전. 핀치/휠 제스처처럼 짧은 시간에
 // 값이 계속 바뀌는 상황에서, 매번 무거운 캔버스 재렌더링(reRenderAll)을 부르지
@@ -1370,6 +1471,27 @@ exportBtn.addEventListener('click', (e) => {
   menu.style.left = `${Math.max(8, Math.min(idealLeft, maxLeft))}px`
   menu.style.top = `${rect.bottom + 8 + window.scrollY}px`
 })
+
+// ── 추가 메뉴(케밥): 번역 상태/모델, 번역 관리, 메모 숨기기, 테마 전환을 모아둔
+// 드롭다운. 번역 모델 선택기(ProviderModelPicker)나 내보내기 형식 팝업처럼
+// 메뉴 안에서 열리는 하위 팝업은 각자 자기 컨테이너에 상대 위치로 붙거나
+// (모델 피커) document.body에 별도로 붙으므로(내보내기 팝업), 둘 다 케밥
+// 메뉴 바깥 클릭으로 오인되어 메뉴가 먼저 닫혀버리는 문제 없이 자연스럽게
+// 동작한다 - 모델 피커는 케밥 메뉴의 자손이라 outside-click 판정에서
+// "안쪽"으로 처리되고, 내보내기 팝업은 형식을 실제로 골라야 바깥 클릭으로
+// 잡혀 그때 케밥 메뉴도 함께 닫힌다.
+if (toolbarKebabBtn && toolbarKebabMenu) {
+  toolbarKebabBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    toolbarKebabMenu.classList.toggle('hidden')
+  })
+
+  document.addEventListener('click', (e) => {
+    if (toolbarKebabMenu.classList.contains('hidden')) return
+    if (toolbarKebabMenu.contains(e.target) || toolbarKebabBtn.contains(e.target)) return
+    toolbarKebabMenu.classList.add('hidden')
+  })
+}
 
 // ── 다시 번역하기 ──────────────────────────────────
 retranslateBtn.addEventListener('click', async () => {
@@ -2350,6 +2472,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   // 2. 일반 설정값 로드
   settingTargetLang.value = localStorage.getItem('easypaper_target_lang') || '한국어'
   settingTransStyle.value = localStorage.getItem('easypaper_style') || 'academic'
+  settingTranslationMode.value = getTranslationMode()
   settingIgnoreMath.checked = localStorage.getItem('easypaper_ignore_math') === 'true'
   settingIgnoreTable.checked = localStorage.getItem('easypaper_ignore_table') !== 'false'
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
@@ -2361,6 +2484,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingDisableCitationOverlay.checked = state.disableCitationOverlay
   settingDisableFigureOverlay.checked = state.disableFigureOverlay
   settingDisablePrimer.checked = state.disablePrimer
+  settingToolbarAutoHide.checked = state.toolbarAutoHide
   updateAccentSettingsUI(currentAccentColor)
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
@@ -2530,6 +2654,7 @@ generalSettingsForm.addEventListener('submit', async (e) => {
   
   localStorage.setItem('easypaper_target_lang', settingTargetLang.value)
   localStorage.setItem('easypaper_style', settingTransStyle.value)
+  localStorage.setItem('easypaper_translation_mode', settingTranslationMode.value)
   localStorage.setItem('easypaper_ignore_math', settingIgnoreMath.checked)
   localStorage.setItem('easypaper_ignore_table', settingIgnoreTable.checked)
   localStorage.setItem('easypaper_ignore_refs', settingIgnoreRefs.checked)
@@ -2628,6 +2753,14 @@ settingDisableFigureOverlay.addEventListener('change', () => {
 settingDisablePrimer.addEventListener('change', () => {
   state.disablePrimer = settingDisablePrimer.checked
   localStorage.setItem('easypaper_disable_primer', state.disablePrimer)
+})
+
+settingToolbarAutoHide.addEventListener('change', () => {
+  state.toolbarAutoHide = settingToolbarAutoHide.checked
+  localStorage.setItem('easypaper_toolbar_autohide', state.toolbarAutoHide)
+  // 기능을 끄면 스크롤 위치와 무관하게 즉시 툴바를 다시 보여준다 - 꺼둔 채로
+  // 숨겨진 상태가 남아있으면 툴바가 영영 안 보이는 것처럼 느껴질 수 있다.
+  if (!state.toolbarAutoHide) setToolbarHidden(false)
 })
 
 // 시스템 설정 폼 제출
@@ -6097,6 +6230,8 @@ function updateMemosHideAllBtnUI() {
   memosHideAllBtn.title = allMemosHidden
     ? '숨긴 메모 모두 표시'
     : '작성된 모든 메모 숨기기 (하이라이트만 표시)'
+  const labelEl = memosHideAllBtn.querySelector('span')
+  if (labelEl) labelEl.textContent = allMemosHidden ? '숨긴 메모 모두 표시' : '메모 숨기기'
 }
 
 function redrawAllPageMemos() {
@@ -8287,16 +8422,30 @@ function getOrCreateFigurePreviewTooltip() {
     e.stopPropagation()
 
     const startX = e.clientX
-    const startY = e.clientY
     const startWidth = el.offsetWidth
     const startHeight = el.offsetHeight
+    // 이미지는 CSS에서 width:100%; height:auto로 표시되므로 컨테이너 너비가
+    // scale배 될 때 이미지의 실제 렌더링 높이도 같은 비율로 커진다. 반면
+    // 레이블/캡션 같은 텍스트 영역(chromeHeight)은 너비가 바뀌어도 높이가
+    // 거의 그대로다. 너비/높이를 마우스 이동량으로 각각 독립적으로 정하면
+    // 이미지 비율과 무관하게 박스 크기가 고정되어 이미지 아래로 빈 공간이
+    // 남거나 이미지가 잘려 스크롤이 생기는 문제가 있었다 - 높이를 "이미지
+    // 비율을 유지한 채 늘어난 이미지 높이 + 고정된 chromeHeight"로 다시
+    // 계산해 너비를 끌면 이미지 비율에 맞게 박스 전체가 adaptive하게
+    // 커지고 작아지도록 한다.
+    const loadedImgs = Array.from(el.querySelectorAll('.figure-preview-tooltip-img:not(.hidden)'))
+    const startImagesHeight = loadedImgs.reduce((sum, img) => sum + img.getBoundingClientRect().height, 0)
+    const chromeHeight = startHeight - startImagesHeight
+    const maxWidth = Math.min(window.innerWidth * 0.9, 900)
+    const maxHeight = Math.min(window.innerHeight * 0.9, 900)
     el.classList.add('resizing')
     figurePreviewIsResizing = true
     if (figurePreviewHideTimer) { clearTimeout(figurePreviewHideTimer); figurePreviewHideTimer = null }
 
     const onMove = (moveEvent) => {
-      const newWidth = Math.max(_FIGURE_PREVIEW_MIN_WIDTH, startWidth + (moveEvent.clientX - startX))
-      const newHeight = Math.max(_FIGURE_PREVIEW_MIN_HEIGHT, startHeight + (moveEvent.clientY - startY))
+      const newWidth = Math.max(_FIGURE_PREVIEW_MIN_WIDTH, Math.min(maxWidth, startWidth + (moveEvent.clientX - startX)))
+      const scale = startWidth > 0 ? newWidth / startWidth : 1
+      const newHeight = Math.max(_FIGURE_PREVIEW_MIN_HEIGHT, Math.min(maxHeight, chromeHeight + startImagesHeight * scale))
       el.style.width = `${newWidth}px`
       el.style.height = `${newHeight}px`
     }
@@ -8779,7 +8928,8 @@ function regenerateResponse(assistantMsgEl) {
     showToast('대화 기록 싱크 오류', 'error');
     return;
   }
-  
+
+  clearSuggestedQuestions();
   appendTypingIndicator();
   
   chatInput.disabled = true;
@@ -8813,9 +8963,10 @@ function regenerateResponse(assistantMsgEl) {
         applyKatexToElement(replyBubble);
         if (replyBubble.parentElement) {
           appendActionButtons(replyBubble.parentElement, 'assistant', accumulatedText);
+          renderSuggestedQuestions(replyBubble.parentElement);
         }
       }
-      
+
       chatInput.disabled = false;
       updateChatSendBtnIcon(false);
       chatInput.focus();
@@ -8901,6 +9052,45 @@ function appendActionButtons(msgEl, role, content) {
   msgEl.appendChild(actionsEl)
 }
 
+// 대화가 이어지면 예전 답변에 달렸던 추천 질문은 더 이상 "다음에 물어볼 질문"이
+// 아니게 되므로, 새 질문을 보내거나 답변을 다시 받을 때마다 기존 칩을 모두 지운다.
+function clearSuggestedQuestions() {
+  chatMessages.querySelectorAll('.suggested-questions').forEach(el => el.remove())
+}
+
+// 어시스턴트 답변이 끝난 직후, 논문/대화 내용을 참고한 후속 질문 3개를 chat
+// bubble 아래에 클릭 가능한 칩으로 붙인다. 클릭하면 바로 그 질문으로 다음
+// 메시지를 보낸다.
+async function renderSuggestedQuestions(msgEl) {
+  if (!state.sessionId) return
+  try {
+    const questions = await getSuggestedQuestionsAPI(state.sessionId, state.chatHistory)
+    if (!questions.length) return
+    // 응답을 기다리는 사이 사용자가 이미 다음 질문을 보냈다면(이 메시지가 더
+    // 이상 마지막 어시스턴트 메시지가 아니라면) 뒤늦게 붙이지 않는다.
+    if (!msgEl.isConnected || msgEl !== chatMessages.lastElementChild) return
+
+    const wrap = document.createElement('div')
+    wrap.className = 'suggested-questions'
+    questions.forEach(q => {
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = 'suggested-question-chip'
+      chip.textContent = q
+      chip.addEventListener('click', () => {
+        if (state.chatActiveStream) return
+        chatInput.value = q
+        sendChatMessage()
+      })
+      wrap.appendChild(chip)
+    })
+    msgEl.appendChild(wrap)
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  } catch (err) {
+    console.warn('추천 질문 생성 실패:', err)
+  }
+}
+
 function appendChatMessage(role, content, isHtml = false) {
   const msgEl = document.createElement('div')
   msgEl.className = `chat-message ${role}`
@@ -8964,7 +9154,8 @@ async function sendChatMessage() {
   
   chatInput.value = ''
   chatInput.style.height = 'auto'
-  
+  clearSuggestedQuestions()
+
   if (state.quotedText) {
     const fullPayload = `[인용된 본문 내용]:\n"${state.quotedText}"\n\n[질문]:\n${text}`
     
@@ -9039,9 +9230,10 @@ async function sendChatMessage() {
         replyBubble.innerHTML = formatChatHtml(accumulatedText)
         if (replyBubble.parentElement) {
           appendActionButtons(replyBubble.parentElement, 'assistant', accumulatedText)
+          renderSuggestedQuestions(replyBubble.parentElement)
         }
       }
-      
+
       chatInput.disabled = false
       updateChatSendBtnIcon(false)
       chatInput.focus()
@@ -9242,6 +9434,38 @@ if (viewerScrollContainer) {
 }
 
 window.addEventListener('resize', hideSelectionMenu);
+
+// ── 스크롤 방향에 따른 상단 툴바 자동 숨김/표시 ─────────
+// 설정에서 켜져 있을 때만: 아래로 스크롤하면 툴바를 위로 슬라이드시켜 숨기고,
+// 위로 스크롤하면 다시 보여준다. 맨 위 근처(툴바 높이 이내)에서는 방향과
+// 무관하게 항상 보이게 해, 페이지 맨 위로 돌아왔는데 툴바가 없는 어색한
+// 상태를 방지한다.
+function setToolbarHidden(hidden) {
+  if (viewerTopbar) viewerTopbar.classList.toggle('toolbar-hidden', hidden)
+}
+
+if (viewerScrollContainer && viewerTopbar) {
+  let lastToolbarScrollTop = viewerScrollContainer.scrollTop
+  const TOOLBAR_HIDE_THRESHOLD = 8   // 이보다 작은 이동은 잔떨림으로 보고 무시
+  const TOOLBAR_TOP_ZONE = 64        // 이 안쪽이면 방향과 무관하게 항상 표시
+
+  viewerScrollContainer.addEventListener('scroll', () => {
+    if (!state.toolbarAutoHide) return
+
+    const currentScrollTop = viewerScrollContainer.scrollTop
+    const delta = currentScrollTop - lastToolbarScrollTop
+
+    if (currentScrollTop <= TOOLBAR_TOP_ZONE) {
+      setToolbarHidden(false)
+    } else if (delta > TOOLBAR_HIDE_THRESHOLD) {
+      setToolbarHidden(true)
+    } else if (delta < -TOOLBAR_HIDE_THRESHOLD) {
+      setToolbarHidden(false)
+    }
+
+    lastToolbarScrollTop = currentScrollTop
+  })
+}
 
 // 문장 중간에 섞여 있는 짧은 인라인 수식 조각인지 휴리스틱으로 판단.
 // findDisplayEquationsFromVTM은 줄 전체가 수식인 "독립 수식 줄"만 찾아내므로,
@@ -11253,6 +11477,12 @@ viewerScrollContainer.addEventListener('click', (e) => {
   })
   
   showToast(isTransPaneCollapsed ? '번역 창이 접혔습니다.' : '번역 창이 펼쳐졌습니다.', 'info')
+
+  // 번역 모드가 'pane'이면 번역 창을 펼치는 순간이 곧 "번역을 시작해도 좋다"는
+  // 신호다 - 접혀 있는 동안은 백그라운드 잡을 시작하지 않고 아껴뒀다가 여기서 시작한다.
+  if (!isTransPaneCollapsed && getTranslationMode() === 'pane') {
+    ensureTranslationJobStarted()
+  }
 });
 
 // 초기 로드 시 localStorage 상태 복원 및 초기화 실행
