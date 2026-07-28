@@ -321,6 +321,14 @@ html, body {
   z-index: 100;
   gap: 16px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+  transition: transform 0.25s ease;
+}
+/* 스크롤 방향에 따른 툴바 자동 숨김(설정에서 켠 경우) - 위로 슬라이드시켜
+   숨긴다. 컨텐츠 영역(.panels)은 fixed 툴바 높이만큼 이미 padding-top이
+   있으므로, 숨겨져도 본문이 다시 배치되지 않고 툴바가 있던 자리만 비어 보인다. */
+.topbar.toolbar-hidden {
+  transform: translateY(-100%);
 }
 
 .topbar-left, .topbar-right {
@@ -598,6 +606,40 @@ html, body {
   scroll-behavior: smooth;
   width: 100%;
   height: 100%;
+}
+
+/* ── 우측 하단 floating 스크롤 내비게이션 ── */
+.floating-scroll-nav {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.floating-nav-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(3px);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.floating-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: scale(1.06);
+}
+.floating-nav-btn:active {
+  transform: scale(0.94);
 }
 
 /* ── 개별 페이지 쌍 (원문 + 번역 한쌍의 카드) ── */
@@ -3124,6 +3166,38 @@ body.light-theme .chat-loading-progress {
   transform: scale(0.92);
 }
 
+/* 추천 질문 칩 - 어시스턴트 답변 아래에 붙는 후속 질문 제안 */
+.suggested-questions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+.suggested-question-chip {
+  display: block;
+  max-width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.suggested-question-chip:hover {
+  background: var(--accent-soft, rgba(74, 135, 181, 0.12));
+  border-color: var(--accent-mid);
+  color: var(--text-primary);
+}
+.suggested-question-chip:active {
+  transform: scale(0.98);
+}
+
 /* ── 수식 렌더링 스타일 ───────────────────────────── */
 .katex-display-wrap {
   overflow-x: auto;
@@ -4067,6 +4141,203 @@ body.resizing-trans .trans-resizer-handle::after {
   margin: 0 4px;
   opacity: 0.5;
   align-self: center;
+}
+
+/* ── 툴바 위치 설정 (top(기본)/bottom/left/right) ──────────
+   top 이외의 위치는 body.toolbar-pos-* 클래스로 전환된다. bottom은 상하만
+   뒤집으면 되지만, left/right는 가로로 넓게 설계된 툴바(문서 제목, 페이지
+   입력창, 줌%, 여러 아이콘 버튼 그룹)를 세로 컬럼에 욱여넣어야 하므로
+   문서 제목처럼 폭을 많이 차지하는 요소는 숨기고 각 그룹을 세로로 쌓는다. */
+
+/* 아래(bottom) */
+body.toolbar-pos-bottom .topbar {
+  top: auto;
+  bottom: 0;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.2);
+}
+body.toolbar-pos-bottom .panels {
+  padding-top: 0;
+  padding-bottom: var(--topbar-h);
+}
+body.toolbar-pos-bottom .outline-sidebar {
+  top: 0;
+  bottom: var(--topbar-h);
+}
+
+/* 왼쪽(left) / 오른쪽(right) 공통: 세로 컬럼 툴바 */
+body.toolbar-pos-left .topbar,
+body.toolbar-pos-right .topbar {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 72px;
+  height: auto;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  padding: 16px 10px;
+  gap: 18px;
+  overflow-y: auto;
+  border-bottom: none;
+}
+body.toolbar-pos-left .topbar {
+  right: auto;
+  border-right: 1px solid var(--border);
+}
+body.toolbar-pos-right .topbar {
+  left: auto;
+  border-left: 1px solid var(--border);
+}
+body.toolbar-pos-left .topbar-left,
+body.toolbar-pos-left .topbar-center,
+body.toolbar-pos-left .topbar-right,
+body.toolbar-pos-right .topbar-left,
+body.toolbar-pos-right .topbar-center,
+body.toolbar-pos-right .topbar-right {
+  flex-direction: column;
+  flex: none;
+  gap: 10px;
+  width: 100%;
+}
+body.toolbar-pos-left .toolbar-group,
+body.toolbar-pos-right .toolbar-group {
+  flex-direction: column;
+}
+body.toolbar-pos-left .toolbar-divider,
+body.toolbar-pos-right .toolbar-divider {
+  width: 100%;
+  height: 1px;
+  margin: 2px 0;
+}
+/* 세로 컬럼에서는 폭이 넓게 필요한 문서 제목/페이지 표시를 숨겨 공간을
+   확보한다 - 각 버튼의 title 툴팁으로 기능은 그대로 확인 가능하다. */
+body.toolbar-pos-left .doc-title,
+body.toolbar-pos-left .doc-title-edit-btn,
+body.toolbar-pos-left .read-btn-text,
+body.toolbar-pos-right .doc-title,
+body.toolbar-pos-right .doc-title-edit-btn,
+body.toolbar-pos-right .read-btn-text {
+  display: none;
+}
+/* "EasyPaper" 글자가 좁은 세로 컬럼 폭을 넘어 흘러나오는 것을 막는다 -
+   로고 아이콘(svg)은 폭/높이가 px로 고정돼 있어 font-size에 영향받지
+   않으므로 아이콘만 남기고 글자만 사라진다. */
+body.toolbar-pos-left .logo-small-btn,
+body.toolbar-pos-right .logo-small-btn {
+  font-size: 0;
+}
+body.toolbar-pos-left .page-display,
+body.toolbar-pos-right .page-display {
+  flex-direction: column;
+  gap: 4px;
+}
+body.toolbar-pos-left .page-display input[type=number],
+body.toolbar-pos-right .page-display input[type=number] {
+  width: 100%;
+}
+body.toolbar-pos-left .panels {
+  padding-top: 0;
+  padding-left: 72px;
+}
+body.toolbar-pos-right .panels {
+  padding-top: 0;
+  padding-right: 72px;
+}
+body.toolbar-pos-left .outline-sidebar {
+  top: 0;
+  left: 72px;
+}
+body.toolbar-pos-right .outline-sidebar {
+  top: 0;
+}
+/* 케밥 메뉴는 평소 버튼 아래(top:100%)/오른쪽 정렬로 뜨는데, 세로 컬럼
+   툴바(left/right)에서는 버튼 옆으로 열려야 좁은 컬럼 안에 눌려 보이거나
+   화면 밖으로 잘리지 않는다. */
+body.toolbar-pos-left .kebab-menu {
+  top: 0;
+  left: calc(100% + 8px);
+  right: auto;
+}
+body.toolbar-pos-right .kebab-menu {
+  top: 0;
+  right: calc(100% + 8px);
+  left: auto;
+}
+
+/* ── 툴바 추가 메뉴(케밥) ─────────────────────────── */
+.kebab-wrapper {
+  position: relative;
+}
+.kebab-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 260px;
+  padding: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(3px);
+  animation: popupScale 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.kebab-menu .progress-mini,
+.kebab-menu .translation-status {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+.kebab-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.kebab-menu-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.kebab-menu-divider {
+  height: 1px;
+  background: var(--border-strong);
+  opacity: 0.5;
+  margin: 4px 2px;
+}
+.kebab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.kebab-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.kebab-menu-item.active {
+  background: rgba(126, 196, 232, 0.15);
+  color: var(--accent-mid);
+}
+.kebab-menu-item svg {
+  flex-shrink: 0;
 }
 
 /* ── 좌측 목차 사이드바 ── */

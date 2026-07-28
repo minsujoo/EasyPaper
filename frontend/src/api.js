@@ -4,8 +4,8 @@ export async function uploadPDF(file, options, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
 
-  const { targetLang, style, ignoreMath, ignoreTable, ignoreRefs } = options
-  const query = `?target_lang=${encodeURIComponent(targetLang)}&style=${style}&ignore_math=${ignoreMath}&ignore_table=${ignoreTable}&ignore_refs=${ignoreRefs}`
+  const { targetLang, style, ignoreMath, ignoreTable, ignoreRefs, translationMode } = options
+  const query = `?target_lang=${encodeURIComponent(targetLang)}&style=${style}&ignore_math=${ignoreMath}&ignore_table=${ignoreTable}&ignore_refs=${ignoreRefs}&translation_mode=${encodeURIComponent(translationMode || 'auto')}`
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -62,15 +62,18 @@ export async function getTranslationStatus(sessionId) {
  * SSE 스트리밍으로 페이지 번역을 수신합니다.
  * @param {string} sessionId
  * @param {number} pageNum
+ * @param {object} options - {targetLang, style, ignoreMath, ignoreTable, ignoreRefs}
  * @param {function} onToken - 토큰이 수신될 때마다 호출
- * @param {function} onDone - 완료 시 호출
+ * @param {function} onDone - 완료 시 호출 (cached, sentences)
  * @param {function} onError - 오류 시 호출
  * @returns {function} abort - 번역 중단 함수
  */
-export function streamTranslation(sessionId, pageNum, onToken, onDone, onError) {
+export function streamTranslation(sessionId, pageNum, options, onToken, onDone, onError) {
   const controller = new AbortController()
+  const { targetLang, style, ignoreMath, ignoreTable, ignoreRefs } = options
+  const query = `?target_lang=${encodeURIComponent(targetLang)}&style=${style}&ignore_math=${ignoreMath}&ignore_table=${ignoreTable}&ignore_refs=${ignoreRefs}`
 
-  fetch(`${API_BASE}/translate/${sessionId}/${pageNum}`, {
+  fetch(`${API_BASE}/translate/${sessionId}/${pageNum}${query}`, {
     signal: controller.signal,
   })
     .then(async (res) => {
@@ -107,7 +110,7 @@ export function streamTranslation(sessionId, pageNum, onToken, onDone, onError) 
               onToken(data.content, data.cached || false)
             }
             if (data.done) {
-              onDone(data.cached || false)
+              onDone(data.cached || false, data.sentences || [])
               return
             }
           } catch (e) {
@@ -526,6 +529,24 @@ export function streamChatAPI(sessionId, messages, onToken, onDone, onError) {
     })
 
   return () => controller.abort()
+}
+
+
+/**
+ * 직전 어시스턴트 답변과 논문 본문을 참고해 후속 질문 3개를 추천받습니다.
+ * @param {string} sessionId
+ * @param {Array} messages - [{role: 'user'|'assistant', content: '...'}, ...]
+ * @returns {Promise<string[]>} 추천 질문 목록 (최대 3개)
+ */
+export async function getSuggestedQuestionsAPI(sessionId, messages) {
+  const res = await fetch(`${API_BASE}/chat/suggestions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, messages })
+  })
+  if (!res.ok) throw new Error('추천 질문 생성 실패')
+  const data = await res.json()
+  return data.questions || []
 }
 
 
