@@ -1626,8 +1626,53 @@ body.light-theme .toast.error { color: #dc2626; }
   padding: 30px 30px 10px;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 22px;
 }
+
+/* 섹션이 늘어나(계보/파인만 설명/실험 흐름/용어집/관련 논문) 세로 나열로는
+   모달이 너무 길어져 탭 구조로 나눈다. 데이터가 없는 탭은 버튼 자체를
+   숨긴다(main.js togglePrimerTabButton). */
+.primer-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.primer-tab-btn {
+  flex-shrink: 0;
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  position: relative;
+  transition: color 0.15s ease;
+}
+.primer-tab-btn:hover { color: var(--text-primary); }
+.primer-tab-btn.active { color: var(--accent-mid); }
+.primer-tab-btn.active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+}
+
+.primer-tab-panels { display: flex; flex-direction: column; }
+.primer-tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 22px;
+}
+.primer-tab-panel.active { display: flex; }
 
 /* 헤더: 아이콘 배지 + "읽기 전 브리핑" 킥커 + 논문 제목 */
 .primer-header {
@@ -1778,6 +1823,101 @@ body.light-theme .toast.error { color: #dc2626; }
   border-left: 1.5px solid var(--accent-mid);
   border-bottom: 1.5px solid var(--accent-mid);
   transform: rotate(-45deg);
+}
+
+/* 계보 / 파인만 설명: 서사형 문단이라 인용구 대신 일반 본문 스타일로 보여준다 */
+.primer-lineage-text,
+.primer-feynman-text {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+/* 실험 흐름: 가설 → 방법 → 결과를 세로 스텝퍼로 표시 */
+.primer-experiment-flow {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.primer-experiment-step {
+  display: flex;
+  gap: 12px;
+}
+.primer-experiment-step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--control-accent-soft);
+  color: var(--control-accent-text, var(--accent-mid));
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.primer-experiment-step-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.primer-experiment-step:last-child .primer-experiment-step-body {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.primer-experiment-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.primer-experiment-tag {
+  flex-shrink: 0;
+  width: 34px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-to, var(--accent-mid));
+}
+
+/* 용어집: 논문 고유 용어를 접었다 펼치는 카드 형태 */
+.primer-glossary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.primer-glossary-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.primer-glossary-term {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  list-style: none;
+}
+.primer-glossary-term::-webkit-details-marker { display: none; }
+.primer-glossary-term::before {
+  content: "+";
+  display: inline-block;
+  width: 14px;
+  color: var(--accent-mid);
+  font-weight: 700;
+}
+.primer-glossary-item[open] .primer-glossary-term::before { content: "−"; }
+.primer-glossary-def {
+  margin-top: 6px;
+  padding-left: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
 }
 
 .primer-figure-img {

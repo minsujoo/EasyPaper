@@ -868,18 +868,38 @@ async def stream_page_insight(
 
 
 _PRIMER_LINE_RE = re.compile(
-    r'^[\s\-\*>]*\**\s*(HOOK|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|REC1|REC2|REC3|REC4|REC5)\**\s*[:.\)]\s*(.+)$',
+    r'^[\s\-\*>]*\**\s*(HOOK|LINEAGE|FEYNMAN|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|'
+    r'HYPOTHESIS1|HYPOTHESIS2|HYPOTHESIS3|METHOD1|METHOD2|METHOD3|'
+    r'RESULT1|RESULT2|RESULT3|GLOSSARY1|GLOSSARY2|GLOSSARY3|GLOSSARY4|GLOSSARY5|'
+    r'REC1|REC2|REC3|REC4|REC5)\**\s*[:.\)]\s*(.+)$',
     re.IGNORECASE,
 )
 
 
-async def generate_reading_primer(title: str, text: str, target_lang: str = "한국어", session_id: str = None) -> dict:
+async def generate_reading_primer(
+    title: str,
+    sections: dict,
+    candidate_terms: list,
+    target_lang: str = "한국어",
+    session_id: str = None,
+) -> dict:
     """
-    논문 제목과 도입부(초록 등) 원문으로 "읽기 전 브리핑" 콘텐츠(훅 문장, 예측 질문 3개,
-    읽으면서 확인할 체크리스트 3개, 관련 논문 추천 최대 5개)를 생성합니다. 채팅(Chat)
-    프로바이더/모델 설정을 재사용하며, stream_page_insight와 마찬가지로 세션이 지속되는
-    CLI provider는 번역/채팅/인사이트와 동일한 문서당 공유 세션(session_id)을 그대로
-    사용합니다.
+    논문 제목과 섹션별 발췌(services.section_parser.detect_sections 결과)로 "읽기 전
+    브리핑" 콘텐츠를 생성합니다: 훅 문장, 연구 계보(LINEAGE), 파인만 기법 설명(FEYNMAN),
+    예측 질문 3개, 체크리스트 3개, 가설/실험/결과 흐름 최대 3세트, 논문 고유 용어집 최대
+    5개, 관련 논문 추천 최대 5개. 채팅(Chat) 프로바이더/모델 설정을 재사용하며,
+    stream_page_insight와 마찬가지로 세션이 지속되는 CLI provider는 번역/채팅/인사이트와
+    동일한 문서당 공유 세션(session_id)을 그대로 사용합니다.
+
+    이전에는 인트로 2페이지(3000자)만 봤지만, 계보(기존 한계→해결)와 실험 흐름을 뽑아
+    내려면 서론만으로는 근거가 부족하다. section_parser가 논문 전체를 스캔해 서론/관련
+    연구, 방법론/실험 결과, 결론 세 버킷으로 미리 압축해 넘겨주므로, 여기서는 원문
+    전체를 그대로 프롬프트에 넣지 않고도 전체 문서 맥락을 반영할 수 있다.
+
+    용어집(GLOSSARY)은 term_extractor가 정규식으로 뽑은 "논문 고유 용어 후보"를 참고
+    자료로 제공하고, 이 논문이 실제로 새로 정의한 용어인지 최종 판단은 LLM에 맡긴다 -
+    후보 추출은 재현율을 우선하므로 흔한 배경지식 용어(CNN 등)가 섞여 들어올 수 있어,
+    프롬프트에서 배경지식 용어는 제외하라고 명시한다.
 
     관련 논문은 이 논문의 참고문헌 목록을 텍스트로 기계적으로 매칭하지 않고, LLM이 자기
     지식으로 직접 추천하게 한다 - 참고문헌 목록 매칭 방식은 인용 형식이 지저분하거나
@@ -889,24 +909,58 @@ async def generate_reading_primer(title: str, text: str, target_lang: str = "한
     다시 검증한 뒤에만 채택한다.
     """
     instruction = (
-        f"다음은 학술 논문 '{title}'의 도입부(초록 등) 원문입니다. 이 논문을 읽기 전 독자가 "
-        f"호기심을 갖고 몰입할 수 있도록 아래 형식에 맞춰 {target_lang}로 작성해주세요.\n\n"
+        f"다음은 학술 논문 '{title}'에서 발췌한 원문입니다. 이 논문을 읽기 전 독자가 "
+        f"호기심을 갖고 몰입하며 스스로 학습하고 인사이트를 얻을 수 있도록 아래 형식에 "
+        f"맞춰 {target_lang}로 작성해주세요.\n\n"
         f"- HOOK: 이 논문이 다루는 문제를 흥미로운 질문 형태로 재구성한 한두 문장. 초록을 "
         f"그대로 요약하지 말고 \"왜 이 문제가 어려운가/왜 흥미로운가\"를 짚어 궁금증을 유발하세요.\n"
+        f"- LINEAGE: 기존 접근법이 어떤 한계를 가지고 있었고, 이 논문이 그 한계를 어떻게 "
+        f"해결해서 어떤 성능/결과 개선을 이뤘는지를 \"기존에는 ~해서 ~한계가 있었는데, 이 "
+        f"논문은 ~함으로써 ~했다\" 형태의 발전 계보로 2~3문장에 담으세요. 줄바꿈 없이 한 "
+        f"줄로 쓰세요.\n"
+        f"- FEYNMAN: 전문용어를 최대한 배제하고 일상적인 비유를 사용해 이 논문의 핵심 "
+        f"아이디어를 비전문가에게 설명하듯 2~4문장으로 쉽게 풀어 쓰세요(파인만 기법). "
+        f"줄바꿈 없이 한 줄로 쓰세요.\n"
         f"- Q1/Q2/Q3: 독자가 본문을 읽기 전 스스로 답을 예측해볼 만한 질문 3개. 각각 한 문장.\n"
         f"- CHECK1/CHECK2/CHECK3: 본문을 읽는 동안 확인하면 좋을 구체적인 포인트(예: 비교 대상, "
         f"핵심 수치, 한계점 등) 3개. 각각 한 문장.\n"
+        f"- HYPOTHESIS1~3/METHOD1~3/RESULT1~3: 저자가 세운 가설, 그것을 검증하기 위해 "
+        f"설계한 실험/방법, 실제로 나온 결과를 최대 3개 세트로 정리하세요. 한 세트는 "
+        f"HYPOTHESIS/METHOD/RESULT를 모두 채워야 하고, 각각 한 문장입니다. 근거가 2세트뿐 "
+        f"이면 2세트만 쓰고 3번째 세트는 통째로 생략하세요.\n"
+        f"- GLOSSARY1~5: 아래 '용어 후보' 목록을 참고해, 이 논문이 새로 만들었거나 이 "
+        f"논문의 맥락에서만 특별한 의미로 쓰이는 용어만 골라 쉬운 말로 정의하세요. "
+        f"Convolutional Neural Network, GPU처럼 이미 널리 알려진 일반 배경지식 용어는 "
+        f"절대 포함하지 마세요. 새로 만든 용어가 없다고 판단되면 GLOSSARY 항목을 하나도 "
+        f"쓰지 마세요. 형식: \"GLOSSARY1: 용어 :: 정의(한 문장)\"\n"
         f"- REC1~REC5: 이 논문을 이해하는 데 도움이 되는, 실제로 존재하는 유명하거나 핵심적인 "
         f"관련/선행 연구 논문 제목을 최대 5개까지 추천하세요. 반드시 실존하는 논문의 정확한 "
         f"원제(영어 원문 그대로, 번역하지 말 것)만 쓰고, 확신이 없거나 제목이 정확히 기억나지 "
         f"않으면 억지로 채우지 말고 그 줄은 생략하세요. 각 줄에는 논문 제목만 쓰고 저자·연도· "
         f"설명은 붙이지 마세요.\n\n"
-        f"반드시 아래 형식으로만 출력하세요(REC 항목은 확신하는 만큼만, 0~5줄). 다른 설명이나 "
-        f"서론은 절대 추가하지 마세요.\n"
-        f"HOOK: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\nCHECK1: <내용>\nCHECK2: <내용>\n"
-        f"CHECK3: <내용>\nREC1: <논문 원제>\nREC2: <논문 원제>\n..."
+        f"반드시 아래 형식으로만 출력하세요(HYPOTHESIS/METHOD/RESULT, GLOSSARY, REC 항목은 "
+        f"확신하는 만큼만 채우고 나머지는 통째로 생략). 다른 설명이나 서론은 절대 추가하지 "
+        f"마세요.\n"
+        f"HOOK: <내용>\nLINEAGE: <내용>\nFEYNMAN: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\n"
+        f"CHECK1: <내용>\nCHECK2: <내용>\nCHECK3: <내용>\nHYPOTHESIS1: <내용>\nMETHOD1: <내용>\n"
+        f"RESULT1: <내용>\n...\nGLOSSARY1: <용어> :: <정의>\n...\nREC1: <논문 원제>\n..."
     )
-    prompt = f"{instruction}\n\n원문:\n{text[:3000]}"
+
+    context_parts = []
+    if sections.get("intro_related"):
+        context_parts.append(f"[서론/관련 연구 발췌]\n{sections['intro_related']}")
+    if sections.get("method_results"):
+        context_parts.append(f"[방법론/실험 결과 발췌]\n{sections['method_results']}")
+    if sections.get("conclusion"):
+        context_parts.append(f"[결론 발췌]\n{sections['conclusion']}")
+    context_text = "\n\n".join(context_parts)
+
+    terms_text = ""
+    if candidate_terms:
+        term_lines = [f"- {t['term']}: \"...{t['context_sentence']}...\"" for t in candidate_terms]
+        terms_text = "\n\n[용어 후보]\n" + "\n".join(term_lines)
+
+    prompt = f"{instruction}\n\n원문 발췌:\n{context_text}{terms_text}"
 
     provider = get_chat_provider()
     model = get_chat_model()
@@ -939,7 +993,7 @@ async def generate_reading_primer(title: str, text: str, target_lang: str = "한
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.5},
+                "options": {"temperature": 0.5, "num_ctx": 16384},
             }
             # 스트리밍 없이 응답을 한 번에 기다리는 호출이라, 로컬 CPU 추론처럼 느린
             # 환경에서도 끊기지 않도록 다른 ollama 스트리밍 호출들과 동일하게 360초를 준다
@@ -953,7 +1007,17 @@ async def generate_reading_primer(title: str, text: str, target_lang: str = "한
         return "".join(tokens)
 
     def _parse(raw: str) -> dict:
-        result = {"hook": "", "questions": [], "checklist": [], "recommended_titles": []}
+        result = {
+            "hook": "",
+            "lineage": "",
+            "feynman": "",
+            "questions": [],
+            "checklist": [],
+            "experiment_flow": [],
+            "glossary": [],
+            "recommended_titles": [],
+        }
+        hypotheses, methods, results = {}, {}, {}
         for line in raw.splitlines():
             m = _PRIMER_LINE_RE.match(line.strip())
             if not m:
@@ -961,12 +1025,36 @@ async def generate_reading_primer(title: str, text: str, target_lang: str = "한
             key, value = m.group(1).upper(), m.group(2).strip().rstrip('*').strip()
             if key == "HOOK":
                 result["hook"] = value
+            elif key == "LINEAGE":
+                result["lineage"] = value
+            elif key == "FEYNMAN":
+                result["feynman"] = value
             elif key in ("Q1", "Q2", "Q3"):
                 result["questions"].append(value)
             elif key.startswith("CHECK"):
                 result["checklist"].append(value)
+            elif key.startswith("HYPOTHESIS"):
+                hypotheses[key[-1]] = value
+            elif key.startswith("METHOD"):
+                methods[key[-1]] = value
+            elif key.startswith("RESULT"):
+                results[key[-1]] = value
+            elif key.startswith("GLOSSARY"):
+                if "::" in value:
+                    term, _, definition = value.partition("::")
+                    term, definition = term.strip(), definition.strip()
+                    if term and definition:
+                        result["glossary"].append({"term": term, "definition": definition})
             elif key.startswith("REC"):
                 result["recommended_titles"].append(value)
+
+        for idx in ("1", "2", "3"):
+            if idx in hypotheses and idx in methods and idx in results:
+                result["experiment_flow"].append({
+                    "hypothesis": hypotheses[idx],
+                    "method": methods[idx],
+                    "result": results[idx],
+                })
         return result
 
     # CLI 기반 provider(특히 claude_code)가 드물게 지시를 완전히 무시하고 입력

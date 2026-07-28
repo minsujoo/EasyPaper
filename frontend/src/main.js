@@ -290,6 +290,15 @@ const primerFigureSection  = $('primer-figure-section')
 const primerFigureImg      = $('primer-figure-img')
 const primerChecklistSection = $('primer-checklist-section')
 const primerChecklist      = $('primer-checklist')
+const primerTabsBar        = $('primer-tabs')
+const primerLineageSection = $('primer-lineage-section')
+const primerLineageText    = $('primer-lineage-text')
+const primerFeynmanSection = $('primer-feynman-section')
+const primerFeynmanText    = $('primer-feynman-text')
+const primerExperimentSection = $('primer-experiment-section')
+const primerExperimentFlow = $('primer-experiment-flow')
+const primerGlossarySection = $('primer-glossary-section')
+const primerGlossary       = $('primer-glossary')
 const primerGraphSection   = $('primer-graph-section')
 const primerGraph          = $('primer-graph')
 const primerSkipBtn        = $('primer-skip-btn')
@@ -4879,6 +4888,92 @@ function hidePrimerModal(result) {
   }
 }
 
+// 섹션이 계보/파인만 설명/실험 흐름/용어집/관련 논문까지 늘어나 세로로 나열하면
+// 모달이 너무 길어지므로 탭 구조로 나눈다. 개요 탭은 항상 노출하고, 나머지
+// 탭은 해당 데이터가 없으면(예: 논문이 새 용어를 안 만든 경우 용어집) 탭
+// 버튼 자체를 숨겨 탭바가 지저분해지지 않게 한다.
+function switchPrimerTab(tabName) {
+  document.querySelectorAll('.primer-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName)
+  })
+  document.querySelectorAll('.primer-tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.panel === tabName)
+  })
+}
+
+function togglePrimerTabButton(tabName, visible) {
+  const btn = primerTabsBar && primerTabsBar.querySelector(`.primer-tab-btn[data-tab="${tabName}"]`)
+  if (btn) btn.classList.toggle('hidden', !visible)
+}
+
+if (primerTabsBar) {
+  primerTabsBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.primer-tab-btn')
+    if (!btn || btn.classList.contains('hidden')) return
+    switchPrimerTab(btn.dataset.tab)
+  })
+}
+
+function renderPrimerLineage(data) {
+  if (data.lineage) {
+    primerLineageText.textContent = data.lineage
+    primerLineageSection.classList.remove('hidden')
+  } else {
+    primerLineageSection.classList.add('hidden')
+  }
+  togglePrimerTabButton('lineage', !!data.lineage)
+}
+
+function renderPrimerFeynman(data) {
+  if (data.feynman) {
+    primerFeynmanText.textContent = data.feynman
+    primerFeynmanSection.classList.remove('hidden')
+  } else {
+    primerFeynmanSection.classList.add('hidden')
+  }
+  togglePrimerTabButton('feynman', !!data.feynman)
+}
+
+function renderPrimerExperimentFlow(data) {
+  const flow = data.experiment_flow || []
+  if (flow.length === 0) {
+    primerExperimentSection.classList.add('hidden')
+    primerExperimentFlow.innerHTML = ''
+    togglePrimerTabButton('experiment', false)
+    return
+  }
+  primerExperimentFlow.innerHTML = flow.map((step, i) => `
+    <li class="primer-experiment-step">
+      <div class="primer-experiment-step-num">${i + 1}</div>
+      <div class="primer-experiment-step-body">
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">가설</span><span>${escapeHtml(step.hypothesis)}</span></div>
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">방법</span><span>${escapeHtml(step.method)}</span></div>
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">결과</span><span>${escapeHtml(step.result)}</span></div>
+      </div>
+    </li>
+  `).join('')
+  primerExperimentSection.classList.remove('hidden')
+  togglePrimerTabButton('experiment', true)
+}
+
+function renderPrimerGlossary(data) {
+  const glossary = data.glossary || []
+  if (glossary.length === 0) {
+    primerGlossarySection.classList.add('hidden')
+    primerGlossary.innerHTML = ''
+    togglePrimerTabButton('glossary', false)
+    return
+  }
+  primerGlossary.innerHTML = glossary.map(g => `
+    <details class="primer-glossary-item">
+      <summary class="primer-glossary-term">${escapeHtml(g.term)}</summary>
+      <p class="primer-glossary-def">${escapeHtml(g.definition)}</p>
+    </details>
+  `).join('')
+  primerGlossarySection.classList.remove('hidden')
+  togglePrimerTabButton('glossary', true)
+}
+
 function renderPrimerCitationGraph(container, citationGraph, mode) {
   const section = primerGraphSection
   const libraryMatches = (citationGraph && citationGraph.library) || []
@@ -4890,9 +4985,11 @@ function renderPrimerCitationGraph(container, citationGraph, mode) {
   if (nodes.length === 0) {
     section.classList.add('hidden')
     container.innerHTML = ''
+    togglePrimerTabButton('graph', false)
     return
   }
   section.classList.remove('hidden')
+  togglePrimerTabButton('graph', true)
 
   const width = 460, height = 280, cx = width / 2, cy = height / 2
   const nodeR = 40, centerR = 32
@@ -4969,7 +5066,13 @@ function renderPrimerContent(doc, data, mode) {
     primerFigureSection.classList.add('hidden')
   }
 
+  renderPrimerLineage(data)
+  renderPrimerFeynman(data)
+  renderPrimerExperimentFlow(data)
+  renderPrimerGlossary(data)
   renderPrimerCitationGraph(primerGraph, data.citation_graph, mode)
+
+  switchPrimerTab('overview')
 }
 
 async function showPrimerModal(doc, { mode = 'gate' } = {}) {
