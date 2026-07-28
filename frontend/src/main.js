@@ -6493,18 +6493,15 @@ function renderPageMemos(pageNum) {
       dot.addEventListener('click', (e) => {
         e.stopPropagation()
         const selectedColor = dot.getAttribute('data-color')
-        
-        colorDots.forEach(d => d.classList.remove('selected'))
-        dot.classList.add('selected')
-        
-        memoEl.className = `floating-memo color-${selectedColor}${memo.collapsed ? ' collapsed' : ''}`
 
         memo.color = selectedColor
         const allMemosObj = loadMemos(state.sessionId)
         allMemosObj[`page_${pageNum}`] = pageMemos
         saveMemos(state.sessionId, allMemosObj)
-        
-        updateMemoConnectorLine(pageWrapper, memo)
+
+        // 카드뿐 아니라 원문 하이라이트(색상 클래스)도 함께 갱신되어야 하므로
+        // 전체 재렌더링을 통해 두 경로(카드 UI + VTM/폴백 하이라이트)를 동기화한다
+        renderPageMemos(pageNum)
       })
     })
 

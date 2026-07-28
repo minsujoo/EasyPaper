@@ -4487,7 +4487,12 @@ body.light-theme .custom-confirm-modal {
   margin-right: 4px;
 }
 
-/* 접기 상태: 헤더(제목 탭)만 남기고 본문은 숨긴다 */
+/* 접기 상태: 헤더(제목 탭)만 남기고 본문은 숨긴다.
+   min-height를 함께 풀어주지 않으면 body가 사라져도 카드 높이가
+   그대로 유지되어 헤더 아래에 빈 공간만 남는다. */
+.floating-memo.collapsed {
+  min-height: 0;
+}
 .floating-memo.collapsed .floating-memo-body {
   display: none;
 }
