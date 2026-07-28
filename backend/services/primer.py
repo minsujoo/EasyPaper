@@ -1,12 +1,25 @@
 """
 "읽기 전 브리핑(Reading Primer)" 생성 오케스트레이션.
 
-업로드 직후 백그라운드로 실행되어 아래 네 가지를 조합한 결과를 page_insights
-테이블(doc_id, page_num=0, kind="primer")에 캐싱한다:
-  1. 훅 문장 / 예측 질문 3개 / 체크리스트 3개 (LLM, llm_client.generate_reading_primer)
+업로드 직후 백그라운드로 실행되어 아래를 조합한 결과를 page_insights 테이블
+(doc_id, page_num=0, kind="primer_v2")에 캐싱한다:
+  1. 훅 문장 / 연구 계보(LINEAGE) / 파인만 설명(FEYNMAN) / 예측 질문 3개 /
+     체크리스트 3개 / 가설-실험-결과 흐름 최대 3세트 / 논문 고유 용어집 최대 5개
+     (LLM, llm_client.generate_reading_primer)
   2. 대표 Figure 크롭 이미지 (pdf_parser.extract_pdf_images + render_image_crop)
   3. 내 라이브러리 안에서 이 논문의 참고문헌과 겹치는 논문 매칭 (외부 API 없이 텍스트 매칭)
   4. LLM이 직접 추천한 관련 논문(최대 5개)을 OpenAlex로 실존 여부 검증 후 채택
+
+1번은 예전에는 인트로 2페이지(3000자)만 LLM에 넘겼으나, 계보/실험 흐름 서사를
+뽑아내려면 서론만으로는 근거가 부족하다. section_parser.detect_sections로 논문
+전체를 스캔해 서론/관련 연구·방법론/실험 결과·결론 세 버킷으로 압축하고,
+term_extractor.extract_candidate_terms로 논문 고유 용어 후보를 정규식으로 뽑아
+LLM 합성 프롬프트에 근거로 제공한다(원문 전체를 그대로 프롬프트에 욱여넣지 않음 -
+Ollama 컨텍스트/타임아웃 제약 때문).
+
+캐시 kind를 기존 "primer"에서 "primer_v2"로 바꾼 것은 프롬프트/응답 스키마가
+바뀌어 기존 캐시에 새 필드가 없기 때문이다 - 기존 로우는 별도 마이그레이션 없이
+그냥 고아로 남는다.
 
 4번은 원래 이 논문의 참고문헌 목록을 그대로 외부 검색해 매칭하는 방식이었으나,
 인용 형식이 지저분하거나 따옴표로 감싼 제목이 없는 스타일이면 매칭 개수가 너무
@@ -27,8 +40,11 @@ from services.library import (
     list_documents,
 )
 from services.reference_parser import extract_reference_list
+from services.section_parser import detect_sections
+from services.term_extractor import extract_candidate_terms
 from services.llm_client import generate_reading_primer
 
+_PRIMER_CACHE_KIND = "primer_v2"
 _RECOMMENDATION_LIMIT = 5
 _LIBRARY_MATCH_THRESHOLD = 0.7
 _DUPLICATE_TITLE_THRESHOLD = 0.6
@@ -149,13 +165,20 @@ async def generate_primer(
     막아서는 안 되는 백그라운드 부가 기능이기 때문이다.
     """
     title = metadata.get("title") or ""
-    combined_text = "\n".join(p.get("text", "") for p in pages[:2])
+    sections = detect_sections(pages)
+    candidate_terms = extract_candidate_terms(pages)
 
     try:
-        llm_part = await generate_reading_primer(title, combined_text, target_lang=target_lang, session_id=session_id)
+        llm_part = await generate_reading_primer(
+            title, sections, candidate_terms, target_lang=target_lang, session_id=session_id
+        )
     except Exception as e:
         print(f"[primer] LLM 생성 실패 ({doc_id}): {e}")
-        llm_part = {"hook": "", "questions": [], "checklist": [], "recommended_titles": []}
+        llm_part = {
+            "hook": "", "lineage": "", "feynman": "",
+            "questions": [], "checklist": [],
+            "experiment_flow": [], "glossary": [], "recommended_titles": [],
+        }
 
     try:
         reference_map = extract_reference_list(pages)
@@ -189,8 +212,12 @@ async def generate_primer(
 
     result = {
         "hook": llm_part.get("hook", ""),
+        "lineage": llm_part.get("lineage", ""),
+        "feynman": llm_part.get("feynman", ""),
         "questions": llm_part.get("questions", []),
         "checklist": llm_part.get("checklist", []),
+        "experiment_flow": llm_part.get("experiment_flow", []),
+        "glossary": llm_part.get("glossary", []),
         "figure": figure,
         "citation_graph": {
             "library": library_matches,
@@ -199,7 +226,7 @@ async def generate_primer(
     }
 
     try:
-        save_page_insight(doc_id, 0, "primer", json.dumps(result, ensure_ascii=False), suffix=target_lang)
+        save_page_insight(doc_id, 0, _PRIMER_CACHE_KIND, json.dumps(result, ensure_ascii=False), suffix=target_lang)
     except Exception as e:
         print(f"[primer] 캐시 저장 실패 ({doc_id}): {e}")
 
@@ -207,7 +234,7 @@ async def generate_primer(
 
 
 def get_cached_primer(doc_id: str, target_lang: str = "한국어") -> Optional[dict]:
-    content = get_page_insight(doc_id, 0, "primer", suffix=target_lang)
+    content = get_page_insight(doc_id, 0, _PRIMER_CACHE_KIND, suffix=target_lang)
     if not content:
         return None
     try:
