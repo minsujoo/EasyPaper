@@ -263,8 +263,6 @@ const backBtn           = $('back-btn')
 const logoBtn           = $('logo-btn')
 const viewerReadToggleBtn = $('viewer-read-toggle-btn')
 const viewerScrollContainer = $('viewer-scroll-container')
-const translateSpinner      = $('translate-spinner')
-const translateStatusText   = $('translate-status-text')
 const progressMini          = $('translation-progress-mini')
 const progressMiniBar       = $('progress-mini-bar')
 const progressMiniText      = $('progress-mini-text')
@@ -1161,14 +1159,9 @@ function startJobPolling(sessionId) {
       updateProgressMiniRaw(done, total, isRunning)
 
       if (job.status === 'running') {
-        translateSpinner.classList.remove('hidden')
-        translateStatusText.textContent = `백그라운드 번역 중 (${done}/${total}p)`
         cancelTransBtn.classList.remove('hidden')
         resumeTransBtn.classList.add('hidden')
       } else {
-        translateSpinner.classList.add('hidden')
-        translateStatusText.textContent =
-          job.status === 'completed' ? `번역 완료 ✓ (${done}/${total}p)` : `상태: ${job.status}`
         cancelTransBtn.classList.add('hidden')
         if (job.status !== 'completed') {
           resumeTransBtn.classList.remove('hidden')
@@ -1548,8 +1541,6 @@ cancelTransBtn.addEventListener('click', async () => {
         clearInterval(state.pollingTimer)
         state.pollingTimer = null
       }
-      translateSpinner.classList.add('hidden')
-      translateStatusText.textContent = '번역 중지됨'
       cancelTransBtn.classList.add('hidden')
       
       for (let i = 1; i <= state.totalPages; i++) {
