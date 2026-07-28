@@ -2478,12 +2478,15 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
   settingDefaultZoom.value = localStorage.getItem('easypaper_default_zoom') || '1.5'
   settingToolbarPosition.value = getToolbarPosition()
-  settingDisableHoverTooltip.checked = state.disableHoverTooltip
-  settingDisableBookmark.checked = state.disableBookmark
-  settingDisableInsights.checked = state.disableInsights
-  settingDisableCitationOverlay.checked = state.disableCitationOverlay
-  settingDisableFigureOverlay.checked = state.disableFigureOverlay
-  settingDisablePrimer.checked = state.disablePrimer
+  // 토글 스위치는 "기능이 켜져 있는지"를 직관적으로 보여줘야 하므로, 저장된
+  // disable* 플래그(true = 꺼짐)를 반전해서 보여준다 - 이 스위치들이 켜져
+  // 있으면 해당 기능이 켜진 것으로 보이도록.
+  settingDisableHoverTooltip.checked = !state.disableHoverTooltip
+  settingDisableBookmark.checked = !state.disableBookmark
+  settingDisableInsights.checked = !state.disableInsights
+  settingDisableCitationOverlay.checked = !state.disableCitationOverlay
+  settingDisableFigureOverlay.checked = !state.disableFigureOverlay
+  settingDisablePrimer.checked = !state.disablePrimer
   settingToolbarAutoHide.checked = state.toolbarAutoHide
   updateAccentSettingsUI(currentAccentColor)
 
@@ -2710,17 +2713,17 @@ generalSettingsForm.addEventListener('submit', async (e) => {
 // 뷰어 편의 설정: 번역 관련 설정이 아니므로 폼 제출(및 재번역 제안)과 무관하게
 // 체크 즉시 저장하고 바로 적용한다.
 settingDisableHoverTooltip.addEventListener('change', () => {
-  state.disableHoverTooltip = settingDisableHoverTooltip.checked
+  state.disableHoverTooltip = !settingDisableHoverTooltip.checked
   localStorage.setItem('easypaper_disable_hover_tooltip', state.disableHoverTooltip)
 })
 
 settingDisableBookmark.addEventListener('change', () => {
-  state.disableBookmark = settingDisableBookmark.checked
+  state.disableBookmark = !settingDisableBookmark.checked
   localStorage.setItem('easypaper_disable_bookmark', state.disableBookmark)
 })
 
 settingDisableInsights.addEventListener('change', () => {
-  state.disableInsights = settingDisableInsights.checked
+  state.disableInsights = !settingDisableInsights.checked
   localStorage.setItem('easypaper_disable_insights', state.disableInsights)
   applyInsightsTabVisibility()
 })
@@ -2739,19 +2742,19 @@ function refreshAllPageOverlays() {
 }
 
 settingDisableCitationOverlay.addEventListener('change', () => {
-  state.disableCitationOverlay = settingDisableCitationOverlay.checked
+  state.disableCitationOverlay = !settingDisableCitationOverlay.checked
   localStorage.setItem('easypaper_disable_citation_overlay', state.disableCitationOverlay)
   refreshAllPageOverlays()
 })
 
 settingDisableFigureOverlay.addEventListener('change', () => {
-  state.disableFigureOverlay = settingDisableFigureOverlay.checked
+  state.disableFigureOverlay = !settingDisableFigureOverlay.checked
   localStorage.setItem('easypaper_disable_figure_overlay', state.disableFigureOverlay)
   refreshAllPageOverlays()
 })
 
 settingDisablePrimer.addEventListener('change', () => {
-  state.disablePrimer = settingDisablePrimer.checked
+  state.disablePrimer = !settingDisablePrimer.checked
   localStorage.setItem('easypaper_disable_primer', state.disablePrimer)
 })
 

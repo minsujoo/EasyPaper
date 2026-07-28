@@ -634,16 +634,22 @@
           </div>
 
           <div class="form-group">
-            <label>번역 제외 문서 요소</label>
-            <div class="checkbox-group">
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-ignore-math" /> 수식 (LaTeX 수식 생략)
+            <label>번역에서 제외할 요소</label>
+            <div class="toggle-switch-group">
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-ignore-math" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">수식(LaTeX) 제외</span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-ignore-table" checked /> 표 (Table 데이터 생략)
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-ignore-table" checked />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">표(Table) 제외</span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-ignore-refs" /> 참고문헌 (References 생략)
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-ignore-refs" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">참고문헌 제외</span>
               </label>
             </div>
           </div>
@@ -682,24 +688,36 @@
 
           <div class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
             <label>뷰어 편의 설정</label>
-            <div class="checkbox-group">
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-hover-tooltip" /> PDF 원문에 마우스를 올려도 자동으로 문장이 선택되지 않도록 하기 (드래그로 직접 선택할 때만 툴팁 표시)
+            <div class="toggle-switch-group">
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-hover-tooltip" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">마우스를 올리면 자동으로 문장 선택<small>끄면 드래그로 직접 선택할 때만 툴팁이 뜸</small></span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-bookmark" /> 마지막으로 읽던 위치 자동 저장/이동 끄기 (항상 1페이지부터 시작)
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-bookmark" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">마지막으로 읽던 위치 자동 이동<small>끄면 항상 1페이지부터 시작</small></span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-insights" /> 번역 패널의 "키워드·단어" / "요약" 탭 끄기 (토큰 절약, 탭을 열 때만 생성됨)
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-insights" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">번역 패널의 키워드·요약 탭<small>탭을 열 때만 생성되지만 토큰을 추가로 사용함</small></span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-citation-overlay" /> 본문 인용([1], (Smith, 2020) 등) 표기 호버 미리보기 끄기
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-citation-overlay" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">본문 인용 표기 호버 미리보기<small>예: [1], (Smith, 2020)</small></span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-figure-overlay" /> Figure/Table/수식 참조 표기 호버 미리보기 끄기
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-figure-overlay" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">Figure/Table/수식 참조 호버 미리보기</span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="setting-disable-primer" /> 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 팝업 끄기 (툴바 버튼으로는 계속 다시 볼 수 있음)
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-disable-primer" />
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-label">논문을 열 때 "읽기 전 브리핑" 팝업<small>꺼도 툴바 버튼으로 언제든 다시 볼 수 있음</small></span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" id="setting-toolbar-autohide" /> 아래로 스크롤하면 상단 툴바 자동으로 숨기기 (위로 스크롤하면 다시 표시)
