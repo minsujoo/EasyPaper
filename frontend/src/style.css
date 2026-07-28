@@ -325,8 +325,8 @@ html, body {
   transition: transform 0.25s ease;
 }
 /* 스크롤 방향에 따른 툴바 자동 숨김(설정에서 켠 경우) - 위로 슬라이드시켜
-   숨긴다. 컨텐츠 영역(.panels)은 fixed 툴바 높이만큼 이미 padding-top이
-   있으므로, 숨겨져도 본문이 다시 배치되지 않고 툴바가 있던 자리만 비어 보인다. */
+   숨긴다. 컨텐츠 영역(.panels/.outline-sidebar)의 offset은 body.toolbar-hidden
+   규칙(아래 패널 레이아웃 섹션 및 툴바 위치 섹션)이 함께 0으로 좁혀준다. */
 .topbar.toolbar-hidden {
   transform: translateY(-100%);
 }
@@ -556,6 +556,13 @@ html, body {
   height: 100vh;
   padding-top: var(--topbar-h);
   overflow: hidden;
+  transition: padding 0.25s ease;
+}
+/* 툴바가 자동 숨김으로 사라지면 그만큼 컨텐츠 영역이 확장되도록 padding을
+   0으로 좁힌다. .outline-sidebar/.chat-sidebar는 이 padding에 종속된
+   레이아웃이라 별도 처리 없이 함께 확장/축소된다. */
+body.toolbar-hidden .panels {
+  padding-top: 0;
 }
 
 .panel {
@@ -4171,6 +4178,13 @@ body.toolbar-pos-bottom .outline-sidebar {
   top: 0;
   bottom: var(--topbar-h);
 }
+/* bottom 위치에서 툴바 자동 숨김 시에는 top이 아니라 bottom 쪽 여백을 좁힌다. */
+body.toolbar-hidden.toolbar-pos-bottom .panels {
+  padding-bottom: 0;
+}
+body.toolbar-hidden.toolbar-pos-bottom .outline-sidebar {
+  bottom: 0;
+}
 
 /* 왼쪽(left) / 오른쪽(right) 공통: 세로 컬럼 툴바 */
 body.toolbar-pos-left .topbar,
@@ -4258,6 +4272,16 @@ body.toolbar-pos-left .outline-sidebar {
 }
 body.toolbar-pos-right .outline-sidebar {
   top: 0;
+}
+/* left/right 위치에서 툴바 자동 숨김 시 세로 컬럼 폭(72px)만큼 좁힌 여백을 되돌린다. */
+body.toolbar-hidden.toolbar-pos-left .panels {
+  padding-left: 0;
+}
+body.toolbar-hidden.toolbar-pos-right .panels {
+  padding-right: 0;
+}
+body.toolbar-hidden.toolbar-pos-left .outline-sidebar {
+  left: 0;
 }
 /* 케밥 메뉴는 평소 버튼 아래(top:100%)/오른쪽 정렬로 뜨는데, 세로 컬럼
    툴바(left/right)에서는 버튼 옆으로 열려야 좁은 컬럼 안에 눌려 보이거나
@@ -4366,10 +4390,14 @@ body.toolbar-pos-right .kebab-menu {
   z-index: 120 !important;
   display: flex;
   flex-direction: column;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), top 0.25s ease, bottom 0.25s ease, left 0.25s ease;
   transform: translateX(0);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+/* 툴바 자동 숨김 시 좌측 목차 패널도 그 자리까지 확장한다 (top 기본 위치). */
+body.toolbar-hidden .outline-sidebar {
+  top: 0;
 }
 .outline-sidebar.hidden {
   transform: translateX(-100%);

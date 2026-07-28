@@ -9450,6 +9450,9 @@ window.addEventListener('resize', hideSelectionMenu);
 // 상태를 방지한다.
 function setToolbarHidden(hidden) {
   if (viewerTopbar) viewerTopbar.classList.toggle('toolbar-hidden', hidden)
+  // body에도 반영해 .panels/.outline-sidebar 등이 툴바가 비운 공간만큼
+  // CSS만으로 확장/축소되도록 한다 (아래 style.css의 body.toolbar-hidden 규칙 참고).
+  document.body.classList.toggle('toolbar-hidden', hidden)
 }
 
 if (viewerScrollContainer && viewerTopbar) {
