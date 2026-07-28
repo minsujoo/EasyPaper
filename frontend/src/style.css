@@ -4043,6 +4043,79 @@ body.resizing-trans .trans-resizer-handle::after {
   align-self: center;
 }
 
+/* ── 툴바 추가 메뉴(케밥) ─────────────────────────── */
+.kebab-wrapper {
+  position: relative;
+}
+.kebab-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 260px;
+  padding: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(3px);
+  animation: popupScale 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.kebab-menu .progress-mini,
+.kebab-menu .translation-status {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+.kebab-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.kebab-menu-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.kebab-menu-divider {
+  height: 1px;
+  background: var(--border-strong);
+  opacity: 0.5;
+  margin: 4px 2px;
+}
+.kebab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.kebab-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.kebab-menu-item.active {
+  background: rgba(126, 196, 232, 0.15);
+  color: var(--accent-mid);
+}
+.kebab-menu-item svg {
+  flex-shrink: 0;
+}
+
 /* ── 좌측 목차 사이드바 ── */
 .outline-sidebar {
   position: fixed;

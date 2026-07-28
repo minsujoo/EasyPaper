@@ -268,6 +268,8 @@ const progressMini          = $('translation-progress-mini')
 const progressMiniBar       = $('progress-mini-bar')
 const progressMiniText      = $('progress-mini-text')
 const toast                 = $('toast')
+const toolbarKebabBtn       = $('toolbar-kebab-btn')
+const toolbarKebabMenu      = $('toolbar-kebab-menu')
 
 // AI Chat Sidebar DOM references
 const chatToggleBtn      = $('chat-toggle-btn')
@@ -1428,6 +1430,27 @@ exportBtn.addEventListener('click', (e) => {
   menu.style.left = `${Math.max(8, Math.min(idealLeft, maxLeft))}px`
   menu.style.top = `${rect.bottom + 8 + window.scrollY}px`
 })
+
+// ── 추가 메뉴(케밥): 번역 상태/모델, 번역 관리, 메모 숨기기, 테마 전환을 모아둔
+// 드롭다운. 번역 모델 선택기(ProviderModelPicker)나 내보내기 형식 팝업처럼
+// 메뉴 안에서 열리는 하위 팝업은 각자 자기 컨테이너에 상대 위치로 붙거나
+// (모델 피커) document.body에 별도로 붙으므로(내보내기 팝업), 둘 다 케밥
+// 메뉴 바깥 클릭으로 오인되어 메뉴가 먼저 닫혀버리는 문제 없이 자연스럽게
+// 동작한다 - 모델 피커는 케밥 메뉴의 자손이라 outside-click 판정에서
+// "안쪽"으로 처리되고, 내보내기 팝업은 형식을 실제로 골라야 바깥 클릭으로
+// 잡혀 그때 케밥 메뉴도 함께 닫힌다.
+if (toolbarKebabBtn && toolbarKebabMenu) {
+  toolbarKebabBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    toolbarKebabMenu.classList.toggle('hidden')
+  })
+
+  document.addEventListener('click', (e) => {
+    if (toolbarKebabMenu.classList.contains('hidden')) return
+    if (toolbarKebabMenu.contains(e.target) || toolbarKebabBtn.contains(e.target)) return
+    toolbarKebabMenu.classList.add('hidden')
+  })
+}
 
 // ── 다시 번역하기 ──────────────────────────────────
 retranslateBtn.addEventListener('click', async () => {
@@ -6163,6 +6186,8 @@ function updateMemosHideAllBtnUI() {
   memosHideAllBtn.title = allMemosHidden
     ? '숨긴 메모 모두 표시'
     : '작성된 모든 메모 숨기기 (하이라이트만 표시)'
+  const labelEl = memosHideAllBtn.querySelector('span')
+  if (labelEl) labelEl.textContent = allMemosHidden ? '숨긴 메모 모두 표시' : '메모 숨기기'
 }
 
 function redrawAllPageMemos() {
