@@ -75,6 +75,9 @@ const state = {
   // 논문을 처음 열 때 뜨는 "읽기 전 브리핑" 게이팅 모달을 끌지 여부. 꺼도
   // 뷰어 툴바 버튼으로는 언제든 다시 열어볼 수 있다.
   disablePrimer: localStorage.getItem('easypaper_disable_primer') === 'true',
+  // 아래로 스크롤하면 상단 툴바를 자동으로 숨기고 위로 스크롤하면 다시 보여줄지
+  // 여부. 다른 편의 설정과 달리 새로 추가하는 화면 동작이라 기본값은 꺼짐(false).
+  toolbarAutoHide: localStorage.getItem('easypaper_toolbar_autohide') === 'true',
   // pageNum_kind(예: "3_keywords") → 생성된 텍스트. 탭 재방문 시 재요청 방지용 캐시.
   pageInsightCache: {}
 }
@@ -144,6 +147,8 @@ const settingDisableInsights = $('setting-disable-insights')
 const settingDisableCitationOverlay = $('setting-disable-citation-overlay')
 const settingDisableFigureOverlay = $('setting-disable-figure-overlay')
 const settingDisablePrimer = $('setting-disable-primer')
+const settingToolbarAutoHide = $('setting-toolbar-autohide')
+const viewerTopbar = $('viewer-topbar')
 const clearCacheBtn       = $('clear-cache-btn')
 const clearPagesCacheBtn  = $('clear-pages-cache-btn')
 const settingAccentSwatches = $('setting-accent-swatches')
@@ -2344,6 +2349,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingDisableCitationOverlay.checked = state.disableCitationOverlay
   settingDisableFigureOverlay.checked = state.disableFigureOverlay
   settingDisablePrimer.checked = state.disablePrimer
+  settingToolbarAutoHide.checked = state.toolbarAutoHide
   updateAccentSettingsUI(currentAccentColor)
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
@@ -2609,6 +2615,14 @@ settingDisableFigureOverlay.addEventListener('change', () => {
 settingDisablePrimer.addEventListener('change', () => {
   state.disablePrimer = settingDisablePrimer.checked
   localStorage.setItem('easypaper_disable_primer', state.disablePrimer)
+})
+
+settingToolbarAutoHide.addEventListener('change', () => {
+  state.toolbarAutoHide = settingToolbarAutoHide.checked
+  localStorage.setItem('easypaper_toolbar_autohide', state.toolbarAutoHide)
+  // 기능을 끄면 스크롤 위치와 무관하게 즉시 툴바를 다시 보여준다 - 꺼둔 채로
+  // 숨겨진 상태가 남아있으면 툴바가 영영 안 보이는 것처럼 느껴질 수 있다.
+  if (!state.toolbarAutoHide) setToolbarHidden(false)
 })
 
 // 시스템 설정 폼 제출
@@ -9223,6 +9237,38 @@ if (viewerScrollContainer) {
 }
 
 window.addEventListener('resize', hideSelectionMenu);
+
+// ── 스크롤 방향에 따른 상단 툴바 자동 숨김/표시 ─────────
+// 설정에서 켜져 있을 때만: 아래로 스크롤하면 툴바를 위로 슬라이드시켜 숨기고,
+// 위로 스크롤하면 다시 보여준다. 맨 위 근처(툴바 높이 이내)에서는 방향과
+// 무관하게 항상 보이게 해, 페이지 맨 위로 돌아왔는데 툴바가 없는 어색한
+// 상태를 방지한다.
+function setToolbarHidden(hidden) {
+  if (viewerTopbar) viewerTopbar.classList.toggle('toolbar-hidden', hidden)
+}
+
+if (viewerScrollContainer && viewerTopbar) {
+  let lastToolbarScrollTop = viewerScrollContainer.scrollTop
+  const TOOLBAR_HIDE_THRESHOLD = 8   // 이보다 작은 이동은 잔떨림으로 보고 무시
+  const TOOLBAR_TOP_ZONE = 64        // 이 안쪽이면 방향과 무관하게 항상 표시
+
+  viewerScrollContainer.addEventListener('scroll', () => {
+    if (!state.toolbarAutoHide) return
+
+    const currentScrollTop = viewerScrollContainer.scrollTop
+    const delta = currentScrollTop - lastToolbarScrollTop
+
+    if (currentScrollTop <= TOOLBAR_TOP_ZONE) {
+      setToolbarHidden(false)
+    } else if (delta > TOOLBAR_HIDE_THRESHOLD) {
+      setToolbarHidden(true)
+    } else if (delta < -TOOLBAR_HIDE_THRESHOLD) {
+      setToolbarHidden(false)
+    }
+
+    lastToolbarScrollTop = currentScrollTop
+  })
+}
 
 // 문장 중간에 섞여 있는 짧은 인라인 수식 조각인지 휴리스틱으로 판단.
 // findDisplayEquationsFromVTM은 줄 전체가 수식인 "독립 수식 줄"만 찾아내므로,
