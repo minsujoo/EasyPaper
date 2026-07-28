@@ -4829,6 +4829,14 @@ body.light-theme .citation-tooltip {
   overflow-y: auto;
   margin-bottom: 10px;
 }
+.citation-tooltip-multi-item + .citation-tooltip-multi-item {
+  margin-top: 6px;
+}
+.citation-tooltip-multi-key {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 2px;
+}
 .citation-tooltip-result {
   font-size: 12.5px;
   line-height: 1.5;
