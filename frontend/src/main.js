@@ -1193,6 +1193,31 @@ pageInput.addEventListener('blur', (e) => {
   pageInput.value = num
 })
 
+// ── 우측 하단 floating 스크롤 내비게이션 (맨 위로/이전 페이지/다음 페이지/맨 아래로) ──
+const scrollTopBtn      = $('scroll-top-btn')
+const scrollPageUpBtn   = $('scroll-page-up-btn')
+const scrollPageDownBtn = $('scroll-page-down-btn')
+const scrollBottomBtn   = $('scroll-bottom-btn')
+
+if (scrollTopBtn) {
+  scrollTopBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, 1))
+}
+if (scrollBottomBtn) {
+  scrollBottomBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, state.totalPages))
+}
+if (scrollPageUpBtn) {
+  scrollPageUpBtn.addEventListener('click', () => {
+    const target = Math.max(1, (parseInt(pageInput.value, 10) || 1) - 1)
+    scrollToPage(viewerScrollContainer, target)
+  })
+}
+if (scrollPageDownBtn) {
+  scrollPageDownBtn.addEventListener('click', () => {
+    const target = Math.min(state.totalPages, (parseInt(pageInput.value, 10) || 1) + 1)
+    scrollToPage(viewerScrollContainer, target)
+  })
+}
+
 // ── 줌 ────────────────────────────────────────────
 // 클램핑 + 라벨 갱신만 즉시 수행하는 가벼운 버전. 핀치/휠 제스처처럼 짧은 시간에
 // 값이 계속 바뀌는 상황에서, 매번 무거운 캔버스 재렌더링(reRenderAll)을 부르지
