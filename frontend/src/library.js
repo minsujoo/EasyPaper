@@ -141,3 +141,15 @@ export async function fetchPrimer(docId, targetLang = '한국어') {
   }
   throw new Error('읽기 전 브리핑 생성이 너무 오래 걸립니다.')
 }
+
+// 캐시된 브리핑을 지우고 처음부터 다시 생성을 시작시킨다("다시 생성하기").
+// 이 호출 자체는 즉시 pending ack만 받고, 실제 완료 대기는 뒤이어 호출하는
+// fetchPrimer()의 폴링 루프가 맡는다.
+export async function regeneratePrimer(docId, targetLang = '한국어') {
+  const res = await fetch(
+    `${API_BASE}/library/${docId}/primer/regenerate?target_lang=${encodeURIComponent(targetLang)}`,
+    { method: 'POST' }
+  )
+  if (!res.ok) throw new Error('브리핑 재생성 요청 실패')
+  return res.json()
+}

@@ -36,6 +36,7 @@ from typing import Optional
 from services.library import (
     save_page_insight,
     get_page_insight,
+    delete_page_insight,
     get_pdf_path,
     save_primer_figure,
     list_documents,
@@ -250,3 +251,11 @@ def get_cached_primer(doc_id: str, target_lang: str = "한국어") -> Optional[d
         return json.loads(content)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def invalidate_primer_cache(doc_id: str, target_lang: str = "한국어") -> None:
+    """캐시된 브리핑을 지운다("다시 생성하기" 용도). page_insights는
+    INSERT OR REPLACE로 저장되므로 재생성 자체는 캐시를 안 지워도 결국
+    덮어써지지만, 캐시를 먼저 지워둬야 재생성이 끝나기 전에 들어오는 GET
+    요청이 낡은 캐시를 즉시 반환해버리지 않고 올바르게 pending을 반환한다."""
+    delete_page_insight(doc_id, 0, _PRIMER_CACHE_KIND, suffix=target_lang)

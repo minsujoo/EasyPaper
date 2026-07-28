@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from routers.upload import require_session_owner
 from routers.library import _require_owned_document
 from services.auth import get_current_user
-from services.primer import get_cached_primer, generate_primer
+from services.primer import get_cached_primer, generate_primer, invalidate_primer_cache
 from services.library import get_primer_figure_path
 
 router = APIRouter()
@@ -22,6 +22,31 @@ router = APIRouter()
 _pending_generations: dict[str, "asyncio.Task"] = {}
 
 
+def _ensure_generation_started(doc_id: str, target_lang: str, session: dict, current_user: str) -> None:
+    """이 문서/언어 조합의 브리핑 생성이 이미 진행 중이 아니면 백그라운드
+    태스크로 새로 시작한다. GET(캐시 미스)과 POST(재생성) 양쪽에서 공유한다."""
+    task_key = f"{doc_id}:{target_lang}"
+    task = _pending_generations.get(task_key)
+    if task is not None and not task.done():
+        return
+
+    async def _generate():
+        try:
+            await generate_primer(
+                doc_id,
+                session["pages"],
+                session["metadata"],
+                username=current_user,
+                pdf_path=session["pdf_path"],
+                target_lang=target_lang,
+                session_id=doc_id,
+            )
+        finally:
+            _pending_generations.pop(task_key, None)
+
+    _pending_generations[task_key] = asyncio.create_task(_generate())
+
+
 @router.get("/library/{doc_id}/primer")
 async def get_primer(doc_id: str, target_lang: str = "한국어", current_user: str = Depends(get_current_user)):
     """읽기 전 브리핑 콘텐츠를 반환합니다. 업로드 직후 백그라운드로 이미 생성되어
@@ -32,26 +57,18 @@ async def get_primer(doc_id: str, target_lang: str = "한국어", current_user: 
         return cached
 
     session = require_session_owner(doc_id, current_user)
+    _ensure_generation_started(doc_id, target_lang, session, current_user)
+    return {"status": "pending"}
 
-    task_key = f"{doc_id}:{target_lang}"
-    task = _pending_generations.get(task_key)
-    if task is None or task.done():
-        async def _generate():
-            try:
-                await generate_primer(
-                    doc_id,
-                    session["pages"],
-                    session["metadata"],
-                    username=current_user,
-                    pdf_path=session["pdf_path"],
-                    target_lang=target_lang,
-                    session_id=doc_id,
-                )
-            finally:
-                _pending_generations.pop(task_key, None)
 
-        _pending_generations[task_key] = asyncio.create_task(_generate())
-
+@router.post("/library/{doc_id}/primer/regenerate")
+async def regenerate_primer(doc_id: str, target_lang: str = "한국어", current_user: str = Depends(get_current_user)):
+    """캐시된 브리핑을 지우고 처음부터 다시 생성을 시작합니다. 사용자가 결과가
+    부실하다고 느낄 때 수동으로 재시도할 수 있게 하는 용도. GET과 마찬가지로
+    생성은 백그라운드로 돌리고 즉시 {"status": "pending"}을 반환한다."""
+    session = require_session_owner(doc_id, current_user)
+    invalidate_primer_cache(doc_id, target_lang)
+    _ensure_generation_started(doc_id, target_lang, session, current_user)
     return {"status": "pending"}
 
 

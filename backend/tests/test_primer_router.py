@@ -66,3 +66,29 @@ def test_does_not_start_duplicate_generation_while_one_is_in_flight(test_client,
     assert res1.json() == {"status": "pending"}
     assert res2.json() == {"status": "pending"}
     assert fake_generation["count"] == 1
+
+
+def test_regenerate_clears_cache_and_starts_new_generation(test_client, isolated_dirs, fake_generation):
+    _create_doc_owned_by(isolated_dirs, "doc-regen", "testuser")
+    isolated_dirs["library"].save_page_insight(
+        "doc-regen", 0, "primer_v2", '{"hook": "stale hook"}', suffix="한국어"
+    )
+
+    res = test_client.post("/api/library/doc-regen/primer/regenerate")
+    assert res.status_code == 200
+    assert res.json() == {"status": "pending"}
+    assert fake_generation["count"] == 1
+
+    # 재생성이 아직 안 끝난 시점에 GET을 호출하면 지워진 캐시 덕분에 낡은
+    # 내용을 바로 돌려주지 않고 pending을 반환해야 한다(중복 생성도 없어야 함).
+    res_get = test_client.get("/api/library/doc-regen/primer")
+    assert res_get.json() == {"status": "pending"}
+    assert fake_generation["count"] == 1
+
+
+def test_regenerate_does_not_duplicate_when_already_in_flight(test_client, isolated_dirs, fake_generation):
+    _create_doc_owned_by(isolated_dirs, "doc-regen-dup", "testuser")
+    test_client.get("/api/library/doc-regen-dup/primer")
+    res = test_client.post("/api/library/doc-regen-dup/primer/regenerate")
+    assert res.json() == {"status": "pending"}
+    assert fake_generation["count"] == 1

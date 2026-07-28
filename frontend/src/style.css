@@ -1604,6 +1604,24 @@ body.light-theme .toast.error { color: #dc2626; }
   z-index: 1;
 }
 
+.primer-regenerate-btn {
+  position: absolute;
+  top: 16px;
+  right: 54px;
+  z-index: 1;
+}
+.primer-regenerate-btn.is-loading svg {
+  animation: primer-regenerate-spin 0.8s linear infinite;
+}
+.primer-regenerate-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@keyframes primer-regenerate-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .primer-loading {
   display: flex;
   flex-direction: column;
