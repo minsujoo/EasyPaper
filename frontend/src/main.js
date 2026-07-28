@@ -138,6 +138,7 @@ const settingIgnoreMath   = $('setting-ignore-math')
 const settingIgnoreTable  = $('setting-ignore-table')
 const settingIgnoreRefs   = $('setting-ignore-refs')
 const settingDefaultZoom  = $('setting-default-zoom')
+const settingToolbarPosition = $('setting-toolbar-position')
 const settingDisableHoverTooltip = $('setting-disable-hover-tooltip')
 const settingDisableBookmark = $('setting-disable-bookmark')
 const settingDisableInsights = $('setting-disable-insights')
@@ -318,6 +319,21 @@ function getTranslationOptions() {
     ignoreRefs: localStorage.getItem('easypaper_ignore_refs') === 'true'
   }
 }
+
+// 툴바 위치: 'top'(기본) / 'bottom' / 'left' / 'right'. body에 클래스로
+// 반영하고, 나머지는 전부 CSS(.toolbar-pos-*)가 처리한다 - 위치별로
+// .topbar/.panels/.outline-sidebar/.floating-scroll-nav 등의 레이아웃이
+// 바뀐다.
+const TOOLBAR_POSITIONS = ['top', 'bottom', 'left', 'right']
+function getToolbarPosition() {
+  const saved = localStorage.getItem('easypaper_toolbar_position')
+  return TOOLBAR_POSITIONS.includes(saved) ? saved : 'top'
+}
+function applyToolbarPosition(pos) {
+  TOOLBAR_POSITIONS.forEach(p => document.body.classList.remove(`toolbar-pos-${p}`))
+  if (pos !== 'top') document.body.classList.add(`toolbar-pos-${pos}`)
+}
+applyToolbarPosition(getToolbarPosition())
 
 // ── 토스트 ────────────────────────────────────────
 let toastTimer = null
@@ -2338,6 +2354,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   settingIgnoreTable.checked = localStorage.getItem('easypaper_ignore_table') !== 'false'
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
   settingDefaultZoom.value = localStorage.getItem('easypaper_default_zoom') || '1.5'
+  settingToolbarPosition.value = getToolbarPosition()
   settingDisableHoverTooltip.checked = state.disableHoverTooltip
   settingDisableBookmark.checked = state.disableBookmark
   settingDisableInsights.checked = state.disableInsights
@@ -2517,9 +2534,11 @@ generalSettingsForm.addEventListener('submit', async (e) => {
   localStorage.setItem('easypaper_ignore_table', settingIgnoreTable.checked)
   localStorage.setItem('easypaper_ignore_refs', settingIgnoreRefs.checked)
   localStorage.setItem('easypaper_default_zoom', settingDefaultZoom.value)
-  
+  localStorage.setItem('easypaper_toolbar_position', settingToolbarPosition.value)
+  applyToolbarPosition(settingToolbarPosition.value)
+
   showToast('일반 설정이 저장되었습니다.', 'success')
-  
+
   // 기본 줌 비율 즉시 업데이트 적용
   const newZoom = parseFloat(settingDefaultZoom.value) || 1.5
   if (state.sessionId) {
