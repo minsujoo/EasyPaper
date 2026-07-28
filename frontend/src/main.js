@@ -134,6 +134,7 @@ const tabPanes          = document.querySelectorAll('.tab-pane')
 const generalSettingsForm = $('general-settings-form')
 const settingTargetLang   = $('setting-target-lang')
 const settingTransStyle   = $('setting-trans-style')
+const settingTranslationMode = $('setting-translation-mode')
 const settingIgnoreMath   = $('setting-ignore-math')
 const settingIgnoreTable  = $('setting-ignore-table')
 const settingIgnoreRefs   = $('setting-ignore-refs')
@@ -319,6 +320,14 @@ function getTranslationOptions() {
   }
 }
 
+// 번역 모드: 'auto'(업로드 시 전체 자동 번역, 기본값) / 'pane'(번역 창을 펼칠 때만
+// 시작) / 'scroll'(스크롤로 페이지가 보일 때마다 그 페이지만 번역). 대상 언어/문체와
+// 달리 캐시 접미사에 영향을 주지 않는 "언제 번역할지"만 다루는 옵션이라
+// getTranslationOptions()와는 별도로 관리한다.
+function getTranslationMode() {
+  return localStorage.getItem('easypaper_translation_mode') || 'auto'
+}
+
 // ── 토스트 ────────────────────────────────────────
 let toastTimer = null
 function showToast(msg, type = '') {
@@ -446,7 +455,7 @@ async function handleFiles(files) {
     uploadItemSuccessIcon.classList.add('hidden')
 
     try {
-      const result = await uploadPDF(file, getTranslationOptions(), (pct) => {
+      const result = await uploadPDF(file, { ...getTranslationOptions(), translationMode: getTranslationMode() }, (pct) => {
         uploadItemProgressBar.style.width = `${pct}%`
         uploadItemStatus.textContent = `업로드 중... ${pct}%`
       })
@@ -540,6 +549,23 @@ function createPagePair(pageNum) {
   return pair
 }
 
+// 번역 모드가 'pane'일 때, 번역 창이 펼쳐진 시점에 전체 문서 백그라운드 번역
+// 잡을 시작한다. 이미 잡이 있으면(과거에 시작되었거나 완료됨) 아무 것도 하지
+// 않는다 - start_job은 동일 옵션으로 이미 완료된 잡이면 재시작하지 않고,
+// 실행 중인 잡을 다시 시작해도 캐시된 페이지는 건너뛰므로 여러 번 호출돼도
+// 안전하지만, 불필요한 네트워크 호출을 줄이기 위해 잡 존재 여부를 먼저 확인한다.
+async function ensureTranslationJobStarted() {
+  if (!state.sessionId) return
+  try {
+    const job = await getJobStatus(state.sessionId)
+    if (!job) {
+      await restartJobAPI(state.sessionId, getTranslationOptions())
+    }
+  } catch (err) {
+    console.warn('번역 잡 시작 확인 실패:', err)
+  }
+}
+
 // ── 스크롤 뷰어 초기화 ────────────────────────────
 async function initScrollViewer() {
   viewerScrollContainer.innerHTML = ''
@@ -576,29 +602,46 @@ async function initScrollViewer() {
           // 않도록, 이미 그려진 문장 분할 기준으로 메모를 다시 그려준다.
           renderPageMemos(pageNum)
         }
+      } else if (getTranslationMode() === 'scroll') {
+        // 번역 모드가 'scroll'이면 전체 문서 백그라운드 잡이 아예 시작되지
+        // 않으므로, 스크롤로 보이게 된 페이지를 그때그때 개별 번역한다.
+        translatePage(pageNum)
       }
 
       // 비동기 다음 페이지 번역 프리페칭 및 미리 렌더링
       const nextPage = pageNum + 1
-      if (nextPage <= state.totalPages && !state.translationCache[nextPage] && state.translatedPages.has(nextPage)) {
-        state.translationCache[nextPage] = '__fetching__'
-        const currentSessionId = state.sessionId
-        const opts = getTranslationOptions()
-        fetchLibraryTranslation(currentSessionId, nextPage, opts).then(res => {
-          if (state.sessionId === currentSessionId) {
-            state.translationCache[nextPage] = res.translation
-            state.translationSentences[nextPage] = res.sentences || []
-            renderTransContent(nextPage, res.translation, true)
-          }
-        }).catch(err => {
-          if (state.sessionId === currentSessionId) {
-            delete state.translationCache[nextPage]
-            renderPageMemos(nextPage)
-          }
-        })
+      if (nextPage <= state.totalPages && !state.translationCache[nextPage]) {
+        if (state.translatedPages.has(nextPage)) {
+          state.translationCache[nextPage] = '__fetching__'
+          const currentSessionId = state.sessionId
+          const opts = getTranslationOptions()
+          fetchLibraryTranslation(currentSessionId, nextPage, opts).then(res => {
+            if (state.sessionId === currentSessionId) {
+              state.translationCache[nextPage] = res.translation
+              state.translationSentences[nextPage] = res.sentences || []
+              renderTransContent(nextPage, res.translation, true)
+            }
+          }).catch(err => {
+            if (state.sessionId === currentSessionId) {
+              delete state.translationCache[nextPage]
+              renderPageMemos(nextPage)
+            }
+          })
+        } else if (getTranslationMode() === 'scroll') {
+          // 다음 페이지도 미리 번역해둬 스크롤이 도착했을 때 바로 보이게 한다.
+          translatePage(nextPage)
+        }
       }
     }
   })
+
+  // 번역 모드가 'pane'이고 번역 창이 이미 펼쳐진 상태로 문서를 열었다면,
+  // (예: 이전에 펼친 채로 남겨둔 경우) 폴링을 시작하기 전에 전체 문서 번역
+  // 잡을 지금 시작해둔다. 접힌 채로 열었다면 아래 trans-collapse-btn
+  // 클릭 핸들러가 나중에 펼칠 때 시작한다.
+  if (getTranslationMode() === 'pane' && !isTransPaneCollapsed) {
+    ensureTranslationJobStarted()
+  }
 
   // 백그라운드 잡 폴링 시작
   startJobPolling(state.sessionId)
@@ -785,9 +828,14 @@ function renderInsightContent(contentEl, kind, text) {
 }
 
 // ── 페이지 번역 ───────────────────────────────────
-// 폰링 중인 페이지를 플레이스홀더로 표시
+// 번역 모드가 'scroll'일 때 - 전체 문서 백그라운드 잡이 돌고 있지 않으므로 -
+// 스크롤로 보이게 된 페이지 하나만 그 자리에서 즉시 번역한다(/translate/{id}/{page}
+// SSE 엔드포인트, 캐시가 있으면 즉시 반환). 완료되면 job-polling 경로와 동일하게
+// state.translatedPages/translationCache/translationSentences를 채워 이후
+// 다시 방문했을 때는 재번역 없이 캐시를 바로 쓴다.
 function translatePage(pageNum) {
   if (state.translatingPages.has(pageNum) || state.translatedPages.has(pageNum)) return
+  if (!state.sessionId) return
   state.translatingPages.add(pageNum)
 
   const statusEl  = $(`trans-status-${pageNum}`)
@@ -798,9 +846,30 @@ function translatePage(pageNum) {
   contentEl.innerHTML = `
     <div class="trans-waiting">
       <div class="trans-wait-spinner"></div>
-      <span>백그라운드에서 번역 중...</span>
+      <span>번역 중...</span>
     </div>`
   if (statusEl) statusEl.textContent = '번역 중...'
+
+  const currentSessionId = state.sessionId
+  let buffer = ''
+  streamTranslation(
+    currentSessionId, pageNum, getTranslationOptions(),
+    (token) => { buffer += token },
+    (cached, sentences) => {
+      state.translatingPages.delete(pageNum)
+      if (state.sessionId !== currentSessionId) return
+      state.translatedPages.add(pageNum)
+      state.translationCache[pageNum] = buffer
+      state.translationSentences[pageNum] = sentences || []
+      renderTransContent(pageNum, buffer, false)
+    },
+    (err) => {
+      state.translatingPages.delete(pageNum)
+      if (state.sessionId !== currentSessionId) return
+      if (statusEl) statusEl.textContent = '번역 실패'
+      contentEl.innerHTML = `<div class="trans-error">번역 실패: ${escapeHtml(err.message)}</div>`
+    }
+  )
 }
 
 // ── 코드 블록 외부의 볼드체를 <strong> 태그로 미리 변환 ──
@@ -2334,6 +2403,7 @@ globalSettingsBtn.addEventListener('click', async () => {
   // 2. 일반 설정값 로드
   settingTargetLang.value = localStorage.getItem('easypaper_target_lang') || '한국어'
   settingTransStyle.value = localStorage.getItem('easypaper_style') || 'academic'
+  settingTranslationMode.value = getTranslationMode()
   settingIgnoreMath.checked = localStorage.getItem('easypaper_ignore_math') === 'true'
   settingIgnoreTable.checked = localStorage.getItem('easypaper_ignore_table') !== 'false'
   settingIgnoreRefs.checked = localStorage.getItem('easypaper_ignore_refs') === 'true'
@@ -2513,6 +2583,7 @@ generalSettingsForm.addEventListener('submit', async (e) => {
   
   localStorage.setItem('easypaper_target_lang', settingTargetLang.value)
   localStorage.setItem('easypaper_style', settingTransStyle.value)
+  localStorage.setItem('easypaper_translation_mode', settingTranslationMode.value)
   localStorage.setItem('easypaper_ignore_math', settingIgnoreMath.checked)
   localStorage.setItem('easypaper_ignore_table', settingIgnoreTable.checked)
   localStorage.setItem('easypaper_ignore_refs', settingIgnoreRefs.checked)
@@ -11234,6 +11305,12 @@ viewerScrollContainer.addEventListener('click', (e) => {
   })
   
   showToast(isTransPaneCollapsed ? '번역 창이 접혔습니다.' : '번역 창이 펼쳐졌습니다.', 'info')
+
+  // 번역 모드가 'pane'이면 번역 창을 펼치는 순간이 곧 "번역을 시작해도 좋다"는
+  // 신호다 - 접혀 있는 동안은 백그라운드 잡을 시작하지 않고 아껴뒀다가 여기서 시작한다.
+  if (!isTransPaneCollapsed && getTranslationMode() === 'pane') {
+    ensureTranslationJobStarted()
+  }
 });
 
 // 초기 로드 시 localStorage 상태 복원 및 초기화 실행

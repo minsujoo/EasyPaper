@@ -106,6 +106,7 @@ async def upload_pdf(
     ignore_math: bool = False,
     ignore_table: bool = True,
     ignore_refs: bool = False,
+    translation_mode: str = "auto",
     current_user: str = Depends(get_current_user)
 ):
     """PDF 파일을 업로드하고 텍스트를 추출합니다."""
@@ -173,6 +174,12 @@ async def upload_pdf(
     # 세션을 동시에 쓸 수 없다 - primer를 완료한 뒤에만 번역이 세션을 점유하도록
     # 순차 실행한다 (API 기반 provider는 세션 개념이 없어 이 순서가 지연을 조금
     # 더할 뿐 문제가 되지 않는다).
+    #
+    # translation_mode가 "auto"(기본값)가 아니면 - 번역 창을 펼칠 때(pane) 또는
+    # 스크롤로 페이지를 볼 때(scroll)만 번역하길 원하는 사용자이므로 - 업로드
+    # 직후 전체 문서를 자동으로 번역하는 백그라운드 잡을 시작하지 않는다. 이후
+    # 번역은 프런트엔드가 상황에 맞춰 /jobs/{id}/restart(pane) 또는
+    # /translate/{id}/{page}(scroll) 를 호출해 트리거한다.
     async def _run_primer_then_translate():
         try:
             await generate_primer(
@@ -186,15 +193,16 @@ async def upload_pdf(
             )
         except Exception as e:
             print(f"[Upload {session_id}] Primer 생성 실패: {e}")
-        start_job(
-            session_id,
-            pages,
-            target_lang=target_lang,
-            style=style,
-            ignore_math=ignore_math,
-            ignore_table=ignore_table,
-            ignore_refs=ignore_refs
-        )
+        if translation_mode == "auto":
+            start_job(
+                session_id,
+                pages,
+                target_lang=target_lang,
+                style=style,
+                ignore_math=ignore_math,
+                ignore_table=ignore_table,
+                ignore_refs=ignore_refs
+            )
 
     asyncio.create_task(_run_primer_then_translate())
 
