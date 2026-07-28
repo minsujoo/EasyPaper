@@ -530,6 +530,24 @@ export function streamChatAPI(sessionId, messages, onToken, onDone, onError) {
 
 
 /**
+ * 직전 어시스턴트 답변과 논문 본문을 참고해 후속 질문 3개를 추천받습니다.
+ * @param {string} sessionId
+ * @param {Array} messages - [{role: 'user'|'assistant', content: '...'}, ...]
+ * @returns {Promise<string[]>} 추천 질문 목록 (최대 3개)
+ */
+export async function getSuggestedQuestionsAPI(sessionId, messages) {
+  const res = await fetch(`${API_BASE}/chat/suggestions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, messages })
+  })
+  if (!res.ok) throw new Error('추천 질문 생성 실패')
+  const data = await res.json()
+  return data.questions || []
+}
+
+
+/**
  * 세션의 번역 캐시를 삭제합니다.
  */
 export async function clearTranslationCacheAPI(sessionId) {

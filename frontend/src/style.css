@@ -3058,6 +3058,38 @@ body.light-theme .chat-loading-progress {
   transform: scale(0.92);
 }
 
+/* 추천 질문 칩 - 어시스턴트 답변 아래에 붙는 후속 질문 제안 */
+.suggested-questions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+.suggested-question-chip {
+  display: block;
+  max-width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.suggested-question-chip:hover {
+  background: var(--accent-soft, rgba(74, 135, 181, 0.12));
+  border-color: var(--accent-mid);
+  color: var(--text-primary);
+}
+.suggested-question-chip:active {
+  transform: scale(0.98);
+}
+
 /* ── 수식 렌더링 스타일 ───────────────────────────── */
 .katex-display-wrap {
   overflow-x: auto;

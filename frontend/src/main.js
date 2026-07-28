@@ -1,7 +1,7 @@
 import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer } from './library.js'
 import { icon } from './icons.js'
@@ -8774,7 +8774,8 @@ function regenerateResponse(assistantMsgEl) {
     showToast('대화 기록 싱크 오류', 'error');
     return;
   }
-  
+
+  clearSuggestedQuestions();
   appendTypingIndicator();
   
   chatInput.disabled = true;
@@ -8808,9 +8809,10 @@ function regenerateResponse(assistantMsgEl) {
         applyKatexToElement(replyBubble);
         if (replyBubble.parentElement) {
           appendActionButtons(replyBubble.parentElement, 'assistant', accumulatedText);
+          renderSuggestedQuestions(replyBubble.parentElement);
         }
       }
-      
+
       chatInput.disabled = false;
       updateChatSendBtnIcon(false);
       chatInput.focus();
@@ -8896,6 +8898,45 @@ function appendActionButtons(msgEl, role, content) {
   msgEl.appendChild(actionsEl)
 }
 
+// 대화가 이어지면 예전 답변에 달렸던 추천 질문은 더 이상 "다음에 물어볼 질문"이
+// 아니게 되므로, 새 질문을 보내거나 답변을 다시 받을 때마다 기존 칩을 모두 지운다.
+function clearSuggestedQuestions() {
+  chatMessages.querySelectorAll('.suggested-questions').forEach(el => el.remove())
+}
+
+// 어시스턴트 답변이 끝난 직후, 논문/대화 내용을 참고한 후속 질문 3개를 chat
+// bubble 아래에 클릭 가능한 칩으로 붙인다. 클릭하면 바로 그 질문으로 다음
+// 메시지를 보낸다.
+async function renderSuggestedQuestions(msgEl) {
+  if (!state.sessionId) return
+  try {
+    const questions = await getSuggestedQuestionsAPI(state.sessionId, state.chatHistory)
+    if (!questions.length) return
+    // 응답을 기다리는 사이 사용자가 이미 다음 질문을 보냈다면(이 메시지가 더
+    // 이상 마지막 어시스턴트 메시지가 아니라면) 뒤늦게 붙이지 않는다.
+    if (!msgEl.isConnected || msgEl !== chatMessages.lastElementChild) return
+
+    const wrap = document.createElement('div')
+    wrap.className = 'suggested-questions'
+    questions.forEach(q => {
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = 'suggested-question-chip'
+      chip.textContent = q
+      chip.addEventListener('click', () => {
+        if (state.chatActiveStream) return
+        chatInput.value = q
+        sendChatMessage()
+      })
+      wrap.appendChild(chip)
+    })
+    msgEl.appendChild(wrap)
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  } catch (err) {
+    console.warn('추천 질문 생성 실패:', err)
+  }
+}
+
 function appendChatMessage(role, content, isHtml = false) {
   const msgEl = document.createElement('div')
   msgEl.className = `chat-message ${role}`
@@ -8959,7 +9000,8 @@ async function sendChatMessage() {
   
   chatInput.value = ''
   chatInput.style.height = 'auto'
-  
+  clearSuggestedQuestions()
+
   if (state.quotedText) {
     const fullPayload = `[인용된 본문 내용]:\n"${state.quotedText}"\n\n[질문]:\n${text}`
     
@@ -9034,9 +9076,10 @@ async function sendChatMessage() {
         replyBubble.innerHTML = formatChatHtml(accumulatedText)
         if (replyBubble.parentElement) {
           appendActionButtons(replyBubble.parentElement, 'assistant', accumulatedText)
+          renderSuggestedQuestions(replyBubble.parentElement)
         }
       }
-      
+
       chatInput.disabled = false
       updateChatSendBtnIcon(false)
       chatInput.focus()

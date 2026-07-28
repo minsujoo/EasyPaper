@@ -1073,6 +1073,96 @@ async def generate_reading_primer(
     return result
 
 
+_SUGGESTED_QUESTION_LINE_RE = re.compile(r'^[\s\-\*>]*\**\s*(SQ1|SQ2|SQ3)\**\s*[:.\)]\s*(.+)$', re.IGNORECASE)
+
+
+async def generate_suggested_questions(
+    paper_text: str,
+    history_messages: list,
+    doc_title: str = "",
+    session_id: str = None,
+) -> list:
+    """
+    직전 어시스턴트 답변까지의 대화 흐름과 논문 본문 일부를 참고해, 사용자가 이어서
+    물어볼 만한 후속 질문 3개를 생성합니다. 채팅(Chat) 프로바이더/모델 설정을 그대로
+    재사용하며, generate_reading_primer와 동일하게 세션이 지속되는 CLI provider는
+    채팅과 동일한 문서당 공유 세션(session_id)을 사용합니다. 챗 답변 자체가 아니라
+    보조 UI(추천 질문 칩)용 생성이므로 채팅 기록(chats 테이블)에는 남기지 않습니다.
+    """
+    convo_lines = []
+    for msg in history_messages[-6:]:
+        role_label = "사용자" if msg.get("role") == "user" else "어시스턴트"
+        content = (msg.get("content") or "").strip()
+        if content:
+            convo_lines.append(f"{role_label}: {content[:800]}")
+    convo_text = "\n".join(convo_lines)
+
+    instruction = (
+        f"다음은 학술 논문 '{doc_title}'을 읽으며 사용자와 AI 어시스턴트가 나눈 대화입니다. "
+        f"이 대화의 마지막 어시스턴트 답변을 참고해, 사용자가 이어서 궁금해할 만한 자연스러운 "
+        f"후속 질문을 정확히 3개 제안하세요.\n\n"
+        f"- 각 질문은 아래 논문 본문 발췌 내용에 근거해 답할 수 있는 구체적인 질문이어야 합니다.\n"
+        f"- 방금 나온 답변을 단순 반복하지 말고, 더 깊이 파고들거나(근거, 한계, 비교 등) 다른 "
+        f"관점으로 확장하는 질문으로 구성하세요.\n"
+        f"- 각 질문은 물음표로 끝나는 한 문장의 자연스러운 한국어 질문으로, 서로 겹치지 않게 "
+        f"작성하세요.\n\n"
+        f"반드시 아래 형식으로만 출력하고 다른 설명이나 서론은 절대 추가하지 마세요.\n"
+        f"SQ1: <질문>\nSQ2: <질문>\nSQ3: <질문>"
+    )
+
+    prompt = f"{instruction}\n\n[논문 본문 발췌]\n{paper_text[:6000]}\n\n[대화 내역]\n{convo_text}"
+
+    provider = get_chat_provider()
+    model = get_chat_model()
+
+    async def _call_once() -> str:
+        tokens = []
+        if provider == "antigravity":
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="suggestions"):
+                tokens.append(token)
+        elif provider == "claude_code":
+            async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="suggestions"):
+                tokens.append(token)
+        elif provider == "codex":
+            async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="suggestions"):
+                tokens.append(token)
+        elif provider in ("openai", "gemini", "claude"):
+            messages = [{"role": "user", "content": prompt}]
+            if provider == "openai":
+                async for token in stream_openai(messages, model=model, temperature=0.6):
+                    tokens.append(token)
+            elif provider == "gemini":
+                async for token in stream_gemini(messages, model=model, temperature=0.6):
+                    tokens.append(token)
+            else:
+                async for token in stream_claude(messages, model=model, temperature=0.6):
+                    tokens.append(token)
+        else:
+            # Ollama 폴백
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.6, "num_ctx": 8192, "num_predict": 512},
+            }
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(f"{get_ollama_host()}/api/chat", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                tokens.append(data.get("message", {}).get("content", ""))
+        return "".join(tokens)
+
+    raw = await _call_once()
+    questions = []
+    for line in raw.splitlines():
+        m = _SUGGESTED_QUESTION_LINE_RE.match(line.strip())
+        if m:
+            q = m.group(2).strip().rstrip('*').strip()
+            if q:
+                questions.append(q)
+    return questions[:3]
+
+
 async def check_ollama_health() -> dict:
     """Ollama 서버 상태를 확인합니다."""
     try:
