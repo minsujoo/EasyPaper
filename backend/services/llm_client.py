@@ -993,13 +993,17 @@ async def generate_reading_primer(
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.5, "num_ctx": 16384},
+                # num_predict을 지정하지 않으면 모델이 지시를 벗어나 장황하게
+                # 늘어지는 경우 생성이 끝없이 길어져 아래 타임아웃까지 그대로
+                # 소모할 수 있다(실측: 로컬 8~9B 모델에서 360초 타임아웃을 실제로
+                # 초과하는 경우를 확인). 항목이 최대 28줄인 이 응답 형식은 2048
+                # 토큰이면 충분히 넉넉하므로 상한을 걸어 최악의 경우를 방지한다.
+                "options": {"temperature": 0.5, "num_ctx": 16384, "num_predict": 2048},
             }
-            # 스트리밍 없이 응답을 한 번에 기다리는 호출이라, 로컬 CPU 추론처럼 느린
-            # 환경에서도 끊기지 않도록 다른 ollama 스트리밍 호출들과 동일하게 360초를 준다
-            # (stream_page_insight의 120초는 페이지 단위라 상대적으로 짧아도 되지만, 이
-            # 함수는 문서 전체 도입부를 한 번에 처리해 응답이 더 오래 걸릴 수 있다).
-            async with httpx.AsyncClient(timeout=360.0) as client:
+            # LINEAGE/FEYNMAN/실험 흐름/용어집이 추가되며 응답 항목이 늘어나
+            # 로컬 CPU/GPU 환경에서 1~3분씩 걸리는 경우를 실측했다 - 기존
+            # 360초보다 여유를 더 둔다(위 num_predict 상한과 함께 이중 안전장치).
+            async with httpx.AsyncClient(timeout=480.0) as client:
                 resp = await client.post(f"{get_ollama_host()}/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()

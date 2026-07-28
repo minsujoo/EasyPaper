@@ -123,8 +123,21 @@ export async function deleteLibraryDocPermanently(docId) {
   return res.json()
 }
 
+// 캐시가 없는 문서는 백엔드가 생성을 백그라운드로 돌리고 매 요청마다
+// {status: 'pending'}만 즉시 반환한다(계보/실험 흐름/용어집까지 만드는 지금의
+// 프롬프트는 로컬 LLM 기준 수 분씩 걸릴 수 있어, 하나의 요청을 그만큼 열어두면
+// 리버스 프록시의 기본 read timeout에 걸려 끊기기 때문). 완료될 때까지 짧은
+// 간격으로 재조회한다.
+const PRIMER_POLL_INTERVAL_MS = 3000
+const PRIMER_POLL_MAX_ATTEMPTS = 150 // 최대 약 7.5분 대기
+
 export async function fetchPrimer(docId, targetLang = '한국어') {
-  const res = await fetch(`${API_BASE}/library/${docId}/primer?target_lang=${encodeURIComponent(targetLang)}`)
-  if (!res.ok) throw new Error('읽기 전 브리핑 조회 실패')
-  return res.json()
+  for (let attempt = 0; attempt < PRIMER_POLL_MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`${API_BASE}/library/${docId}/primer?target_lang=${encodeURIComponent(targetLang)}`)
+    if (!res.ok) throw new Error('읽기 전 브리핑 조회 실패')
+    const data = await res.json()
+    if (data.status !== 'pending') return data
+    await new Promise(resolve => setTimeout(resolve, PRIMER_POLL_INTERVAL_MS))
+  }
+  throw new Error('읽기 전 브리핑 생성이 너무 오래 걸립니다.')
 }

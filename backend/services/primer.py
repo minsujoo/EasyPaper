@@ -28,6 +28,7 @@ LLM이 primer 생성 시점에 자기 지식으로 직접 관련 논문을 추�
 OpenAlex로 재검색해 실제로 존재하고 제목이 충분히 일치하는 것만 채택하는 방식으로
 바꿔 개수와 관련성을 모두 개선했다.
 """
+import asyncio
 import json
 import re
 from typing import Optional
@@ -168,17 +169,33 @@ async def generate_primer(
     sections = detect_sections(pages)
     candidate_terms = extract_candidate_terms(pages)
 
-    try:
-        llm_part = await generate_reading_primer(
-            title, sections, candidate_terms, target_lang=target_lang, session_id=session_id
-        )
-    except Exception as e:
-        print(f"[primer] LLM 생성 실패 ({doc_id}): {e}")
-        llm_part = {
-            "hook": "", "lineage": "", "feynman": "",
-            "questions": [], "checklist": [],
-            "experiment_flow": [], "glossary": [], "recommended_titles": [],
-        }
+    async def _run_llm() -> dict:
+        try:
+            return await generate_reading_primer(
+                title, sections, candidate_terms, target_lang=target_lang, session_id=session_id
+            )
+        except Exception as e:
+            print(f"[primer] LLM 생성 실패 ({doc_id}): {e}")
+            return {
+                "hook": "", "lineage": "", "feynman": "",
+                "questions": [], "checklist": [],
+                "experiment_flow": [], "glossary": [], "recommended_titles": [],
+            }
+
+    async def _run_figure() -> Optional[dict]:
+        try:
+            picked = await asyncio.to_thread(_pick_primary_figure, pdf_path)
+            if picked and save_primer_figure(doc_id, pdf_path, picked["page"], picked):
+                return {"page": picked["page"], "label": picked.get("label")}
+        except Exception as e:
+            print(f"[primer] Figure 크롭 실패 ({doc_id}): {e}")
+        return None
+
+    # LLM 생성(계보/실험 흐름/용어집 등 필드가 늘면서 로컬 모델 기준 1~3분까지
+    # 걸릴 수 있다)과 Figure 크롭(이미지가 많은 논문은 PDF 이미지 추출/렌더링에
+    # 수십 초가 걸릴 수 있다)은 서로 의존하지 않는데도 예전에는 순차 실행돼
+    # 대기 시간이 그대로 합산됐다. 병렬로 돌려 전체 응답 시간을 단축한다.
+    llm_part, figure = await asyncio.gather(_run_llm(), _run_figure())
 
     try:
         reference_map = extract_reference_list(pages)
@@ -201,14 +218,6 @@ async def generate_primer(
             external_matches = await _resolve_recommended_titles(recommended_titles, library_title_words)
         except Exception as e:
             print(f"[primer] 관련 논문 추천 검증 실패 ({doc_id}): {e}")
-
-    figure = None
-    try:
-        picked = _pick_primary_figure(pdf_path)
-        if picked and save_primer_figure(doc_id, pdf_path, picked["page"], picked):
-            figure = {"page": picked["page"], "label": picked.get("label")}
-    except Exception as e:
-        print(f"[primer] Figure 크롭 실패 ({doc_id}): {e}")
 
     result = {
         "hook": llm_part.get("hook", ""),
