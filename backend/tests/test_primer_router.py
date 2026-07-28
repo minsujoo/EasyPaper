@@ -1,0 +1,68 @@
+"""GET /library/{doc_id}/primer 라우터의 pending 응답/중복 생성 방지 테스트.
+
+계보/실험 흐름/용어집까지 만드는 지금의 프롬프트는 로컬 LLM 기준 수 분씩 걸릴
+수 있어, 이 엔드포인트가 생성이 끝날 때까지 요청을 블로킹하면 리버스 프록시의
+기본 read timeout(보통 60초)에 걸려 끊긴다(실측으로 재현). 그래서 캐시가 없으면
+즉시 {"status": "pending"}을 반환하고 실제 생성은 백그라운드 태스크로 돌리도록
+바꿨다 - 이 동작만 검증한다(실제 생성 내용 파싱은 test_generate_reading_primer.py,
+test_primer.py에서 이미 다룬다).
+"""
+
+import asyncio
+
+import pytest
+
+import routers.primer as primer_router
+
+
+def _create_doc_owned_by(isolated_dirs, doc_id, username):
+    db = isolated_dirs["db"]
+    db.db_save_document(doc_id, username, "paper.pdf", "/x/paper.pdf", 3, {"title": "My Paper"})
+
+
+@pytest.fixture()
+def fake_generation(monkeypatch):
+    """require_session_owner/generate_primer를 대체해 실제 PDF/LLM 없이
+    라우터의 pending·중복 방지 로직만 검증한다."""
+    calls = {"count": 0}
+
+    def fake_require_session_owner(doc_id, current_user):
+        return {"pages": [], "metadata": {"title": "My Paper"}, "pdf_path": "/x/paper.pdf"}
+
+    async def fake_generate_primer(doc_id, pages, metadata, username, pdf_path, target_lang, session_id):
+        calls["count"] += 1
+        await asyncio.sleep(2)  # 두 번째 요청이 들어올 때까지 완료되지 않게 함
+        return {"hook": "done"}
+
+    monkeypatch.setattr(primer_router, "require_session_owner", fake_require_session_owner)
+    monkeypatch.setattr(primer_router, "generate_primer", fake_generate_primer)
+    primer_router._pending_generations.clear()
+    return calls
+
+
+def test_returns_cached_content_immediately_without_pending(test_client, isolated_dirs, fake_generation):
+    _create_doc_owned_by(isolated_dirs, "doc-cached", "testuser")
+    isolated_dirs["library"].save_page_insight(
+        "doc-cached", 0, "primer_v2", '{"hook": "cached hook"}', suffix="한국어"
+    )
+    res = test_client.get("/api/library/doc-cached/primer")
+    assert res.status_code == 200
+    assert res.json() == {"hook": "cached hook"}
+    assert fake_generation["count"] == 0
+
+
+def test_returns_pending_immediately_when_not_cached(test_client, isolated_dirs, fake_generation):
+    _create_doc_owned_by(isolated_dirs, "doc-pending", "testuser")
+    res = test_client.get("/api/library/doc-pending/primer")
+    assert res.status_code == 200
+    assert res.json() == {"status": "pending"}
+    assert fake_generation["count"] == 1
+
+
+def test_does_not_start_duplicate_generation_while_one_is_in_flight(test_client, isolated_dirs, fake_generation):
+    _create_doc_owned_by(isolated_dirs, "doc-dup", "testuser")
+    res1 = test_client.get("/api/library/doc-dup/primer")
+    res2 = test_client.get("/api/library/doc-dup/primer")
+    assert res1.json() == {"status": "pending"}
+    assert res2.json() == {"status": "pending"}
+    assert fake_generation["count"] == 1

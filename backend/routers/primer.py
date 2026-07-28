@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 
@@ -9,25 +11,48 @@ from services.library import get_primer_figure_path
 
 router = APIRouter()
 
+# 캐시가 없는 문서(구버전 등)는 이 자리에서 생성해야 하는데, 계보/실험 흐름/
+# 용어집까지 생성하는 지금의 프롬프트는 로컬 LLM 기준 수 분씩 걸릴 수 있다.
+# 이 시간 동안 HTTP 요청을 열어둔 채 기다리면 리버스 프록시(nginx 등)의 기본
+# read timeout(보통 60초)에 걸려 요청이 끊겨버린다 - 실제로 이 문제로 "브리핑을
+# 불러오지 못했다"는 문제가 재현됐다. 그래서 생성은 백그라운드 태스크로 돌리고
+# 매 GET 요청은 "완료됐으면 결과, 아니면 즉시 pending"만 응답해 요청 자체는
+# 항상 짧게 끝나도록 한다 - 프런트(library.js fetchPrimer)가 pending이면 짧은
+# 간격으로 재조회한다.
+_pending_generations: dict[str, "asyncio.Task"] = {}
+
 
 @router.get("/library/{doc_id}/primer")
 async def get_primer(doc_id: str, target_lang: str = "한국어", current_user: str = Depends(get_current_user)):
     """읽기 전 브리핑 콘텐츠를 반환합니다. 업로드 직후 백그라운드로 이미 생성되어
-    있으면 캐시에서 즉시 반환하고, 아직 없으면(구버전 문서 등) 그 자리에서 생성합니다."""
+    있으면 캐시에서 즉시 반환하고, 아직 없으면(구버전 문서 등) 백그라운드 생성을
+    시작(또는 이미 진행 중이면 그대로 두고)하고 {"status": "pending"}을 반환합니다."""
     cached = get_cached_primer(doc_id, target_lang=target_lang)
     if cached:
         return cached
 
     session = require_session_owner(doc_id, current_user)
-    return await generate_primer(
-        doc_id,
-        session["pages"],
-        session["metadata"],
-        username=current_user,
-        pdf_path=session["pdf_path"],
-        target_lang=target_lang,
-        session_id=doc_id,
-    )
+
+    task_key = f"{doc_id}:{target_lang}"
+    task = _pending_generations.get(task_key)
+    if task is None or task.done():
+        async def _generate():
+            try:
+                await generate_primer(
+                    doc_id,
+                    session["pages"],
+                    session["metadata"],
+                    username=current_user,
+                    pdf_path=session["pdf_path"],
+                    target_lang=target_lang,
+                    session_id=doc_id,
+                )
+            finally:
+                _pending_generations.pop(task_key, None)
+
+        _pending_generations[task_key] = asyncio.create_task(_generate())
+
+    return {"status": "pending"}
 
 
 @router.get("/library/{doc_id}/primer-figure")
