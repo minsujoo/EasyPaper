@@ -4294,8 +4294,7 @@ body.toolbar-pos-right .kebab-menu {
   backdrop-filter: blur(3px);
   animation: popupScale 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.kebab-menu .progress-mini,
-.kebab-menu .translation-status {
+.kebab-menu .progress-mini {
   width: 100%;
   box-sizing: border-box;
   justify-content: center;
@@ -4308,9 +4307,17 @@ body.toolbar-pos-right .kebab-menu {
   padding: 4px 8px;
 }
 .kebab-menu-label {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
+  white-space: nowrap;
+}
+.kebab-menu-row .provider-picker {
+  min-width: 0;
+}
+.kebab-menu-row .provider-picker-btn {
+  min-width: 0;
 }
 .kebab-menu-divider {
   height: 1px;
