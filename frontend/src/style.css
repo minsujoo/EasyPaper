@@ -600,6 +600,40 @@ html, body {
   height: 100%;
 }
 
+/* ── 우측 하단 floating 스크롤 내비게이션 ── */
+.floating-scroll-nav {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.floating-nav-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(3px);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.floating-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: scale(1.06);
+}
+.floating-nav-btn:active {
+  transform: scale(0.94);
+}
+
 /* ── 개별 페이지 쌍 (원문 + 번역 한쌍의 카드) ── */
 .page-pair {
   display: flex;
