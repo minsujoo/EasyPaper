@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -278,6 +278,7 @@ const viewerPrimerBtn    = $('viewer-primer-btn')
 // 읽기 전 브리핑(Reading Primer) 모달
 const primerModal          = $('primer-modal')
 const primerCloseBtn       = $('primer-close-btn')
+const primerRegenerateBtn  = $('primer-regenerate-btn')
 const primerLoading        = $('primer-loading')
 const primerError          = $('primer-error')
 const primerBody           = $('primer-body')
@@ -5075,31 +5076,67 @@ function renderPrimerContent(doc, data, mode) {
   switchPrimerTab('overview')
 }
 
+// 재생성 버튼 클릭 시 현재 보고 있던 문서/모드로 다시 로드할 수 있도록 기억해둔다.
+let primerCurrentDoc = null
+let primerCurrentMode = 'gate'
+
+function _loadPrimerInto(doc, mode, dataPromise) {
+  primerLoading.classList.remove('hidden')
+  primerError.classList.add('hidden')
+  primerBody.classList.add('hidden')
+  return dataPromise
+    .then(data => {
+      renderPrimerContent(doc, data, mode)
+      primerLoading.classList.add('hidden')
+      primerBody.classList.remove('hidden')
+    })
+    .catch(err => {
+      console.error('브리핑 로드 실패:', err)
+      primerLoading.classList.add('hidden')
+      primerError.classList.remove('hidden')
+    })
+}
+
 async function showPrimerModal(doc, { mode = 'gate' } = {}) {
+  primerCurrentDoc = doc
+  primerCurrentMode = mode
   return new Promise((resolve) => {
     primerResolve = resolve
     primerModal.classList.remove('hidden')
-    primerLoading.classList.remove('hidden')
-    primerError.classList.add('hidden')
-    primerBody.classList.add('hidden')
     primerSkipBtn.classList.toggle('hidden', mode !== 'gate')
     primerContinueBtn.textContent = mode === 'gate' ? '읽으러 가기' : '닫기'
 
     const targetLang = getTranslationOptions().targetLang
-    fetchPrimer(doc.id, targetLang)
-      .then(data => {
-        renderPrimerContent(doc, data, mode)
-        primerLoading.classList.add('hidden')
-        primerBody.classList.remove('hidden')
-      })
-      .catch(err => {
-        console.error('브리핑 로드 실패:', err)
-        primerLoading.classList.add('hidden')
-        primerError.classList.remove('hidden')
-      })
+    _loadPrimerInto(doc, mode, fetchPrimer(doc.id, targetLang))
   })
 }
 
+async function regenerateCurrentPrimer() {
+  if (!primerCurrentDoc || (primerRegenerateBtn && primerRegenerateBtn.disabled)) return
+  const doc = primerCurrentDoc
+  const mode = primerCurrentMode
+  const targetLang = getTranslationOptions().targetLang
+
+  if (primerRegenerateBtn) {
+    primerRegenerateBtn.disabled = true
+    primerRegenerateBtn.classList.add('is-loading')
+  }
+  try {
+    await regeneratePrimer(doc.id, targetLang)
+    await _loadPrimerInto(doc, mode, fetchPrimer(doc.id, targetLang))
+  } catch (err) {
+    console.error('브리핑 재생성 실패:', err)
+    primerLoading.classList.add('hidden')
+    primerError.classList.remove('hidden')
+  } finally {
+    if (primerRegenerateBtn) {
+      primerRegenerateBtn.disabled = false
+      primerRegenerateBtn.classList.remove('is-loading')
+    }
+  }
+}
+
+if (primerRegenerateBtn) primerRegenerateBtn.addEventListener('click', regenerateCurrentPrimer)
 if (primerCloseBtn) primerCloseBtn.addEventListener('click', hidePrimerModal)
 if (primerSkipBtn) primerSkipBtn.addEventListener('click', hidePrimerModal)
 if (primerContinueBtn) primerContinueBtn.addEventListener('click', hidePrimerModal)

@@ -18,6 +18,7 @@ from services.db import (
     db_save_page_insight,
     db_get_page_insight,
     db_clear_page_insights,
+    db_delete_page_insight,
     db_update_document_metadata,
     db_bulk_translation_rows,
 )
@@ -281,6 +282,11 @@ def get_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = "") ->
 def clear_page_insights(doc_id: str) -> None:
     """데이터베이스에서 모든 페이지 인사이트(키워드/요약) 데이터를 지웁니다."""
     db_clear_page_insights(doc_id)
+
+
+def delete_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = "") -> None:
+    """특정 kind/suffix 하나의 페이지 인사이트만 지웁니다."""
+    db_delete_page_insight(doc_id, page_num, kind, suffix)
 
 
 def get_pdf_path(doc_id: str) -> Optional[str]:

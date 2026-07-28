@@ -573,6 +573,18 @@ def db_clear_page_insights(doc_id: str) -> None:
         cursor.execute("DELETE FROM page_insights WHERE doc_id = ?", (doc_id,))
         conn.commit()
 
+def db_delete_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = "") -> None:
+    """특정 kind/suffix 하나만 지운다. db_clear_page_insights는 문서의 모든
+    인사이트(키워드/요약/브리핑 등, 언어별로도 전부)를 지워버려 "이 브리핑
+    하나만 다시 생성" 같은 용도로 쓰기엔 범위가 너무 넓다."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM page_insights WHERE doc_id = ? AND page_num = ? AND kind = ? AND suffix = ?",
+            (doc_id, page_num, kind, suffix)
+        )
+        conn.commit()
+
 
 def db_clear_translations(doc_id: str) -> None:
     with get_db() as conn:
