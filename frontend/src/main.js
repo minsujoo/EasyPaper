@@ -8268,16 +8268,30 @@ function getOrCreateFigurePreviewTooltip() {
     e.stopPropagation()
 
     const startX = e.clientX
-    const startY = e.clientY
     const startWidth = el.offsetWidth
     const startHeight = el.offsetHeight
+    // 이미지는 CSS에서 width:100%; height:auto로 표시되므로 컨테이너 너비가
+    // scale배 될 때 이미지의 실제 렌더링 높이도 같은 비율로 커진다. 반면
+    // 레이블/캡션 같은 텍스트 영역(chromeHeight)은 너비가 바뀌어도 높이가
+    // 거의 그대로다. 너비/높이를 마우스 이동량으로 각각 독립적으로 정하면
+    // 이미지 비율과 무관하게 박스 크기가 고정되어 이미지 아래로 빈 공간이
+    // 남거나 이미지가 잘려 스크롤이 생기는 문제가 있었다 - 높이를 "이미지
+    // 비율을 유지한 채 늘어난 이미지 높이 + 고정된 chromeHeight"로 다시
+    // 계산해 너비를 끌면 이미지 비율에 맞게 박스 전체가 adaptive하게
+    // 커지고 작아지도록 한다.
+    const loadedImgs = Array.from(el.querySelectorAll('.figure-preview-tooltip-img:not(.hidden)'))
+    const startImagesHeight = loadedImgs.reduce((sum, img) => sum + img.getBoundingClientRect().height, 0)
+    const chromeHeight = startHeight - startImagesHeight
+    const maxWidth = Math.min(window.innerWidth * 0.9, 900)
+    const maxHeight = Math.min(window.innerHeight * 0.9, 900)
     el.classList.add('resizing')
     figurePreviewIsResizing = true
     if (figurePreviewHideTimer) { clearTimeout(figurePreviewHideTimer); figurePreviewHideTimer = null }
 
     const onMove = (moveEvent) => {
-      const newWidth = Math.max(_FIGURE_PREVIEW_MIN_WIDTH, startWidth + (moveEvent.clientX - startX))
-      const newHeight = Math.max(_FIGURE_PREVIEW_MIN_HEIGHT, startHeight + (moveEvent.clientY - startY))
+      const newWidth = Math.max(_FIGURE_PREVIEW_MIN_WIDTH, Math.min(maxWidth, startWidth + (moveEvent.clientX - startX)))
+      const scale = startWidth > 0 ? newWidth / startWidth : 1
+      const newHeight = Math.max(_FIGURE_PREVIEW_MIN_HEIGHT, Math.min(maxHeight, chromeHeight + startImagesHeight * scale))
       el.style.width = `${newWidth}px`
       el.style.height = `${newHeight}px`
     }
