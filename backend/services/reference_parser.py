@@ -55,11 +55,21 @@ _BRACKET_MARKER_RE = re.compile(r"\[(" + _BRACKET_KEY_RE.pattern + r")\]")
 # 우연히 일치하는 페이지/연도 숫자를 걸러낸다.
 _PLAIN_NUMBERED_MARKER_RE = re.compile(r"(?:^|\s)(\d{1,3})[.)]\s+(?=[A-Z가-힣])")
 
-# (Author, Year) 스타일 항목의 시작 줄 판별용 - "Surname, Initial..." 형태로
-# 시작하는 줄을 새 항목의 시작으로 본다. 실제로 참고문헌 항목인지는 flush 시점에
-# 텍스트 전체에서 연도((\d{4}))가 발견되는지로 한 번 더 검증한다(오탐 방지).
+# (Author, Year) 스타일 항목의 시작 판별용 - "Surname, Initial..." 형태로
+# 시작하는 구간을 새 항목의 시작으로 본다. 실제로 참고문헌 항목인지는 flush
+# 시점에 텍스트 전체에서 연도가 발견되는지로 한 번 더 검증한다(오탐 방지).
 _AUTHOR_YEAR_ENTRY_START_RE = re.compile(r"^\s*([A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+),\s")
-_YEAR_RE = re.compile(r"\((\d{4})[a-z]?\)")
+# 항목 경계 자체를 텍스트 전체에서 찾을 때 쓴다(_parse_author_year_entries 참고) -
+# 문장 경계(마침표/느낌표/물음표 + 공백) 또는 텍스트 시작 바로 뒤에 "Surname,"
+# 패턴이 오는 지점을 새 항목의 시작으로 본다. 항목 안의 공저자 나열은 보통
+# 세미콜론이나 "&"로 구분되고 성 뒤에 곧바로 마침표+공백이 오는 경우가 거의
+# 없어(이니셜 뒤에는 대개 쉼표나 세미콜론이 옴) 오탐 위험이 낮다.
+_AUTHOR_YEAR_ENTRY_BOUNDARY_RE = re.compile(
+    r"(?:^|[.!?]\s+)(?=[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-']+,\s)"
+)
+# 연도는 APA류처럼 괄호로 싸인 경우("(2020)")뿐 아니라, AAAI/IJCAI류처럼
+# 저자 목록 바로 뒤에 괄호 없이 오는 경우("... 2020. Title...")도 지원한다.
+_YEAR_RE = re.compile(r"\((\d{4})[a-z]?\)|(?<!\d)(\d{4})[a-z]?\.(?=\s|$)")
 
 _MAX_ENTRY_LENGTH = 500
 
@@ -140,7 +150,7 @@ def _extract_reference_list_impl(pages: List[dict]) -> Dict[str, str]:
     if not entries:
         entries = _extract_marker_entries(body_text, _PLAIN_NUMBERED_MARKER_RE, sequential=True)
     if not entries:
-        entries = _parse_author_year_entries(body_lines)
+        entries = _parse_author_year_entries(body_text)
 
     return entries
 
@@ -175,45 +185,44 @@ def _extract_marker_entries(text: str, marker_re: "re.Pattern", sequential: bool
     return entries
 
 
-def _parse_author_year_entries(body_lines: List[str]) -> Dict[str, str]:
+def _parse_author_year_entries(body_text: str) -> Dict[str, str]:
     """번호가 없는 (Author, Year) 스타일 참고문헌 목록을 파싱합니다.
 
-    "Surname, Initial. ..." 형태로 시작하는 줄을 새 항목의 시작으로 보고,
-    그 항목(여러 줄에 걸칠 수 있음)을 전부 모은 뒤 연도가 실제로 포함돼
-    있는지 확인해서만 채택한다 - 그냥 대문자로 시작하는 일반 문장이 새
-    항목으로 오인되는 것을 막기 위함이다. 키는 "성(소문자)+연도"
-    (예: "vaswani2017")이며, 같은 저자가 같은 해에 여러 편을 낸 경우
-    (2020a/2020b 등) 먼저 나온 항목만 유지한다.
-    """
-    entries: Dict[str, str] = {}
-    current_first_line = None
-    current_parts: List[str] = []
+    예전에는 물리적 줄(\\n) 시작에서만 새 항목을 판별했는데, 2단 레이아웃
+    논문에서 실제로 관찰된 문제: PyMuPDF가 참고문헌 항목 사이의 여백을
+    인식하지 못하고 여러(때로는 대부분의) 항목을 줄바꿈이 전혀 없는 하나의
+    블록으로 통째로 추출하는 경우가 흔하다. 그러면 줄 기반 판별로는 첫
+    항목만 인식되고 나머지 전부가 그 항목 하나에 흡수돼버린다.
 
-    def flush():
-        if current_first_line is None:
-            return
-        text = re.sub(r"\s+", " ", " ".join(current_parts)).strip()
+    이를 피하기 위해 번호형(_extract_marker_entries)과 동일한 원칙으로,
+    항목 경계를 줄바꿈이 아니라 "문장 경계(마침표 등) 뒤에 오는 Surname,
+    패턴" 자체를 텍스트 전체에서 찾아 판정한다. 실제로 참고문헌 항목인지는
+    잘라낸 구간 안에 연도가 포함돼 있는지로 한 번 더 검증한다(오탐 방지).
+    키는 "성(소문자)+연도"(예: "vaswani2017")이며, 같은 저자가 같은 해에
+    여러 편을 낸 경우(2020a/2020b 등) 먼저 나온 항목만 유지한다.
+    """
+    normalized = re.sub(r"\s+", " ", body_text).strip()
+    if not normalized:
+        return {}
+
+    starts = [m.end() for m in _AUTHOR_YEAR_ENTRY_BOUNDARY_RE.finditer(normalized)]
+    if not starts or starts[0] != 0:
+        starts.insert(0, 0)
+
+    entries: Dict[str, str] = {}
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(normalized)
+        text = normalized[start:end].strip()
         if not text:
-            return
+            continue
+        surname_match = _AUTHOR_YEAR_ENTRY_START_RE.match(text)
+        if not surname_match:
+            continue
         year_match = _YEAR_RE.search(text)
-        surname_match = _AUTHOR_YEAR_ENTRY_START_RE.match(current_first_line)
-        if not (year_match and surname_match):
-            return
-        key = f"{surname_match.group(1).lower()}{year_match.group(1)}"
+        if not year_match:
+            continue
+        year = year_match.group(1) or year_match.group(2)
+        key = f"{surname_match.group(1).lower()}{year}"
         if key not in entries:
             entries[key] = text[:_MAX_ENTRY_LENGTH]
-
-    for raw_line in body_lines:
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        if _AUTHOR_YEAR_ENTRY_START_RE.match(line):
-            flush()
-            current_first_line = line
-            current_parts = [line]
-        elif current_first_line is not None:
-            current_parts.append(line)
-
-    flush()
     return entries

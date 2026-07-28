@@ -222,3 +222,40 @@ def test_author_year_keeps_first_entry_on_duplicate_key():
     refs = extract_reference_list(pages)
     assert set(refs.keys()) == {"kim2020"}
     assert "First paper title" in refs["kim2020"]
+
+
+def test_author_year_entries_merged_into_single_block_without_line_breaks():
+    """2단 레이아웃 논문에서 실제로 관찰된 문제: pdf_parser.py가 여러(때로는
+    거의 대부분의) 참고문헌 항목 사이에 줄바꿈을 전혀 남기지 않고 하나의
+    블록으로 통째로 추출하는 경우가 있다(실제 논문에서 재현됨). 줄 기반
+    판별이었다면 첫 항목만 인식되고 나머지 전부가 거기 흡수됐을 것이다.
+    또한 이 케이스는 AAAI/IJCAI류 서식(연도가 괄호 없이 "... 2022. Title"
+    형태로 저자 목록 바로 뒤에 옴)도 함께 검증한다."""
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "Gifford, A. T.; Dwivedi, K.; Roig, G.; and Cichy, R. M. 2022. A large "
+        "and rich EEG dataset for modeling human visual object recognition. "
+        "NeuroImage, 264: 119754. Grill-Spector, K.; and Malach, R. 2004. The "
+        "human visual cortex. Annu. Rev. Neurosci., 27(1): 649-677. Hansen, "
+        "K. A.; Kay, K. N.; and Gallant, J. L. 2007. Topographic organization "
+        "in and near human visual area V4. Journal of Neuroscience, 27(44): "
+        "11896-11911."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"gifford2022", "grill-spector2004", "hansen2007"}
+    assert "EEG dataset" in refs["gifford2022"]
+    assert "human visual cortex" in refs["grill-spector2004"]
+    assert "Topographic organization" in refs["hansen2007"]
+
+
+def test_author_year_supports_plain_year_without_parentheses():
+    """APA류("(2020)")뿐 아니라 AAAI/IJCAI류처럼 연도가 괄호 없이 오는
+    서식("... 2020. Title")도 지원해야 한다."""
+    pages = [{"page_num": 1, "text": (
+        "References\n\n"
+        "Smith, J.; and Lee, K. 2020. A paper without parenthesized year. "
+        "Some Venue, 1: 1-10."
+    )}]
+    refs = extract_reference_list(pages)
+    assert set(refs.keys()) == {"smith2020"}
+    assert "without parenthesized year" in refs["smith2020"]
