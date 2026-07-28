@@ -2814,7 +2814,7 @@ body.light-theme .chat-messages::-webkit-scrollbar-thumb:hover {
 
 .message-bubble {
   padding: 12px 16px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   font-size: 13.5px;
   line-height: 1.6;
   word-break: keep-all;

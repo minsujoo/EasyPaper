@@ -5480,6 +5480,16 @@ async function openFromLibrary(doc, shouldPushState = true) {
         const renderedContent = isAssistant ? formatChatHtml(msg.content) : formatUserChatHtml(msg.content)
         appendChatMessage(msg.role, renderedContent, true)
       }
+
+      // 마지막 답변이 여전히 어시스턴트 것이라면(그 뒤로 새 질문을 보내지
+      // 않았다면) 새로고침 전에 붙어 있던 추천 질문 칩을 캐시에서 복원한다.
+      const lastMsg = chatHistoryList[chatHistoryList.length - 1]
+      if (lastMsg.role === 'assistant') {
+        const cachedQuestions = loadSuggestedQuestionsCache(doc.id)
+        if (cachedQuestions?.length) {
+          renderSuggestedQuestionChips(chatMessages.lastElementChild, cachedQuestions)
+        }
+      }
     }
   } finally {
     if (docOpeningId === doc.id) docOpeningId = null
@@ -9047,10 +9057,62 @@ function appendActionButtons(msgEl, role, content) {
   msgEl.appendChild(actionsEl)
 }
 
+// ── 추천 질문 로컬 캐시 ─────────────────────────────────
+// 추천 질문은 보조 UI라서 채팅 기록(백엔드 DB)에는 저장되지 않는다 - 그
+// 결과 새로고침 후 히스토리를 다시 불러오면 마지막 답변에 붙어있던 칩이
+// 사라지는 문제가 있었다. 인용 이미지(easypaper_chat_quote_images_*)와
+// 동일한 방식으로 문서별 로컬 스토리지에 마지막 추천 질문 세트만 캐싱해두고,
+// 히스토리 복원 시 마지막 메시지가 여전히 어시스턴트 답변이면 다시 붙인다.
+function saveSuggestedQuestionsCache(sessionId, questions) {
+  if (!sessionId) return
+  try {
+    localStorage.setItem(`easypaper_suggested_questions_${sessionId}`, JSON.stringify(questions))
+  } catch (e) {
+    console.warn('추천 질문 로컬 저장 실패:', e)
+  }
+}
+
+function loadSuggestedQuestionsCache(sessionId) {
+  if (!sessionId) return null
+  try {
+    const raw = localStorage.getItem(`easypaper_suggested_questions_${sessionId}`)
+    return raw ? JSON.parse(raw) : null
+  } catch (e) {
+    return null
+  }
+}
+
+function clearSuggestedQuestionsCache(sessionId) {
+  if (!sessionId) return
+  localStorage.removeItem(`easypaper_suggested_questions_${sessionId}`)
+}
+
 // 대화가 이어지면 예전 답변에 달렸던 추천 질문은 더 이상 "다음에 물어볼 질문"이
 // 아니게 되므로, 새 질문을 보내거나 답변을 다시 받을 때마다 기존 칩을 모두 지운다.
 function clearSuggestedQuestions() {
   chatMessages.querySelectorAll('.suggested-questions').forEach(el => el.remove())
+  clearSuggestedQuestionsCache(state.sessionId)
+}
+
+// 추천 질문 칩 목록을 메시지 엘리먼트 아래에 그려 넣는다. API 응답을 받은
+// 직후와, 새로고침 후 캐시에서 복원할 때 모두 사용하는 공통 렌더링 로직.
+function renderSuggestedQuestionChips(msgEl, questions) {
+  const wrap = document.createElement('div')
+  wrap.className = 'suggested-questions'
+  questions.forEach(q => {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'suggested-question-chip'
+    chip.textContent = q
+    chip.addEventListener('click', () => {
+      if (state.chatActiveStream) return
+      chatInput.value = q
+      sendChatMessage()
+    })
+    wrap.appendChild(chip)
+  })
+  msgEl.appendChild(wrap)
+  chatMessages.scrollTop = chatMessages.scrollHeight
 }
 
 // 어시스턴트 답변이 끝난 직후, 논문/대화 내용을 참고한 후속 질문 3개를 chat
@@ -9065,22 +9127,8 @@ async function renderSuggestedQuestions(msgEl) {
     // 이상 마지막 어시스턴트 메시지가 아니라면) 뒤늦게 붙이지 않는다.
     if (!msgEl.isConnected || msgEl !== chatMessages.lastElementChild) return
 
-    const wrap = document.createElement('div')
-    wrap.className = 'suggested-questions'
-    questions.forEach(q => {
-      const chip = document.createElement('button')
-      chip.type = 'button'
-      chip.className = 'suggested-question-chip'
-      chip.textContent = q
-      chip.addEventListener('click', () => {
-        if (state.chatActiveStream) return
-        chatInput.value = q
-        sendChatMessage()
-      })
-      wrap.appendChild(chip)
-    })
-    msgEl.appendChild(wrap)
-    chatMessages.scrollTop = chatMessages.scrollHeight
+    renderSuggestedQuestionChips(msgEl, questions)
+    saveSuggestedQuestionsCache(state.sessionId, questions)
   } catch (err) {
     console.warn('추천 질문 생성 실패:', err)
   }
