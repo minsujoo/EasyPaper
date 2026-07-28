@@ -3,12 +3,18 @@ import json
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
+from config import get_trans_provider
 from routers.upload import require_session_owner
 from services.auth import get_current_user
 from services.chunker import split_into_chunks, align_sentences, tag_source_text, parse_tagged_translation
 from services.llm_client import stream_translation, check_ollama_health
 from services.cache import get_cached_translation, save_translation_cache, get_cached_translation_full
 from services.library import save_translation as lib_save_translation, get_translation as lib_get_translation, get_translation_full as lib_get_translation_full, clear_translations as lib_clear_translations
+from services.pdf_parser import render_page_image_base64
+
+# 수식(LaTeX) 번역 정확도를 위해 페이지 이미지를 함께 첨부할 수 있는 provider
+# (translation_job.py의 배치 번역 잡과 동일한 기준).
+_VISION_CAPABLE_PROVIDERS = ("openai", "gemini", "claude")
 
 router = APIRouter()
 
@@ -81,6 +87,15 @@ async def translate_page(
         doc_title = session.get("metadata", {}).get("title") or session.get("filename", "")
         sentences = []
 
+        # vision을 지원하는 provider면 페이지 원본 이미지를 함께 보내 수식(LaTeX)
+        # 재현 정확도를 높인다 (translation_job.py의 배치 번역 잡과 동일한 로직).
+        page_image_b64 = None
+        if get_trans_provider() in _VISION_CAPABLE_PROVIDERS and not ignore_math:
+            try:
+                page_image_b64 = render_page_image_base64(session["pdf_path"], page_num)
+            except Exception as e:
+                print(f"[Translate {session_id}] page {page_num} 이미지 렌더링 실패(텍스트만 사용): {e}")
+
         try:
             for chunk_idx, chunk in enumerate(chunks):
                 # 청크 구분자 (여러 청크일 때)
@@ -111,7 +126,8 @@ async def translate_page(
                     doc_title=doc_title,
                     prev_context=prev_context,
                     session_id=session_id,
-                    page_num=page_num
+                    page_num=page_num,
+                    page_image_b64=page_image_b64
                 ):
                     chunk_result.append(token)
                     data = json.dumps({"content": token, "done": False, "cached": False}, ensure_ascii=False)
