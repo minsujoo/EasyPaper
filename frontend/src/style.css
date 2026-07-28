@@ -321,6 +321,14 @@ html, body {
   z-index: 100;
   gap: 16px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+  transition: transform 0.25s ease;
+}
+/* 스크롤 방향에 따른 툴바 자동 숨김(설정에서 켠 경우) - 위로 슬라이드시켜
+   숨긴다. 컨텐츠 영역(.panels)은 fixed 툴바 높이만큼 이미 padding-top이
+   있으므로, 숨겨져도 본문이 다시 배치되지 않고 툴바가 있던 자리만 비어 보인다. */
+.topbar.toolbar-hidden {
+  transform: translateY(-100%);
 }
 
 .topbar-left, .topbar-right {
