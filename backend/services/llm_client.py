@@ -121,7 +121,8 @@ async def stream_translation(
     doc_title: str = "",
     prev_context: str = "",
     session_id: str = None,
-    page_num: int = None
+    page_num: int = None,
+    page_image_b64: str = None
 ) -> AsyncGenerator[str, None]:
     """
     Ollama /api/chat 엔드포인트를 사용해 번역 결과를 스트리밍합니다.
@@ -262,7 +263,20 @@ async def stream_translation(
             "※ 중요 2: 원문에 식 번호(예: (1), (2), (3.4) 등 괄호 안에 숫자가 표기된 형태)가 붙어 있는 수식은 독립된 블록 수식으로 취급해야 합니다. 번역문에서도 이 수식은 본문 줄바꿈을 통해 반드시 별도의 단독 줄(Line break)로 분리하고, 블록 수식 기호인 $$...$$를 사용하여 식 번호와 함께 감싸서 출력하세요 (예: `\\n$$f(x) = y \\quad (1)$$\\n`). 이를 본문 한가운데에 인라인 형태로 이어 적지 마세요.\n"
             "※ 중요 3: 하나의 긴 수식이 원문 텍스트 레이어의 분리로 인해 여러 줄(Line)로 나뉘어 있거나, 시그마(\\sum) 등 수식의 일부 기호가 단독으로 쪼개져 보일 수 있습니다. 이 경우 번역문에서는 절대로 수식의 일부 기호(예: `\\sum^L` 등)를 중복되거나 잘못된 단독 수식으로 분리하여 출력하지 마세요. 여러 줄에 걸쳐 나뉜 수식 성분들을 누락이나 기호의 중복 생성 없이 온전히 하나로 병합하여 단 하나의 완성된 블록 수식 `$$수식 전체$$`로 결합하여 출력해야 합니다."
         )
-        
+        # PDF 텍스트 추출은 수식 폰트(그리스 문자, 첨자, 시그마/적분 등)의 글리프를
+        # 엉뚱한 유니코드로 옮기거나 순서를 뒤섞는 경우가 많아, 텍스트만으로는
+        # 원본 수식을 온전히 복원하기 어렵다 - vision을 지원하는 provider(openai/
+        # gemini/claude)에는 이 페이지의 실제 스캔 이미지를 함께 첨부해, 텍스트가
+        # 아니라 이미지를 근거로 수식을 재현하도록 지시한다.
+        if page_image_b64:
+            rules.append(
+                "이 페이지의 실제 스캔 이미지가 텍스트와 함께 첨부되어 있습니다. PDF에서 텍스트를 추출하는 "
+                "과정에서 수식 기호, 위/아래 첨자, 그리스 문자, 시그마·적분 등의 구조가 깨지거나 순서가 "
+                "뒤섞였을 수 있습니다. 수식의 정확한 표기(어떤 기호인지, 첨자가 위첨자인지 아래첨자인지, "
+                "항의 순서 등)는 텍스트가 아니라 반드시 첨부된 이미지를 직접 보고 확인하여 정확한 LaTeX로 "
+                "재현하세요. 추출된 텍스트와 이미지의 내용이 서로 다르게 보이면 이미지를 기준으로 삼으세요."
+            )
+
     if ignore_table:
         rules.append("Markdown 표(Table) 형식의 출력은 절대 하지 말고, 표 데이터는 번역에서 완전히 제외하세요.")
     else:
@@ -304,16 +318,35 @@ async def stream_translation(
             "content": prompt,
         }
     ]
+    # ignore_math일 때는 애초에 수식을 번역 결과에서 빼므로 이미지를 함께 보낼
+    # 이유가 없다 - 수식을 실제로 재현해야 하는 경우에만 첨부한다.
+    use_image = bool(page_image_b64) and not ignore_math
 
     if provider == "openai":
+        if use_image:
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page_image_b64}"}}
+                ]
+            }]
         async for token in stream_openai(messages, model=model, temperature=0.3):
             yield token
         return
     elif provider == "gemini":
-        async for token in stream_gemini(messages, model=model, temperature=0.3):
+        async for token in stream_gemini(messages, model=model, temperature=0.3, image_b64=page_image_b64 if use_image else None):
             yield token
         return
     elif provider == "claude":
+        if use_image:
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": page_image_b64}}
+                ]
+            }]
         async for token in stream_claude(messages, model=model, temperature=0.3):
             yield token
         return
@@ -438,18 +471,18 @@ async def stream_openai(messages: list, model: str, temperature: float = 0.5) ->
         raise RuntimeError("OpenAI 요청 시간이 초과되었습니다.")
 
 
-async def stream_gemini(messages: list, model: str, temperature: float = 0.5) -> AsyncGenerator[str, None]:
+async def stream_gemini(messages: list, model: str, temperature: float = 0.5, image_b64: str = None) -> AsyncGenerator[str, None]:
     api_key = get_gemini_api_key()
     if not api_key:
         raise RuntimeError("Gemini API Key가 설정되지 않았습니다. 설정에서 입력해 주세요.")
-        
+
     headers = {
         "Content-Type": "application/json"
     }
-    
+
     gemini_contents = []
     system_instruction = None
-    
+
     for msg in messages:
         role = msg["role"]
         if role == "system":
@@ -460,7 +493,14 @@ async def stream_gemini(messages: list, model: str, temperature: float = 0.5) ->
                 "role": gemini_role,
                 "parts": [{"text": msg["content"]}]
             })
-            
+
+    # 번역 시 수식(LaTeX) 재현 정확도를 높이기 위해 페이지 원본 이미지를 함께
+    # 보내는 경우, 마지막 user 메시지의 parts에 inline_data로 첨부한다.
+    if image_b64 and gemini_contents:
+        gemini_contents[-1]["parts"].append({
+            "inline_data": {"mime_type": "image/png", "data": image_b64}
+        })
+
     payload = {
         "contents": gemini_contents,
         "generationConfig": {

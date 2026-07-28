@@ -1,3 +1,4 @@
+import base64
 import fitz  # PyMuPDF
 import re
 from typing import List, Dict, Any, Optional
@@ -595,6 +596,27 @@ def render_image_crop(pdf_path: str, page_num: int, bbox_percent: Dict[str, floa
         pix = page.get_pixmap(matrix=matrix, clip=clip)
         pix.save(output_path)
         return True
+    finally:
+        doc.close()
+
+
+def render_page_image_base64(pdf_path: str, page_num: int, zoom: float = 1.5) -> Optional[str]:
+    """
+    지정한 페이지 전체를 PNG로 렌더링해 base64 문자열로 반환합니다. PDF 텍스트
+    추출은 수식(LaTeX) 기호·첨자·특수문자를 자주 깨뜨리는데, vision을 지원하는
+    LLM(openai/gemini/claude)에게는 추출된 텍스트와 함께 이 페이지의 실제
+    스캔 이미지를 첨부해 수식 표기의 근거로 삼게 함으로써 번역 시 수식이
+    원본과 어긋나는 문제를 줄인다. 디스크에 파일로 저장하지 않고 바로 LLM
+    호출에 실어 보낼 수 있도록 base64로 반환한다.
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        if page_num < 1 or page_num > doc.page_count:
+            return None
+        page = doc[page_num - 1]
+        matrix = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=matrix)
+        return base64.b64encode(pix.tobytes("png")).decode("ascii")
     finally:
         doc.close()
 

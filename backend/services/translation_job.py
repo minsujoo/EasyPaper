@@ -11,11 +11,17 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from config import LIBRARY_DIR
+from config import LIBRARY_DIR, get_trans_provider
 from services.atomic_io import atomic_write_text
 from services.chunker import split_into_chunks, align_sentences, tag_source_text, parse_tagged_translation
 from services.llm_client import stream_translation
-from services.library import save_translation, get_translation, get_document
+from services.library import save_translation, get_translation, get_document, get_pdf_path
+from services.pdf_parser import render_page_image_base64
+
+# 수식(LaTeX) 번역 정확도를 위해 페이지 이미지를 함께 첨부할 수 있는 provider.
+# CLI 기반 provider(antigravity/claude_code/codex)와 로컬 ollama는 이 코드베이스의
+# 추상화 계층에서 아직 이미지 첨부를 지원하지 않는다.
+_VISION_CAPABLE_PROVIDERS = ("openai", "gemini", "claude")
 
 # 메모리 내 활성 잡 ( session_id → asyncio.Task )
 _running_tasks: dict[str, asyncio.Task] = {}
@@ -159,6 +165,10 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
     except Exception as e:
         print(f"[Job {session_id}] Failed to get document title: {e}")
 
+    # vision을 지원하는 provider면 페이지별로 원본 이미지를 함께 보내 수식(LaTeX)
+    # 재현 정확도를 높인다 - ignore_math면 애초에 수식을 생략하므로 렌더링하지 않는다.
+    pdf_path = get_pdf_path(session_id) if (get_trans_provider() in _VISION_CAPABLE_PROVIDERS and not ignore_math) else None
+
     # 이미 완료된 페이지들을 루프 돌기 전 한 번에 스캔하여 저장
     scanned_any = False
     for page_data in pages:
@@ -193,6 +203,14 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
                 except Exception:
                     pass
 
+            # 페이지 원본 이미지 렌더링 (vision 지원 provider + 수식 번역 대상인 경우만)
+            page_image_b64 = None
+            if pdf_path:
+                try:
+                    page_image_b64 = render_page_image_base64(pdf_path, page_num)
+                except Exception as e:
+                    print(f"[Job {session_id}] page {page_num} 이미지 렌더링 실패(텍스트만 사용): {e}")
+
             try:
                 # 원문 태깅 처리
                 tagged_text, src_sentences = tag_source_text(text)
@@ -207,7 +225,8 @@ async def _run_job(session_id: str, pages: list, job: dict) -> None:
                     doc_title=doc_title,
                     prev_context=prev_context,
                     session_id=session_id,
-                    page_num=page_num
+                    page_num=page_num,
+                    page_image_b64=page_image_b64
                 )
                 # 태그 분석 및 매핑 생성
                 cleaned_translation, sentences = parse_tagged_translation(translation, src_sentences)
@@ -285,7 +304,8 @@ async def _translate_page(
     doc_title: str = "",
     prev_context: str = "",
     session_id: str = None,
-    page_num: int = None
+    page_num: int = None,
+    page_image_b64: str = None
 ) -> str:
     """단일 페이지 텍스트를 번역합니다."""
     if not text:
@@ -306,6 +326,7 @@ async def _translate_page(
             ignore_refs=ignore_refs,
             doc_title=doc_title,
             prev_context=current_prev,
+            page_image_b64=page_image_b64,
             session_id=session_id,
             page_num=page_num
         ):
