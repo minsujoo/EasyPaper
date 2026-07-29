@@ -805,17 +805,30 @@ async def stream_chat(
             latest_msg = history_messages[-1]
             formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
 
+        # codex CLI는 -i/--image로 로컬 이미지를 직접 첨부할 수 있어, agy와 달리
+        # 파일 경로를 프롬프트 텍스트에 안내할 필요 없이 파일만 저장해두면 된다.
+        codex_image_path = _save_chat_capture_image(session_id, page_image_b64) if page_image_b64 else None
+
         chat_prompt = "\n".join(formatted_prompt)
-        async for token in stream_codex(chat_prompt, model=model, session_id=session_id, is_chat=True):
+        async for token in stream_codex(chat_prompt, model=model, session_id=session_id, is_chat=True, image_path=codex_image_path):
             yield token
         if include_full_context:
             _mark_chat_context_sent(session_id, "codex")
         return
 
     # Fallback to Ollama:
+    ollama_messages = messages
+    if page_image_b64 and messages and messages[-1]["role"] == "user":
+        # Ollama /api/chat은 멀티모달(vision) 모델에 한해 메시지의 "images" 필드로
+        # 로컬 이미지를 받는다(data URL 접두사 없는 raw base64). 첨부해도 현재
+        # 설정된 CHAT_MODEL이 vision을 지원하지 않으면 이미지는 무시되거나
+        # 모델에 따라 오류가 날 수 있다 - vision 지원 모델(gemma3/llava 등) 사용을
+        # 전제로 한다.
+        ollama_messages = messages[:-1] + [{**messages[-1], "images": [page_image_b64]}]
+
     payload = {
         "model": model,
-        "messages": messages,
+        "messages": ollama_messages,
         "stream": True,
         "think": False,  # thinking 모드 비활성화 (속도 향상)
         "options": {
@@ -1510,7 +1523,7 @@ def _get_codex_session_lock(session_id: str) -> asyncio.Lock:
     return _codex_session_locks[session_id]
 
 
-async def stream_codex(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False, usage_label: str = None, effort_override: str = None) -> AsyncGenerator[str, None]:
+async def stream_codex(prompt: str, model: str = None, session_id: str = None, is_chat: bool = False, usage_label: str = None, effort_override: str = None, image_path: str = None) -> AsyncGenerator[str, None]:
     """Codex CLI(`codex exec`)로 번역/채팅/인사이트를 생성합니다.
 
     codex exec --json은 claude/antigravity와 달리 토큰 단위 스트리밍을 제공하지
@@ -1581,6 +1594,12 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
             cmd += ["-m", model_name]
         if effort_level:
             cmd += ["-c", f"model_reasoning_effort={effort_level}"]
+        # codex CLI는 -i/--image로 로컬 이미지 파일을 프롬프트에 직접 첨부하는
+        # 기능을 공식 지원한다(exec, exec resume 서브커맨드 모두). agy처럼 모델이
+        # 파일 도구로 직접 열어보게 유도할 필요 없이, CLI 자체가 이미지를 읽어
+        # 메시지에 실어 보내므로 sandbox_mode=read-only와도 무관하게 안전하다.
+        if image_path:
+            cmd += ["-i", image_path]
         cmd += ["-"]
         return cmd
 
