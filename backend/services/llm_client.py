@@ -1007,14 +1007,19 @@ async def generate_reading_primer(
 
     # 브리핑은 계보/파인만/실험 흐름/용어집까지 한 번에 뽑아내느라 항목이 많아,
     # 사용자가 채팅용으로 설정해둔 effort를 그대로 쓰면 CLI가 오래 침묵하다 stall
-    # 타임아웃(120초)에 걸리는 경우가 실측됐다. 브리핑 생성만은 항상 낮은 effort로
-    # 강제해 완결된 응답을 더 빨리 받는 쪽을 택한다.
+    # 타임아웃(120초)에 걸리는 경우가 실측됐다. claude_code/codex는 "모델|effort"
+    # 파이프 표기를 지원해 --effort를 별도로 얹어도 안전하지만, antigravity는
+    # (Gemini Flash 계열처럼) effort가 모델 이름 자체에 이미 포함된 경우가 있어
+    # --effort를 별도로 얹으면 "--effort is not supported for model ..."로 CLI가
+    # 즉시 거부한다 - 실제로 이 때문에 매 폴링(3초)마다 즉시 실패·재시도가
+    # 반복되어 백엔드 CPU를 독점하는 장애가 있었다. 그래서 antigravity에는
+    # effort를 강제하지 않고 사용자가 설정한 모델/effort를 그대로 쓴다.
     PRIMER_EFFORT = "low"
 
     async def _call_once() -> str:
         tokens = []
         if provider == "antigravity":
-            async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="primer", effort_override=PRIMER_EFFORT):
+            async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="primer"):
                 tokens.append(token)
         elif provider == "claude_code":
             async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="primer", effort_override=PRIMER_EFFORT):

@@ -9,6 +9,7 @@ test_primer.py에서 이미 다룬다).
 """
 
 import asyncio
+import time
 
 import pytest
 
@@ -37,6 +38,7 @@ def fake_generation(monkeypatch):
     monkeypatch.setattr(primer_router, "require_session_owner", fake_require_session_owner)
     monkeypatch.setattr(primer_router, "generate_primer", fake_generate_primer)
     primer_router._pending_generations.clear()
+    primer_router._last_failure_at.clear()
     return calls
 
 
@@ -92,3 +94,20 @@ def test_regenerate_does_not_duplicate_when_already_in_flight(test_client, isola
     res = test_client.post("/api/library/doc-regen-dup/primer/regenerate")
     assert res.json() == {"status": "pending"}
     assert fake_generation["count"] == 1
+
+
+def test_does_not_restart_generation_within_cooldown_after_a_recent_failure():
+    """generate_primer가 (설정 오류 등으로) 거의 즉시 실패하는 경우, 쿨다운 없이
+    다음 폴링(3초 간격)마다 곧바로 재시도하면 CLI 서브프로세스를 계속 새로
+    띄우게 되어 백엔드 CPU를 독점하는 장애로 이어졌다(실제로 재현됨). 최근 실패
+    기록이 쿨다운 이내면 새 생성을 시작하지 않아야 한다."""
+    task_key = "doc-cooldown:한국어"
+    primer_router._pending_generations.clear()
+    primer_router._last_failure_at.clear()
+    primer_router._last_failure_at[task_key] = time.monotonic()
+
+    primer_router._ensure_generation_started(
+        "doc-cooldown", "한국어", {"pages": [], "metadata": {}, "pdf_path": "/x"}, "testuser"
+    )
+
+    assert task_key not in primer_router._pending_generations

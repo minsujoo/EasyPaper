@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
@@ -21,6 +22,13 @@ router = APIRouter()
 # 간격으로 재조회한다.
 _pending_generations: dict[str, "asyncio.Task"] = {}
 
+# 실패 직후 폴링(3초 간격)이 곧바로 재시도를 몰아치는 걸 막기 위한 쿨다운.
+# CLI가 (설정 오류 등으로) 거의 즉시 실패하는 경우, 이 쿨다운이 없으면 매 폴링마다
+# 서브프로세스를 새로 띄우게 되어 백엔드 CPU를 독점하는 장애로 이어질 수 있다 -
+# 실제로 잘못된 CLI 인자 조합 때문에 이 문제가 재현된 적이 있다.
+_last_failure_at: dict[str, float] = {}
+_RETRY_COOLDOWN_SECONDS = 15
+
 
 def _ensure_generation_started(doc_id: str, target_lang: str, session: dict, current_user: str) -> None:
     """이 문서/언어 조합의 브리핑 생성이 이미 진행 중이 아니면 백그라운드
@@ -28,6 +36,10 @@ def _ensure_generation_started(doc_id: str, target_lang: str, session: dict, cur
     task_key = f"{doc_id}:{target_lang}"
     task = _pending_generations.get(task_key)
     if task is not None and not task.done():
+        return
+
+    last_failure = _last_failure_at.get(task_key)
+    if last_failure is not None and (time.monotonic() - last_failure) < _RETRY_COOLDOWN_SECONDS:
         return
 
     async def _generate():
@@ -41,11 +53,14 @@ def _ensure_generation_started(doc_id: str, target_lang: str, session: dict, cur
                 target_lang=target_lang,
                 session_id=doc_id,
             )
+            _last_failure_at.pop(task_key, None)
         except Exception as e:
             # generate_primer()가 실패하면 캐시에 아무것도 저장하지 않은 채 여기서
-            # 끝난다. 태스크가 pop되므로 다음 GET/재생성 요청이 처음부터 다시
-            # 시도한다(pending 폴링이 이미 그 재시도를 감당하도록 되어 있다).
+            # 끝난다. 태스크가 pop되므로 쿨다운이 지난 뒤 다음 GET/재생성 요청이
+            # 처음부터 다시 시도한다(pending 폴링이 이미 그 재시도를 감당하도록
+            # 되어 있다).
             print(f"[primer] 브리핑 생성 실패 ({doc_id}): {e}")
+            _last_failure_at[task_key] = time.monotonic()
         finally:
             _pending_generations.pop(task_key, None)
 
