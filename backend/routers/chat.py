@@ -2,7 +2,7 @@ import hashlib
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 from routers.upload import sessions, ensure_session, require_session_owner
 from services.llm_client import stream_chat, generate_suggested_questions
@@ -25,6 +25,10 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     messages: List[ChatMessage]
+    # 캡처 모드로 첨부한 이미지의 raw base64(PNG, data URL 접두사 없음). 있으면
+    # 이번 질문(messages의 마지막 user 메시지)에 실제로 첨부해 vision 지원
+    # provider(openai/gemini/claude)가 캡처 영역을 직접 보고 답할 수 있게 한다.
+    image_base64: Optional[str] = None
 
 # ── 여러 논문 간 비교 채팅 ──────────────────────────────
 MIN_COMPARE_DOCS = 2
@@ -110,10 +114,13 @@ async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current
         yield " "
         full_response = []
         try:
-            async for token in stream_chat(system_prompt, history_messages, session_id=session_id):
+            async for token in stream_chat(
+                system_prompt, history_messages, session_id=session_id,
+                page_image_b64=data.image_base64
+            ):
                 full_response.append(token)
                 yield token
-            
+
             # Save assistant response to database
             assistant_content = "".join(full_response).strip()
             if assistant_content:

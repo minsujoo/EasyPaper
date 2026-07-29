@@ -9270,6 +9270,11 @@ async function sendChatMessage() {
   chatInput.style.height = 'auto'
   clearSuggestedQuestions()
 
+  // 캡처 이미지로 질문하는 경우, 이번 턴에 한해 실제 이미지를 AI에게 함께
+  // 전달하기 위한 raw base64(data URL 접두사 제거) - DB/히스토리에는 여전히
+  // 텍스트 placeholder만 저장되고, 이건 이번 요청에서만 사용된다.
+  let imageForThisTurn = null
+
   if (state.quotedText) {
     const fullPayload = `[인용된 본문 내용]:\n"${state.quotedText}"\n\n[질문]:\n${text}`
     
@@ -9288,6 +9293,7 @@ async function sendChatMessage() {
     const quoteId = `qimg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     saveChatQuoteImage(state.sessionId, quoteId, state.quotedImage)
     const fullPayload = `[인용된 이미지 (Page ${state.quotedImagePage})|${quoteId}]\n\n질문:\n${text}`
+    imageForThisTurn = state.quotedImage.replace(/^data:image\/\w+;base64,/, '')
 
     // UI에 답장/인용구 레이아웃으로 표시
     const userMsgHtml = `<div class="message-quote"><span class="quote-symbol">❝</span><img class="message-quote-img" src="${state.quotedImage}" alt="Quoted Figure" /></div><div class="message-text">${escapeHtml(text)}</div>`
@@ -9366,7 +9372,8 @@ async function sendChatMessage() {
       chatInput.disabled = false
       updateChatSendBtnIcon(false)
       chatInput.focus()
-    }
+    },
+    imageForThisTurn
   )
 }
 
