@@ -483,9 +483,12 @@ export function streamPullModelAPI(modelName, onStatus, onDone, onError) {
  * @param {function} onToken - 토큰 수신 시 콜백
  * @param {function} onDone - 완료 시 콜백
  * @param {function} onError - 에러 발생 시 콜백
+ * @param {string} [imageBase64] - 캡처 모드로 첨부한 이미지의 raw base64(PNG,
+ *   data URL 접두사 없음). 있으면 이번 질문에 실제로 첨부되어 vision을 지원하는
+ *   provider가 캡처 영역을 직접 보고 답한다.
  * @returns {function} abort - 중단 함수
  */
-export function streamChatAPI(sessionId, messages, onToken, onDone, onError) {
+export function streamChatAPI(sessionId, messages, onToken, onDone, onError, imageBase64) {
   const controller = new AbortController()
 
   fetch(`${API_BASE}/chat/stream`, {
@@ -493,7 +496,8 @@ export function streamChatAPI(sessionId, messages, onToken, onDone, onError) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       session_id: sessionId,
-      messages: messages
+      messages: messages,
+      image_base64: imageBase64 || undefined
     }),
     signal: controller.signal
   })

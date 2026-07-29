@@ -652,28 +652,60 @@ async def stream_claude(messages: list, model: str, temperature: float = 0.5) ->
         raise RuntimeError("Claude 요청 시간이 초과되었습니다.")
 
 
+def _messages_with_trailing_image(messages: list, page_image_b64: str, image_block_builder) -> list:
+    """마지막 메시지(캡처 이미지를 첨부해 물어본 최신 질문)의 content를 텍스트+
+    이미지 멀티파트 블록으로 바꾼 사본을 반환한다. 원본 messages는 건드리지
+    않는다 - 이미지는 이번 호출 한 번에만 실어 보내면 되고, DB/히스토리에는
+    여전히 텍스트 placeholder만 남아야 하기 때문이다."""
+    if not page_image_b64 or not messages or messages[-1]["role"] != "user":
+        return messages
+    return messages[:-1] + [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": messages[-1]["content"]},
+            image_block_builder(),
+        ]
+    }]
+
+
 async def stream_chat(
     system_prompt: str,
     history_messages: list,
-    session_id: str = None
+    session_id: str = None,
+    page_image_b64: str = None
 ) -> AsyncGenerator[str, None]:
     """
     논문 관련 질문 답변 결과를 스트리밍합니다. (선택된 AI Provider에 따름)
+
+    page_image_b64가 있으면(사용자가 캡처 모드로 화면 영역을 잘라 질문에 첨부한
+    경우) vision을 지원하는 provider(openai/gemini/claude)에는 최신 질문 메시지에
+    실제 이미지를 함께 실어 보내, 캡처한 영역을 텍스트 placeholder가 아니라
+    이미지 자체로 보고 답하게 한다. CLI 기반 provider(antigravity/claude_code/
+    codex)는 텍스트 프롬프트만 받을 수 있어 이미지를 첨부할 수 없다 - 번역
+    기능의 페이지 이미지 첨부와 동일한 기존 제약이다.
     """
     messages = [{"role": "system", "content": system_prompt}] + history_messages
 
     provider = get_chat_provider()
     model = get_chat_model()
     if provider == "openai":
-        async for token in stream_openai(messages, model=model, temperature=0.5):
+        chat_messages = _messages_with_trailing_image(
+            messages, page_image_b64,
+            lambda: {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page_image_b64}"}}
+        )
+        async for token in stream_openai(chat_messages, model=model, temperature=0.5):
             yield token
         return
     elif provider == "gemini":
-        async for token in stream_gemini(messages, model=model, temperature=0.5):
+        async for token in stream_gemini(messages, model=model, temperature=0.5, image_b64=page_image_b64):
             yield token
         return
     elif provider == "claude":
-        async for token in stream_claude(messages, model=model, temperature=0.5):
+        chat_messages = _messages_with_trailing_image(
+            messages, page_image_b64,
+            lambda: {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": page_image_b64}}
+        )
+        async for token in stream_claude(chat_messages, model=model, temperature=0.5):
             yield token
         return
     elif provider == "antigravity":
