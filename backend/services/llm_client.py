@@ -652,6 +652,31 @@ async def stream_claude(messages: list, model: str, temperature: float = 0.5) ->
         raise RuntimeError("Claude 요청 시간이 초과되었습니다.")
 
 
+def _save_chat_capture_image(session_id: str, image_b64: str) -> str:
+    """캡처 모드로 첨부된 이미지를 vision API가 없는 CLI 기반 provider(agy 등)가
+    자신의 파일 도구로 직접 열어볼 수 있도록 문서별 디렉터리에 PNG로 저장하고
+    절대경로를 반환한다.
+
+    LIBRARY_DIR는 상대경로("./library")라 우리 프로세스(backend/ 기준 cwd)와
+    CLI 서브프로세스(project root 기준 cwd)가 서로 다른 기준으로 풀어버린다 -
+    stream_antigravity의 로그 파일 경로와 동일한 이유로 반드시 절대경로로
+    변환해서 넘겨야 한다. agy는 이미 --dangerously-skip-permissions로 project
+    root 하위 파일 접근 권한을 갖고 있으므로(기존 번역/채팅 흐름과 동일한
+    권한 범위), 이 폴더에 새로 쓰는 것으로 접근 범위가 추가로 넓어지지는 않는다.
+    """
+    import base64 as _base64
+    import os
+    import time
+    from config import LIBRARY_DIR
+
+    capture_dir = os.path.abspath(os.path.join(LIBRARY_DIR, session_id, "chat_captures"))
+    os.makedirs(capture_dir, exist_ok=True)
+    file_path = os.path.join(capture_dir, f"capture_{int(time.time() * 1000)}.png")
+    with open(file_path, "wb") as f:
+        f.write(_base64.b64decode(image_b64))
+    return file_path
+
+
 def _messages_with_trailing_image(messages: list, page_image_b64: str, image_block_builder) -> list:
     """마지막 메시지(캡처 이미지를 첨부해 물어본 최신 질문)의 content를 텍스트+
     이미지 멀티파트 블록으로 바꾼 사본을 반환한다. 원본 messages는 건드리지
@@ -722,7 +747,19 @@ async def stream_chat(
             formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
-            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
+            question_text = latest_msg.get('content', '')
+            # agy는 vision API가 아니라 CLI라 이미지를 메시지에 직접 실을 수
+            # 없다 - 대신 파일로 저장해두고 경로를 알려줘서, agy 자신의 파일
+            # 읽기 도구로 직접 열어보고 답하게 한다.
+            if page_image_b64:
+                image_path = _save_chat_capture_image(session_id, page_image_b64)
+                question_text += (
+                    f"\n\n[사용자가 캡처해 첨부한 이미지 파일: {image_path}]\n"
+                    "위 경로의 이미지 파일을 반드시 먼저 열어서 실제로 확인한 뒤, "
+                    "그 이미지에 보이는 내용을 근거로 답변하세요. 이미지를 열지 않고 "
+                    "추측으로 답하지 마세요."
+                )
+            formatted_prompt.append(f"User Question:\n{question_text}")
 
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_antigravity(chat_prompt, model=model, session_id=session_id, is_chat=True):
