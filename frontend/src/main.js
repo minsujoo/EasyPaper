@@ -5047,13 +5047,6 @@ function switchPrimerTab(tabName) {
   document.querySelectorAll('.primer-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.panel === tabName)
   })
-  // primer-body(overflow-y: auto)는 모달을 닫아도 DOM이 유지되며 스크롤 위치가
-  // 그대로 남는다. 이전에 개요 탭에서 아래로 스크롤해둔 채 모달을 닫았다가 다시
-  // 열면(항상 개요 탭으로 시작하는데도) 탭 바가 스크롤 밖으로 밀려나 안 보이거나,
-  // 짧은 다른 탭으로 전환했을 때만 우연히 스크롤이 맞아 보이는 것처럼 착시가
-  // 생겼다 - 실제로는 페인트 문제가 아니라 단순 스크롤 위치 문제였다. 탭을
-  // 전환할 때마다 맨 위로 스크롤을 리셋한다.
-  if (primerBody) primerBody.scrollTop = 0
 }
 
 function togglePrimerTabButton(tabName, visible) {

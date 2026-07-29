@@ -1707,6 +1707,7 @@ body.light-theme .toast.error { color: #dc2626; }
    숨긴다(main.js togglePrimerTabButton). */
 .primer-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
   overflow-x: auto;
   padding-bottom: 2px;
