@@ -1650,21 +1650,28 @@ body.light-theme .toast.error { color: #dc2626; }
   transform: scale(0.95);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.modal-overlay:not(.hidden) .primer-content { transform: scale(1); }
+.modal-overlay.is-visible .primer-content { transform: scale(1); }
 
-.primer-close-btn {
+/* 재생성/닫기 버튼을 개별 right 오프셋으로 정렬하면 두 버튼의 아이콘 크기(SVG
+   15px vs 텍스트 × 글자 24px)가 달라 실제 버튼 높이가 달라지고, top 값이
+   같아도 아이콘이 서로 다른 높이에 놓여 어긋나 보인다. 컨테이너를 flex로
+   묶고 두 버튼에 동일한 정사각형 크기를 줘서 항상 같은 기준선에 정렬되게 한다. */
+.primer-modal-actions {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 12px;
+  right: 12px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
+.primer-close-btn,
 .primer-regenerate-btn {
-  position: absolute;
-  top: 16px;
-  right: 54px;
-  z-index: 1;
+  width: 32px;
+  height: 32px;
 }
+
 .primer-regenerate-btn.is-loading svg {
   animation: primer-regenerate-spin 0.8s linear infinite;
 }
@@ -2182,7 +2189,7 @@ body.light-theme .pdf-annotation-underline {
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.modal-overlay:not(.hidden) {
+.modal-overlay.is-visible {
   opacity: 1;
   pointer-events: all;
 }
@@ -2199,7 +2206,7 @@ body.light-theme .pdf-annotation-underline {
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.modal-overlay:not(.hidden) .modal-content {
+.modal-overlay.is-visible .modal-content {
   transform: scale(1);
 }
 
