@@ -509,6 +509,8 @@ _FIGURE_OVERLAP_RATIO = 0.6
 # 캡션 블록까지 삼키지 않도록 작은 여유만 적용한다.
 _FIGURE_TEXT_SIDE_PADDING = 25.0
 _FIGURE_TEXT_VERTICAL_PADDING = 8.0
+_RASTER_TILE_MIN_SIZE = 3.0
+_RASTER_TILE_MERGE_THRESHOLD = 12.0
 
 
 def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
@@ -533,7 +535,10 @@ def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
         x0, y0, x1, y1 = bbox
         width = x1 - x0
         height = y1 - y0
-        if width < 15 or height < 15:
+        # 한 Figure가 10pt 안팎의 작은 이미지 조각들로 조립되는 PDF도 있다.
+        # 개별 타일 단계에서는 명백히 무효인 크기만 제외하고, 실제 Figure 여부는
+        # 타일들을 합친 뒤 전체 영역 크기로 판단한다.
+        if width < _RASTER_TILE_MIN_SIZE or height < _RASTER_TILE_MIN_SIZE:
             continue
         # 스캔 문서의 페이지 전체 OCR 텍스트를 모두 제거하지 않도록 전체 페이지에
         # 가까운 이미지는 Figure로 간주하지 않는다.
@@ -541,7 +546,7 @@ def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
             continue
         rects.append([x0, y0, x1, y1])
 
-    merged = merge_bboxes(rects, threshold=4.0)
+    merged = merge_bboxes(rects, threshold=_RASTER_TILE_MERGE_THRESHOLD)
     return [
         rect for rect in merged
         if (rect[2] - rect[0]) >= _VECTOR_FIGURE_MIN_SIZE
