@@ -4203,6 +4203,17 @@ body.toolbar-hidden.toolbar-pos-bottom .panels {
 body.toolbar-hidden.toolbar-pos-bottom .outline-sidebar {
   bottom: 0;
 }
+/* 우측 하단 floating 스크롤 버튼은 기본적으로 --chat-sidebar-offset(어시스턴트
+   패널 폭)만 고려해 위치가 계산되는데, bottom 위치에서는 화면 맨 아래에
+   툴바(--topbar-h)가 추가로 깔려있어 그만큼 띄우지 않으면 버튼 일부가
+   툴바 뒤에 가려진다. */
+body.toolbar-pos-bottom .floating-scroll-nav {
+  bottom: calc(24px + var(--topbar-h));
+}
+/* 툴바 자동 숨김 시에는 툴바가 화면 밖으로 사라지므로 띄워둔 여백도 되돌린다. */
+body.toolbar-hidden.toolbar-pos-bottom .floating-scroll-nav {
+  bottom: 24px;
+}
 
 /* 왼쪽(left) / 오른쪽(right) 공통: 세로 컬럼 툴바 */
 body.toolbar-pos-left .topbar,
@@ -4286,6 +4297,17 @@ body.toolbar-pos-right .panels {
   padding-top: 0;
   padding-right: 72px;
 }
+/* 우측 하단 floating 스크롤 버튼도 기본적으로 --chat-sidebar-offset만 고려해
+   위치가 계산되는데, right 위치에서는 세로 툴바(72px)가 화면 우측에 추가로
+   깔려있어 그만큼 왼쪽으로 더 밀지 않으면 버튼이 툴바 컬럼 밑에 깔려 거의
+   보이지 않는다. */
+body.toolbar-pos-right .floating-scroll-nav {
+  right: calc(24px + var(--chat-sidebar-offset, 0px) + 72px);
+}
+/* 툴바 자동 숨김 시에는 툴바가 화면 밖으로 사라지므로 띄워둔 여백도 되돌린다. */
+body.toolbar-hidden.toolbar-pos-right .floating-scroll-nav {
+  right: calc(24px + var(--chat-sidebar-offset, 0px));
+}
 body.toolbar-pos-left .outline-sidebar {
   top: 0;
   left: 72px;
@@ -4311,14 +4333,18 @@ body.toolbar-hidden.toolbar-pos-left .outline-sidebar {
 }
 /* 케밥 메뉴는 평소 버튼 아래(top:100%)/오른쪽 정렬로 뜨는데, 세로 컬럼
    툴바(left/right)에서는 버튼 옆으로 열려야 좁은 컬럼 안에 눌려 보이거나
-   화면 밖으로 잘리지 않는다. */
+   화면 밖으로 잘리지 않는다. 케밥 버튼은 툴바 맨 아래쪽에 있으므로 top:0
+   (버튼 위치에서 아래로 펼침)으로 두면 우측 하단 floating 스크롤 버튼과
+   겹친다 - bottom:0(버튼 위치에서 위로 펼침)으로 띄운다. */
 body.toolbar-pos-left .kebab-menu {
-  top: 0;
+  top: auto;
+  bottom: 0;
   left: calc(100% + 8px);
   right: auto;
 }
 body.toolbar-pos-right .kebab-menu {
-  top: 0;
+  top: auto;
+  bottom: 0;
   right: calc(100% + 8px);
   left: auto;
 }
