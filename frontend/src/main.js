@@ -48,6 +48,7 @@ const state = {
   quotedText: null,            // AI 질문 시 인용구 보관용
   documentImages: [],          // 문서 내 이미지 좌표 목록
   referenceMap: {},            // 참고문헌 번호 -> 원문 텍스트 맵
+  referenceMentions: {},       // 참고문헌 번호 -> 본문 제목/저자 언급 후보
   citationStyle: null,         // 'number' | 'author-year' | 'mixed' | null(미감지) - detectCitationStyle 결과
   referencesHeaderPageNum: null, // References/참고문헌 섹션이 시작되는 페이지 번호(감지 전엔 null)
   quotedImage: null,           // AI 질문 시 인용 이미지 보관용 (Base64)
@@ -201,6 +202,7 @@ const ollamaInstallLog      = $('ollama-install-log')
 
 const libraryScreen     = $('library-screen')
 const viewerScreen      = $('viewer-screen')
+const paperNoteScreen   = $('paper-note-screen')
 const fileInput         = $('file-input')
 const libUploadBtn      = $('lib-upload-btn')
 const libraryGrid       = $('library-grid')
@@ -231,9 +233,11 @@ const annotationList            = $('annotation-list')
 const libraryNotesSection       = $('library-notes-section')
 const paperNoteList             = $('paper-note-list')
 const notesRefreshBtn           = $('notes-refresh-btn')
-const paperNoteModal            = $('paper-note-modal')
 const paperNoteModalBody        = $('paper-note-modal-body')
-const paperNoteCloseBtn         = $('paper-note-close-btn')
+const paperNoteBackBtn          = $('paper-note-back-btn')
+const paperNoteLogoBtn          = $('paper-note-logo-btn')
+const paperNoteScreenTitle      = $('paper-note-screen-title')
+const paperNoteOpenPaperBtn     = $('paper-note-open-paper-btn')
 const paperNoteRegenerateBtn    = $('paper-note-regenerate-btn')
 
 const libCompareToggleBtn   = $('lib-compare-toggle-btn')
@@ -394,6 +398,7 @@ function showLogin() {
   stopLibraryPolling()
   viewerScreen.classList.remove('active')
   libraryScreen.classList.remove('active')
+  if (paperNoteScreen) paperNoteScreen.classList.remove('active')
   if (compareScreen) compareScreen.classList.remove('active')
   loginScreen.classList.add('active')
   // 글로벌 테마 토글 표시, 로그아웃 및 설정 버튼 숨김
@@ -406,6 +411,7 @@ function showViewer() {
   stopLibraryPolling()
   loginScreen.classList.remove('active')
   libraryScreen.classList.remove('active')
+  if (paperNoteScreen) paperNoteScreen.classList.remove('active')
   if (compareScreen) compareScreen.classList.remove('active')
   viewerScreen.classList.add('active')
   // 글로벌 테마 토글 숨김 (뷰어 상단바 테마 버튼 사용)
@@ -418,6 +424,7 @@ function showCompareScreen() {
   loginScreen.classList.remove('active')
   libraryScreen.classList.remove('active')
   viewerScreen.classList.remove('active')
+  if (paperNoteScreen) paperNoteScreen.classList.remove('active')
   if (compareScreen) compareScreen.classList.add('active')
   // 라이브러리 화면과 동일하게 글로벌 테마/로그아웃/설정 버튼을 표시한다
   // (비교 화면 자체에는 별도의 테마 버튼이 없음)
@@ -436,7 +443,7 @@ function resetState() {
     sessionId: null, filename: null, title: null, totalPages: 0, currentPage: 1,
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
     chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null,
-    activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {},
+    activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {}, referenceMentions: {},
     citationStyle: null, referencesHeaderPageNum: null
   })
   if (typeof toggleCropMode === 'function') toggleCropMode(false)
@@ -3712,6 +3719,7 @@ async function showLibraryScreen(shouldPushState = true) {
   }
   loginScreen.classList.remove('active')
   viewerScreen.classList.remove('active')
+  if (paperNoteScreen) paperNoteScreen.classList.remove('active')
   if (compareScreen) compareScreen.classList.remove('active')
   libraryScreen.classList.add('active')
   // 글로벌 테마 토글, 로그아웃, 설정 버튼 표시
@@ -4559,6 +4567,9 @@ function renderPaperNoteDetail(note) {
   const visuals = content.visuals || []
   const experimentFlow = content.experiment_flow || []
   const keywords = content.keywords || []
+  if (paperNoteScreenTitle) {
+    paperNoteScreenTitle.textContent = content.title || note.metadata?.title || note.filename || '논문 노트'
+  }
 
   const contributionsHtml = content.contributions?.length
     ? `<section class="paper-note-section"><h2>핵심 기여</h2>${noteListHtml(content.contributions)}</section>`
@@ -4600,10 +4611,22 @@ function renderPaperNoteDetail(note) {
   `
 }
 
-async function openPaperNote(docId) {
+async function openPaperNote(docId, shouldPushState = true) {
   activePaperNoteDocId = docId
+  if (shouldPushState) {
+    history.pushState({ screen: 'note', docId }, '', `#note?id=${encodeURIComponent(docId)}`)
+  }
+  stopLibraryPolling()
+  loginScreen.classList.remove('active')
+  libraryScreen.classList.remove('active')
+  viewerScreen.classList.remove('active')
+  if (compareScreen) compareScreen.classList.remove('active')
+  if (paperNoteScreen) paperNoteScreen.classList.add('active')
+  const globalToggle = $('global-theme-toggle')
+  if (globalToggle) globalToggle.classList.remove('hidden')
+  globalLogoutBtn.classList.remove('hidden')
+  globalSettingsBtn.classList.remove('hidden')
   paperNoteModalBody.innerHTML = `<div class="paper-note-empty-detail"><div class="spinner" style="margin:0 auto 14px"></div>노트를 불러오는 중...</div>`
-  openOverlayModal(paperNoteModal)
   try {
     const note = await fetchPaperNote(docId)
     if (!note.content) {
@@ -4618,16 +4641,24 @@ async function openPaperNote(docId) {
 }
 
 if (notesRefreshBtn) notesRefreshBtn.addEventListener('click', () => renderPaperNotes())
-if (paperNoteCloseBtn) paperNoteCloseBtn.addEventListener('click', () => closeOverlayModal(paperNoteModal))
-if (paperNoteModal) {
-  paperNoteModal.addEventListener('click', event => {
-    if (event.target === paperNoteModal) closeOverlayModal(paperNoteModal)
+if (paperNoteBackBtn) paperNoteBackBtn.addEventListener('click', () => showLibraryScreen())
+if (paperNoteLogoBtn) paperNoteLogoBtn.addEventListener('click', () => showLibraryScreen())
+if (paperNoteOpenPaperBtn) {
+  paperNoteOpenPaperBtn.addEventListener('click', async () => {
+    if (!activePaperNoteDocId) return
+    try {
+      const doc = await fetchLibraryDoc(activePaperNoteDocId)
+      await openFromLibrary(doc)
+    } catch (err) {
+      console.error('노트에서 논문 열기 실패:', err)
+      showToast('논문을 열지 못했습니다.', 'error')
+    }
   })
 }
 if (paperNoteRegenerateBtn) {
   paperNoteRegenerateBtn.addEventListener('click', async () => {
     if (!activePaperNoteDocId) return
-    closeOverlayModal(paperNoteModal)
+    await showLibraryScreen()
     await requestPaperNoteGeneration(activePaperNoteDocId)
   })
 }
@@ -5549,6 +5580,7 @@ async function loadDocumentReferences(docId) {
   try {
     const refRes = await fetchLibraryReferences(docId)
     state.referenceMap = refRes.references || {}
+    state.referenceMentions = refRes.mentions || {}
     state.citationStyle = detectCitationStyle(state.referenceMap)
 
     // 이미 렌더링되어 있는 페이지들의 인용 오버레이 갱신
@@ -5562,6 +5594,7 @@ async function loadDocumentReferences(docId) {
   } catch (e) {
     console.warn("참고문헌 목록 로드 실패:", e)
     state.referenceMap = {}
+    state.referenceMentions = {}
     state.citationStyle = null
   }
 }
@@ -8294,6 +8327,60 @@ function extractAuthorYearClauses(fullText, match) {
   return clauses
 }
 
+function escapeReferenceRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 참고문헌에서 로컬로 추출한 제목/저자 후보를 현재 페이지의 본문과 연결한다.
+// 제목은 긴 정확 일치만 허용하고, 저자는 학술 본문에서 흔한 "Surname et al."
+// 또는 "Surname and Surname" 형태를 우선한다. 한 문서에서 한 참고문헌에만
+// 등장하는 충분히 긴 성은 단독 언급도 인정한다.
+function extractBibliographicMentionMatches(fullText, mentionMap, bodyEnd) {
+  const matches = []
+  const searchableText = fullText.slice(0, bodyEnd >= 0 ? bodyEnd : fullText.length)
+  const authorFrequency = new Map()
+
+  Object.values(mentionMap || {}).forEach(mention => {
+    ;(mention.authors || []).forEach(author => {
+      const key = author.toLocaleLowerCase()
+      authorFrequency.set(key, (authorFrequency.get(key) || 0) + 1)
+    })
+  })
+
+  Object.entries(mentionMap || {}).forEach(([refKey, mention]) => {
+    ;(mention.titles || []).forEach(title => {
+      if (title.length < 18 || title.split(/\s+/).length < 4) return
+      const re = new RegExp(escapeReferenceRegex(title).replace(/\s+/g, '\\s+'), 'gi')
+      let match
+      while ((match = re.exec(searchableText)) !== null) {
+        matches.push({ start: match.index, end: match.index + match[0].length, key: refKey, kind: 'title' })
+      }
+    })
+
+    const authors = mention.authors || []
+    if (!authors.length) return
+    const first = escapeReferenceRegex(authors[0])
+    const patterns = [`\\b${first}\\s+et\\s+al\\.?\\b`]
+    if (authors.length >= 2) {
+      patterns.push(`\\b${first}\\s+(?:and|&)\\s+${escapeReferenceRegex(authors[1])}\\b`)
+    }
+    if (authors[0].length >= 7 && authorFrequency.get(authors[0].toLocaleLowerCase()) === 1) {
+      patterns.push(`\\b${first}(?:['’]s)?\\b`)
+    }
+
+    patterns.forEach(pattern => {
+      const re = new RegExp(pattern, 'g')
+      let match
+      while ((match = re.exec(searchableText)) !== null) {
+        matches.push({ start: match.index, end: match.index + match[0].length, key: refKey, kind: 'author' })
+      }
+    })
+  })
+
+  // 긴 제목/복수 저자 표현을 먼저 그리면 그 안의 짧은 성 단독 후보는 제거된다.
+  return matches.sort((a, b) => (b.end - b.start) - (a.end - a.start))
+}
+
 // 참고문헌 맵의 키 형식(순수 숫자 vs "저자성+연도")으로 이 논문이 Number
 // Citation 스타일인지 Author-Year 스타일인지 판단한다. 스타일을 미리
 // 알면 반대 스타일 정규식은 아예 돌리지 않아, "Dimension = [64, 128, 256]"
@@ -8362,14 +8449,17 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
   const citationStyle = state.citationStyle
   const checkNumberStyle = citationStyle !== 'author-year'
   const checkAuthorYearStyle = citationStyle !== 'number'
+  const claimedCitationRanges = []
 
   // refKeys(여러 개일 수 있음)를 받아 하나의 오버레이 박스를 그린다. 툴팁에는
   // refMap에 실제로 존재하는 키의 원문을 전부 이어붙여 보여준다("[66-69]"
   // 같은 범위 인용이 여러 참고문헌을 한 번에 가리키는 경우를 위함). "원문
   // 링크 찾기"/Google Scholar 검색은 첫 번째 키를 기준으로 동작한다.
-  const addCitationBox = (charStart, charEnd, refKeys) => {
+  const addCitationBox = (charStart, charEnd, refKeys, mentionKind = 'citation') => {
     const validKeys = refKeys.filter(k => refMap[k])
     if (validKeys.length === 0) return
+    if (claimedCitationRanges.some(range => charStart < range.end && charEnd > range.start)) return
+    claimedCitationRanges.push({ start: charStart, end: charEnd })
     const rects = getSentenceRects({ charStart, charEnd }, vtm, textLayerDiv)
     rects.forEach(r => {
       const box = document.createElement('div')
@@ -8379,6 +8469,7 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.style.width  = `${r.width}px`
       box.style.height = `${r.height}px`
       box.dataset.refNum = validKeys.join(',')
+      box.dataset.mentionKind = mentionKind
       box.addEventListener('mouseenter', () => showCitationTooltip(docId, validKeys, refMap, box))
       box.addEventListener('mouseleave', scheduleCitationTooltipHide)
       // 클릭도 항상 툴팁을 띄운다(호버가 없는 터치 기기 대응). 실제 마우스
@@ -8426,6 +8517,19 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       addCitationBox(match.index, match.index + match[0].length, [key])
     }
   }
+
+  // "[1]"/"(Smith, 2020)"처럼 정형화된 표기 외에도, 본문에서 참고 논문의
+  // 정확한 제목이나 저자명을 직접 언급하는 경우 같은 Smart Citation 카드를
+  // 연결한다. References 페이지 자체는 원문 목록 오버레이가 별도로 담당하므로
+  // 제목/저자 언급 탐색 대상에서 제외한다.
+  const mentionBodyEnd = referencesSectionStart >= 0 ? referencesSectionStart : vtm.fullText.length
+  extractBibliographicMentionMatches(
+    vtm.fullText,
+    state.referenceMentions || {},
+    mentionBodyEnd,
+  ).forEach(mention => {
+    addCitationBox(mention.start, mention.end, [mention.key], mention.kind)
+  })
 
   // 참고문헌 목록 자체(대괄호가 없는 스타일)에도 오버레이를 건다 - 위 정규식들은
   // 대괄호 인용([12]) 또는 괄호/서술형 저자-연도 인용((Smith, 2020), Smith
@@ -8842,6 +8946,7 @@ let citationTooltipHideTimer = null
 let citationTooltipDocId = null
 let citationTooltipRefNum = null
 let citationTooltipBoxEl = null
+const citationResolveCache = new Map()
 
 function buildScholarSearchUrl(refText) {
   return `https://scholar.google.com/scholar?q=${encodeURIComponent((refText || '').slice(0, 300))}`
@@ -8886,6 +8991,9 @@ function getOrCreateCitationTooltip() {
   el.addEventListener('mouseleave', scheduleCitationTooltipHide)
   el.querySelector('.citation-tooltip-resolve-btn').addEventListener('click', (e) => {
     e.stopPropagation()
+    if (citationTooltipDocId && citationTooltipRefNum) {
+      citationResolveCache.delete(`${citationTooltipDocId}:${citationTooltipRefNum}`)
+    }
     resolveCitationTooltip()
   })
   el.querySelector('.citation-tooltip-scholar-btn').addEventListener('click', (e) => {
@@ -8945,14 +9053,15 @@ function showCitationTooltip(docId, refKeys, refMap, boxEl) {
   const tooltip = getOrCreateCitationTooltip()
   tooltip.querySelector('.citation-tooltip-text').innerHTML = buildCitationTooltipHtml(refKeys, refMap)
   const resultEl = tooltip.querySelector('.citation-tooltip-result')
-  resultEl.className = 'citation-tooltip-result hidden'
-  resultEl.innerHTML = ''
+  resultEl.className = 'citation-tooltip-result citation-tooltip-result-loading'
+  resultEl.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-width:2px"></span><span>논문 정보를 찾는 중...</span>`
   const resolveBtn = tooltip.querySelector('.citation-tooltip-resolve-btn')
   resolveBtn.disabled = false
   resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기`
 
   tooltip.classList.remove('hidden')
   positionCitationTooltip()
+  resolveCitationTooltip({ automatic: true })
 }
 
 function hideCitationTooltip() {
@@ -8966,33 +9075,69 @@ function scheduleCitationTooltipHide() {
   citationTooltipHideTimer = setTimeout(hideCitationTooltip, 220)
 }
 
-async function resolveCitationTooltip() {
+function renderCitationResolvedResult(resultEl, result) {
+  if (!result || !result.url) {
+    resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
+    resultEl.textContent = '원문 링크를 찾지 못했습니다. Google Scholar 검색을 이용해보세요.'
+    return
+  }
+
+  const authors = (result.authors || []).slice(0, 5)
+  const authorsText = authors.length
+    ? `${authors.join(', ')}${(result.authors || []).length > authors.length ? ' 외' : ''}`
+    : ''
+  const meta = [
+    result.venue,
+    Number.isFinite(result.citation_count) ? `인용 ${result.citation_count.toLocaleString()}회` : '',
+  ].filter(Boolean).join(' · ')
+  const titleLabel = `${result.title || result.url}${result.year ? ` (${result.year})` : ''}`
+  resultEl.className = 'citation-tooltip-result citation-tooltip-smart-card'
+  resultEl.innerHTML = `
+    <a class="citation-paper-link" href="${escapeHtml(result.url)}" target="_blank" rel="noopener">
+      <span class="citation-paper-title">${escapeHtml(titleLabel)}</span>
+      ${authorsText ? `<span class="citation-paper-authors">${escapeHtml(authorsText)}</span>` : ''}
+      ${meta ? `<span class="citation-paper-meta">${escapeHtml(meta)}</span>` : ''}
+      ${result.abstract ? `<span class="citation-paper-abstract">${escapeHtml(result.abstract)}</span>` : ''}
+      <span class="citation-paper-open">${icon('externalLink', 12)} 원문 열기</span>
+    </a>
+  `
+}
+
+async function resolveCitationTooltip({ automatic = false } = {}) {
   if (!citationTooltipEl || !citationTooltipDocId || !citationTooltipRefNum) return
   const resolveBtn = citationTooltipEl.querySelector('.citation-tooltip-resolve-btn')
   const resultEl = citationTooltipEl.querySelector('.citation-tooltip-result')
+  const requestedDocId = citationTooltipDocId
+  const requestedRefNum = citationTooltipRefNum
+  const cacheKey = `${requestedDocId}:${requestedRefNum}`
+
+  if (citationResolveCache.has(cacheKey)) {
+    renderCitationResolvedResult(resultEl, citationResolveCache.get(cacheKey))
+    positionCitationTooltip()
+    return
+  }
   if (resolveBtn.disabled) return
 
   resolveBtn.disabled = true
-  resolveBtn.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:4px"')}찾는 중...`
+  resolveBtn.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:4px"')}${automatic ? '정보 확인 중...' : '찾는 중...'}`
 
   try {
-    const result = await resolveLibraryReference(citationTooltipDocId, citationTooltipRefNum)
-    if (result && result.url) {
-      resultEl.className = 'citation-tooltip-result'
-      const label = result.title ? `${result.title}${result.year ? ` (${result.year})` : ''}` : result.url
-      resultEl.innerHTML = `<a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px;flex-shrink:0"')}<span>${escapeHtml(label)}</span></a>`
-    } else {
-      resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
-      resultEl.textContent = '원문 링크를 찾지 못했습니다. Google Scholar 검색을 이용해보세요.'
-    }
+    const result = await resolveLibraryReference(requestedDocId, requestedRefNum)
+    citationResolveCache.set(cacheKey, result || null)
+    if (citationTooltipDocId !== requestedDocId || citationTooltipRefNum !== requestedRefNum) return
+    renderCitationResolvedResult(resultEl, result)
   } catch (e) {
     console.warn('참고문헌 조회 실패:', e)
-    resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
-    resultEl.textContent = '조회 중 오류가 발생했습니다.'
+    citationResolveCache.set(cacheKey, null)
+    if (citationTooltipDocId === requestedDocId && citationTooltipRefNum === requestedRefNum) {
+      renderCitationResolvedResult(resultEl, null)
+    }
   } finally {
-    resolveBtn.disabled = false
-    resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}다시 찾기`
-    positionCitationTooltip()
+    if (citationTooltipDocId === requestedDocId && citationTooltipRefNum === requestedRefNum) {
+      resolveBtn.disabled = false
+      resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}다시 찾기`
+      positionCitationTooltip()
+    }
   }
 }
 
@@ -11876,6 +12021,15 @@ async function handleRouting() {
         }
       }
       location.hash = 'library'
+    } else if (hash.startsWith('#note?id=')) {
+      const params = new URLSearchParams(hash.slice('#note?'.length))
+      const docId = params.get('id')
+      if (docId) {
+        if (activePaperNoteDocId === docId && paperNoteScreen?.classList.contains('active')) return
+        await openPaperNote(docId, false)
+        return
+      }
+      location.hash = 'library'
     } else if (hash.startsWith('#compare?ids=')) {
       const idsParam = hash.split('?ids=')[1]
       const ids = (idsParam || '').split(',').map(decodeURIComponent).filter(Boolean)
@@ -11897,7 +12051,7 @@ async function handleRouting() {
       location.hash = 'library'
     } else {
       console.log("[Router] Routing to Library screen. Viewer active:", viewerScreen.classList.contains('active'), "Library active:", libraryScreen.classList.contains('active'))
-      if (viewerScreen.classList.contains('active') || !libraryScreen.classList.contains('active')) {
+      if (viewerScreen.classList.contains('active') || paperNoteScreen?.classList.contains('active') || !libraryScreen.classList.contains('active')) {
         await showLibraryScreen(false)
       }
     }

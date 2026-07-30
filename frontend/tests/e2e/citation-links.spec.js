@@ -1,6 +1,50 @@
 import { test, expect } from '@playwright/test'
 import { mockBaseRoutes, gotoApp, SAMPLE_PDF_CITATION } from './helpers.js'
 
+test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation 카드와 원문 링크가 뜬다', async ({ page }) => {
+  const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
+  await mockBaseRoutes(page, { documents: [docC] })
+  await page.route('**/api/library/doc-C/pdf', route =>
+    route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_CITATION }))
+  await page.route('**/api/library/doc-C/references', route =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' },
+        mentions: {
+          '1': {
+            titles: ['This work builds on the Transformer architecture'],
+            authors: ['Vaswani'],
+          },
+        },
+      }),
+    }))
+  await page.route('**/api/library/doc-C/references/1', route =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        title: 'Attention Is All You Need',
+        url: 'https://arxiv.org/abs/1706.03762',
+        year: 2017,
+        authors: ['Ashish Vaswani', 'Noam Shazeer'],
+        venue: 'NeurIPS',
+        abstract: 'A sequence transduction model based entirely on attention.',
+        citation_count: 120000,
+      }),
+    }))
+
+  await gotoApp(page)
+  await page.evaluate(() => { location.hash = '#viewer?id=doc-C' })
+
+  const titleMarker = page.locator('.citation-marker-box[data-mention-kind="title"]').first()
+  await expect(titleMarker).toBeVisible()
+  await titleMarker.click()
+
+  await expect(page.locator('.citation-paper-title')).toContainText('Attention Is All You Need (2017)')
+  await expect(page.locator('.citation-paper-authors')).toContainText('Ashish Vaswani')
+  await expect(page.locator('.citation-paper-abstract')).toContainText('entirely on attention')
+})
+
 test('참고문헌 목록에 있는 번호의 본문 인용 표기만 클릭 가능한 오버레이가 생기고, 클릭하면 원문 텍스트와 함께 툴팁이 뜬다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   await mockBaseRoutes(page, { documents: [docC] })

@@ -21,12 +21,14 @@ def test_get_references_parses_and_caches(test_client, isolated_dirs):
 
     assert res.status_code == 200
     assert res.json()["references"] == {"1": "Someone. A Paper. 2020."}
+    assert "mentions" in res.json()
 
     # 두 번째 호출은 캐시를 써야 하므로 extract_pages가 다시 호출되지 않아야 한다
     with patch("services.pdf_parser.extract_pages") as mock_extract:
         res2 = test_client.get("/api/library/doc-1/references")
     assert res2.status_code == 200
     assert res2.json()["references"] == {"1": "Someone. A Paper. 2020."}
+    assert "mentions" in res2.json()
     mock_extract.assert_not_called()
 
 

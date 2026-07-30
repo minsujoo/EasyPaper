@@ -44,7 +44,11 @@ test('홈 노트 탭에서 자동 생성된 논문 노트를 열 수 있다', as
   await expect(page.locator('.paper-note-card')).toContainText('완료')
   await page.click('.paper-note-card')
 
-  await expect(page.locator('#paper-note-modal')).toHaveClass(/is-visible/)
+  await expect(page.locator('#paper-note-screen')).toHaveClass(/active/)
+  await expect(page).toHaveURL(/#note\?id=cam4docc/)
   await expect(page.locator('#paper-note-modal-body')).toContainText('논문 요약')
   await expect(page.locator('#paper-note-modal-body')).toContainText('긴 시간 예측은 여전히 어렵습니다.')
+
+  await page.click('#paper-note-back-btn')
+  await expect(page.locator('#library-screen')).toHaveClass(/active/)
 })

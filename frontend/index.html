@@ -171,6 +171,31 @@
     </div>
   </div>
 
+  <!-- 논문 노트 전체 화면 -->
+  <div id="paper-note-screen" class="screen">
+    <header class="topbar paper-note-topbar">
+      <div class="topbar-left">
+        <button id="paper-note-back-btn" class="icon-btn" title="노트 목록으로 돌아가기">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15,18 9,12 15,6"/></svg>
+        </button>
+        <button id="paper-note-logo-btn" class="logo-small-btn" title="라이브러리로 돌아가기">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 9 Q12 13 16 13 Q12 13 12 17 Q12 13 8 13 Q12 13 12 9 Z" fill="currentColor"/></svg>EasyPaper
+        </button>
+        <span id="paper-note-screen-title" class="doc-title">논문 노트</span>
+      </div>
+      <div class="topbar-right">
+        <button id="paper-note-open-paper-btn" class="file-btn-outline compact">논문 열기</button>
+        <button id="paper-note-regenerate-btn" class="file-btn-outline compact" title="노트 다시 생성">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
+          다시 생성
+        </button>
+      </div>
+    </header>
+    <main class="paper-note-reader">
+      <article id="paper-note-modal-body" class="paper-note-modal-body"></article>
+    </main>
+  </div>
+
   <!-- 여러 논문 비교 채팅 화면 -->
   <div id="compare-screen" class="screen">
     <header class="compare-topbar">
@@ -1098,19 +1123,6 @@
   </div>
 
   <!-- 읽기 전 브리핑(Reading Primer) 모달 -->
-  <!-- 논문 노트 상세 보기 -->
-  <div id="paper-note-modal" class="modal-overlay hidden">
-    <div class="paper-note-content">
-      <div class="paper-note-modal-actions">
-        <button id="paper-note-regenerate-btn" class="close-btn" title="노트 다시 생성">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
-        </button>
-        <button id="paper-note-close-btn" class="close-btn" title="닫기">&times;</button>
-      </div>
-      <div id="paper-note-modal-body" class="paper-note-modal-body"></div>
-    </div>
-  </div>
-
   <div id="primer-modal" class="modal-overlay hidden">
     <div class="primer-content">
       <div class="primer-modal-actions">
