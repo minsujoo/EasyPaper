@@ -4280,9 +4280,15 @@ body.toolbar-pos-left .logo-small-btn,
 body.toolbar-pos-right .logo-small-btn {
   font-size: 0;
 }
+/* 기본 .page-display는 가로 배치 기준 height:32px로 고정돼 있는데, 세로
+   컬럼(left/right)에서는 입력창과 "/N" 텍스트가 위아래로 쌓여 32px보다
+   더 필요하다 - height를 고정하지 않으면 내용이 박스 밖으로 흘러넘쳐
+   바로 아래 줌 컨트롤 그룹과 겹친다. */
 body.toolbar-pos-left .page-display,
 body.toolbar-pos-right .page-display {
   flex-direction: column;
+  height: auto;
+  padding: 8px 12px;
   gap: 4px;
 }
 body.toolbar-pos-left .page-display input[type=number],
