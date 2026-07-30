@@ -324,11 +324,21 @@ html, body {
   transform: translateY(0);
   transition: transform 0.25s ease;
 }
-/* 스크롤 방향에 따른 툴바 자동 숨김(설정에서 켠 경우) - 위로 슬라이드시켜
-   숨긴다. 컨텐츠 영역(.panels/.outline-sidebar)의 offset은 body.toolbar-hidden
+/* 스크롤 방향에 따른 툴바 자동 숨김(설정에서 켠 경우) - 툴바가 붙어있는
+   방향으로 슬라이드시켜 숨긴다(top/bottom은 위·아래, left/right는 좌·우).
+   컨텐츠 영역(.panels/.outline-sidebar)의 offset은 body.toolbar-hidden
    규칙(아래 패널 레이아웃 섹션 및 툴바 위치 섹션)이 함께 0으로 좁혀준다. */
 .topbar.toolbar-hidden {
   transform: translateY(-100%);
+}
+body.toolbar-pos-bottom .topbar.toolbar-hidden {
+  transform: translateY(100%);
+}
+body.toolbar-pos-left .topbar.toolbar-hidden {
+  transform: translateX(-100%);
+}
+body.toolbar-pos-right .topbar.toolbar-hidden {
+  transform: translateX(100%);
 }
 
 .topbar-left, .topbar-right {
@@ -4240,14 +4250,17 @@ body.toolbar-pos-right .toolbar-divider {
   margin: 2px 0;
 }
 /* 세로 컬럼에서는 폭이 넓게 필요한 문서 제목/페이지 표시를 숨겨 공간을
-   확보한다 - 각 버튼의 title 툴팁으로 기능은 그대로 확인 가능하다. */
+   확보한다 - 각 버튼의 title 툴팁으로 기능은 그대로 확인 가능하다.
+   doc-title-edit-btn은 index.html에 인라인 style="display: inline-flex"가
+   박혀있어 !important 없이는 이 규칙이 무시되고 계속 표시된다(제목이 사라진
+   자리에 목적 없는 편집 아이콘만 남는 버그) - !important로 확실히 덮어쓴다. */
 body.toolbar-pos-left .doc-title,
 body.toolbar-pos-left .doc-title-edit-btn,
 body.toolbar-pos-left .read-btn-text,
 body.toolbar-pos-right .doc-title,
 body.toolbar-pos-right .doc-title-edit-btn,
 body.toolbar-pos-right .read-btn-text {
-  display: none;
+  display: none !important;
 }
 /* "EasyPaper" 글자가 좁은 세로 컬럼 폭을 넘어 흘러나오는 것을 막는다 -
    로고 아이콘(svg)은 폭/높이가 px로 고정돼 있어 font-size에 영향받지
