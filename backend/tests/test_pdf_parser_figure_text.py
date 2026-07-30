@@ -64,3 +64,39 @@ def test_normal_page_without_diagrams_is_unaffected(tmp_path):
 
     assert paragraph_1 in page_text
     assert paragraph_2 in page_text
+
+
+def test_text_over_tiled_raster_figure_is_excluded(tmp_path):
+    """여러 래스터 타일 위에 별도 PDF 텍스트로 얹힌 방향/방법 라벨은 제외하고
+    그림 밖의 본문과 캡션은 유지해야 한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    body_text = "We compare occupancy forecasts in challenging driving scenes."
+    page.insert_text((50, 60), body_text, fontsize=11)
+
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 170, 150), False)
+    pix.clear_with(220)
+    page.insert_image(fitz.Rect(80, 150, 250, 300), pixmap=pix)
+    page.insert_image(fitz.Rect(253, 150, 423, 300), pixmap=pix)
+
+    page.insert_text((90, 180), "FRONT LEFT", fontsize=8)
+    page.insert_text((270, 180), "FRONT RIGHT", fontsize=8)
+    page.insert_text((72, 230), "Past and Current", fontsize=8, rotate=90)
+    page.insert_text((160, 285), "Images Cam4DOcc OccProphet Ground Truth", fontsize=8)
+
+    caption_text = "Figure 7: Qualitative comparison of occupancy forecasting results."
+    page.insert_text((50, 325), caption_text, fontsize=9)
+
+    path = tmp_path / "tiled_raster_figure.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    page_text = extract_pages(str(path))[0]["text"]
+
+    assert body_text in page_text
+    assert caption_text in page_text
+    assert "FRONT LEFT" not in page_text
+    assert "FRONT RIGHT" not in page_text
+    assert "Past and Current" not in page_text
+    assert "OccProphet Ground Truth" not in page_text

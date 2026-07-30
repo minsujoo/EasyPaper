@@ -25,12 +25,10 @@ def _extract_page(page: fitz.Page, page_num: int) -> Dict[str, Any]:
     """단일 페이지에서 텍스트를 추출합니다."""
     page_width = page.rect.width
 
-    # matplotlib 등으로 그려 PDF에 벡터 그래픽(선/도형)으로 삽입된 차트/다이어그램은
-    # 축 라벨, 범례, 막대그래프 수치 등이 래스터 이미지가 아니라 실제 텍스트 객체로
-    # 존재해서 get_text()에 본문 블록과 구분 없이 그대로 섞여 나온다. 이를 걸러내기
-    # 위해 벡터 그림 영역을 먼저 찾아두고, 아래에서 이 영역과 대부분 겹치는 텍스트
-    # 블록은 본문에서 제외한다.
-    figure_rects = _find_vector_figure_rects(page)
+    # PDF 그림 위에 축 라벨, 범례, 카메라 방향 등의 텍스트가 별도 텍스트 객체로
+    # 얹혀 있으면 get_text()에 본문과 구분 없이 섞여 나온다. 벡터 그림뿐 아니라
+    # 여러 래스터 타일로 조립된 그림 영역도 찾아 내부 텍스트를 번역 대상에서 제외한다.
+    figure_rects = _find_figure_text_exclusion_rects(page)
 
     # "dict" 모드로 추출해야 줄/글자 단위 상세 정보(볼드 여부, 줄별 x좌표)에
     # 접근할 수 있다 - "blocks" 모드는 블록의 좌표+텍스트만 주고 스타일 정보를
@@ -505,6 +503,68 @@ _VECTOR_FIGURE_MIN_SIZE = 60.0
 # 붙어 시작하는 본문 문단이 가장자리만 살짝 겹치는 경우까지 오탐하지 않도록 과반
 # 이상 겹칠 때만 그림 내부 텍스트로 간주한다.
 _FIGURE_OVERLAP_RATIO = 0.6
+
+# 그림 경계에 걸쳐 배치된 회전 라벨이나 행/열 제목은 실제 그림 bbox에서 몇 pt
+# 벗어나는 경우가 있다. 좌우의 세로 행 제목에는 조금 넓은 여유를 주되, 위아래는
+# 캡션 블록까지 삼키지 않도록 작은 여유만 적용한다.
+_FIGURE_TEXT_SIDE_PADDING = 25.0
+_FIGURE_TEXT_VERTICAL_PADDING = 8.0
+
+
+def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
+    """여러 래스터 이미지 타일로 구성된 Figure 영역을 찾습니다.
+
+    자율주행 논문의 다중 카메라 시각화처럼 하나의 Figure가 수십 개의 작은 이미지로
+    조립되는 경우, 방향/방법명 텍스트가 각 타일 위에 PDF 텍스트로 따로 배치된다.
+    인접 타일을 먼저 합친 뒤 충분히 큰 영역만 반환하여 작은 아이콘은 제외한다.
+    """
+    try:
+        images = page.get_image_info(xrefs=True)
+    except Exception:
+        return []
+
+    page_width = page.rect.width
+    page_height = page.rect.height
+    rects = []
+    for image in images:
+        bbox = image.get("bbox")
+        if not bbox:
+            continue
+        x0, y0, x1, y1 = bbox
+        width = x1 - x0
+        height = y1 - y0
+        if width < 15 or height < 15:
+            continue
+        # 스캔 문서의 페이지 전체 OCR 텍스트를 모두 제거하지 않도록 전체 페이지에
+        # 가까운 이미지는 Figure로 간주하지 않는다.
+        if width > page_width * 0.9 and height > page_height * 0.9:
+            continue
+        rects.append([x0, y0, x1, y1])
+
+    merged = merge_bboxes(rects, threshold=4.0)
+    return [
+        rect for rect in merged
+        if (rect[2] - rect[0]) >= _VECTOR_FIGURE_MIN_SIZE
+        and (rect[3] - rect[1]) >= _VECTOR_FIGURE_MIN_SIZE
+    ]
+
+
+def _find_figure_text_exclusion_rects(page: "fitz.Page") -> List[List[float]]:
+    """본문 번역에서 제외할 벡터/래스터 Figure 영역을 반환합니다."""
+    rects = _find_vector_figure_rects(page) + _find_raster_figure_rects(page)
+    if not rects:
+        return []
+
+    page_rect = page.rect
+    return [
+        [
+            max(page_rect.x0, rect[0] - _FIGURE_TEXT_SIDE_PADDING),
+            max(page_rect.y0, rect[1] - _FIGURE_TEXT_VERTICAL_PADDING),
+            min(page_rect.x1, rect[2] + _FIGURE_TEXT_SIDE_PADDING),
+            min(page_rect.y1, rect[3] + _FIGURE_TEXT_VERTICAL_PADDING),
+        ]
+        for rect in rects
+    ]
 
 
 def _find_vector_figure_rects(page: "fitz.Page", drawings: Optional[list] = None) -> List[List[float]]:
@@ -1279,4 +1339,3 @@ def extract_pdf_images(pdf_path: str) -> List[Dict[str, Any]]:
 
     doc.close()
     return images_data
-
