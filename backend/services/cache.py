@@ -44,6 +44,8 @@ def get_cached_translation_full(session_id: str, page_num: int, suffix: str = ""
                 try:
                     inner = json.loads(val)
                     if isinstance(inner, dict) and "translation" in inner:
+                        from services.chunker import sanitize_sentence_alignments
+                        inner["sentences"] = sanitize_sentence_alignments(inner.get("sentences", []))
                         return inner
                 except Exception:
                     pass
@@ -51,6 +53,9 @@ def get_cached_translation_full(session_id: str, page_num: int, suffix: str = ""
                 data["translation"] = ""
             if "sentences" not in data:
                 data["sentences"] = []
+            else:
+                from services.chunker import sanitize_sentence_alignments
+                data["sentences"] = sanitize_sentence_alignments(data["sentences"])
             return data
     except Exception:
         return {"translation": "", "sentences": []}

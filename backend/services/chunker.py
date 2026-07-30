@@ -214,6 +214,42 @@ def align_sentences(src_text: str, tgt_text: str) -> List[dict]:
         return align_paragraph(s_sents, t_sents)
 
 
+def sanitize_sentence_alignments(sentences: List[dict], min_run: int = 3) -> List[dict]:
+    """연속된 여러 원문에 동일 번역이 잘못 복제된 매핑을 보수적으로 정리합니다.
+
+    LLM이 표 번역 생략 지시를 따라 표 행 태그를 출력하지 않으면, 누락 태그 폴백이
+    직전 본문 번역을 모든 표 행에 배정할 수 있다. 번역 본문 자체에는 문장이 한 번만
+    존재하므로 이 잘못된 매핑을 프론트엔드가 문장별 span으로 만들 때 같은 문장이
+    여러 번 복제된다. 동일한 비어 있지 않은 번역이 3개 이상 연속될 때만 첫 매핑을
+    남겨 정상적인 짧은 반복 번역 두 개는 보존한다.
+    """
+    result = [dict(item) if isinstance(item, dict) else item for item in (sentences or [])]
+    idx = 0
+    while idx < len(result):
+        item = result[idx]
+        if not isinstance(item, dict):
+            idx += 1
+            continue
+        trans = (item.get("trans") or "").strip()
+        if not trans:
+            idx += 1
+            continue
+
+        run_end = idx + 1
+        while run_end < len(result):
+            candidate = result[run_end]
+            if not isinstance(candidate, dict) or (candidate.get("trans") or "").strip() != trans:
+                break
+            run_end += 1
+
+        if run_end - idx >= min_run:
+            for duplicate_idx in range(idx + 1, run_end):
+                result[duplicate_idx]["trans"] = ""
+        idx = run_end
+
+    return result
+
+
 def tag_source_text(text: str) -> tuple[str, List[str]]:
     """
     텍스트의 각 문장 시작 부분에 [S0], [S1], ... 문장 식별자 태그를 삽입합니다.
@@ -322,6 +358,15 @@ def parse_tagged_translation(tagged_translation: str, src_sentences: List[str]) 
         while gap_end < N and gap_end not in tag_to_text:
             gap_end += 1
 
+        # 마지막으로 확인된 태그 뒤가 통째로 빠진 경우는 LLM이 표/참고문헌 생략
+        # 지시를 정상적으로 따른 상황일 가능성이 높다. 근거 없이 직전 번역을 모든
+        # 후속 원문 행에 복제하지 않고 빈 매핑으로 둔다.
+        if gap_end >= N:
+            for gi in range(gap_start, gap_end):
+                aligned_sentences[gi] = {"src": src_sentences[gi], "trans": ""}
+            idx = gap_end
+            continue
+
         # 구멍의 내용이 실제로 "이전" 태그에 붙어있는지 "다음" 태그에 붙어있는지는
         # 텍스트만으로 확정할 수 없다 (LLM이 새 태그 없이 이어 쓰면 이전 태그에,
         # 뒤늦게 밀린 태그를 함께 쏟아내면 다음 태그에 남는다). 양쪽 후보를 모두
@@ -352,9 +397,11 @@ def parse_tagged_translation(tagged_translation: str, src_sentences: List[str]) 
                 for gi, pair in zip(group_indices, paired):
                     aligned_sentences[gi] = {"src": src_sentences[gi], "trans": pair["trans"]}
             else:
-                # 비례 배분 실패 시 전체 번역 텍스트를 구간 전체에 동일하게 공유
+                # 번역 문장 수가 부족하면 같은 번역을 구간 전체에 복제하지 않는다.
+                # 명시적으로 태그가 있었던 donor 문장만 보존하고 누락 태그는 비운다.
                 for gi in group_indices:
-                    aligned_sentences[gi] = {"src": src_sentences[gi], "trans": best["donor_text"]}
+                    trans = best["donor_text"] if gi == best["donor_idx"] else ""
+                    aligned_sentences[gi] = {"src": src_sentences[gi], "trans": trans}
             # 실제로 채워진 범위(선택된 후보의 group_indices)를 기준으로 다음 위치를 정한다 -
             # 채택된 후보가 "이전" 태그였다면 gap_end 자체는 아직 안 채워졌으므로 그대로 두고,
             # "다음" 태그였다면 gap_end까지 채워졌으므로 그 다음으로 건너뛴다.
@@ -365,4 +412,4 @@ def parse_tagged_translation(tagged_translation: str, src_sentences: List[str]) 
                 aligned_sentences[gi] = {"src": src_sentences[gi], "trans": ""}
             idx = gap_end
 
-    return cleaned_translation, aligned_sentences
+    return cleaned_translation, sanitize_sentence_alignments(aligned_sentences)

@@ -256,6 +256,8 @@ def get_translation_full(doc_id: str, page_num: int, suffix: str = "", fallback:
         try:
             data = json.loads(val)
             if isinstance(data, dict) and "translation" in data:
+                from services.chunker import sanitize_sentence_alignments
+                data["sentences"] = sanitize_sentence_alignments(data.get("sentences", []))
                 return data
         except Exception:
             pass
