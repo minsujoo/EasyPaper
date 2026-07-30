@@ -100,3 +100,45 @@ def test_text_over_tiled_raster_figure_is_excluded(tmp_path):
     assert "FRONT RIGHT" not in page_text
     assert "Past and Current" not in page_text
     assert "OccProphet Ground Truth" not in page_text
+
+
+def test_tiny_raster_tiles_are_merged_before_size_filtering(tmp_path):
+    """개별 크기는 매우 작지만 함께 큰 Figure를 이루는 이미지 타일을 먼저 합쳐야
+    그 위의 텍스트 라벨을 본문에서 제외할 수 있다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    body_text = "The architecture is described in the following section."
+    page.insert_text((50, 60), body_text, fontsize=11)
+
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 24, 12), False)
+    pix.clear_with(210)
+    for row in range(5):
+        for col in range(3):
+            x0 = 100 + col * 25
+            y0 = 150 + row * 14
+            page.insert_image(fitz.Rect(x0, y0, x0 + 23, y0 + 12), pixmap=pix)
+
+    # 본체와 약간 떨어진 가느다란 이미지도 같은 Figure의 세로 라벨 영역이다.
+    strip = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 8, 60), False)
+    strip.clear_with(230)
+    page.insert_image(fitz.Rect(181, 154, 189, 212), pixmap=strip)
+
+    page.insert_text((105, 165), "FRONT LEFT", fontsize=7)
+    page.insert_text((182, 165), "OccProphet", fontsize=7, rotate=90)
+    page.insert_text((91, 175), "1 T", fontsize=7, rotate=90)
+
+    caption_text = "Figure 1: Overview of the proposed architecture."
+    page.insert_text((50, 235), caption_text, fontsize=9)
+
+    path = tmp_path / "tiny_tiled_raster_figure.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    page_text = extract_pages(str(path))[0]["text"]
+
+    assert body_text in page_text
+    assert caption_text in page_text
+    assert "FRONT LEFT" not in page_text
+    assert "OccProphet" not in page_text
+    assert "1 T" not in page_text
