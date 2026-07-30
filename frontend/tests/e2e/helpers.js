@@ -70,7 +70,12 @@ export async function mockBaseRoutes(page, { documents = [] } = {}) {
 /** 로그인 상태로 앱을 열고(온보딩은 건너뜀) 라이브러리 화면이 뜰 때까지 기다린다. */
 export async function gotoApp(page) {
   await page.goto('/index.html')
-  await page.evaluate(() => localStorage.setItem('easypaper_onboarding_seen', '1'))
+  await page.evaluate(() => {
+    localStorage.setItem('easypaper_onboarding_seen', '1')
+    // 일반 기능 E2E가 자동 Reading Primer 모달에 가로막히지 않도록 한다.
+    // Primer 자체를 검증하는 테스트는 이 값을 명시적으로 지우면 된다.
+    localStorage.setItem('easypaper_disable_primer', 'true')
+  })
   await page.reload()
   await page.waitForTimeout(600)
 }

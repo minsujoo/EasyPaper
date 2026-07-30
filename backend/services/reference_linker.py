@@ -61,7 +61,19 @@ def _pick_url(work: dict) -> Optional[str]:
     if primary_location.get("landing_page_url"):
         return primary_location["landing_page_url"]
 
-    return work.get("doi") or None
+    return work.get("doi") or work.get("id") or None
+
+
+def _restore_abstract(inverted_index: Optional[dict]) -> str:
+    """Restore OpenAlex's inverted abstract index into readable text."""
+    if not inverted_index:
+        return ""
+    positioned = []
+    for word, positions in inverted_index.items():
+        for position in positions or []:
+            positioned.append((position, word))
+    positioned.sort(key=lambda item: item[0])
+    return " ".join(word for _, word in positioned)[:1600]
 
 
 async def resolve_reference(query_text: str) -> Optional[dict]:
@@ -96,10 +108,26 @@ async def resolve_reference(query_text: str) -> Optional[dict]:
             if not url:
                 return None
 
+            authors = []
+            for authorship in work.get("authorships") or []:
+                author = authorship.get("author") or {}
+                name = author.get("display_name")
+                if name:
+                    authors.append(name)
+
+            primary_location = work.get("primary_location") or {}
+            source = primary_location.get("source") or {}
+
             return {
                 "title": work.get("title") or work.get("display_name") or "",
                 "url": url,
                 "year": work.get("publication_year"),
+                "authors": authors[:12],
+                "venue": source.get("display_name") or "",
+                "abstract": _restore_abstract(work.get("abstract_inverted_index")),
+                "citation_count": work.get("cited_by_count"),
+                "doi": work.get("doi") or "",
+                "is_open_access": bool((work.get("open_access") or {}).get("is_oa")),
             }
     except Exception as e:
         logger.warning(f"참고문헌 검색 중 오류: {e}")

@@ -314,11 +314,16 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
     _require_owned_document(doc_id, current_user)
 
     from services.library import get_page_insight, save_page_insight
+    from services.reference_mentions import build_reference_mentions
 
     cached = get_page_insight(doc_id, 0, "reference_list")
     if cached is not None:
         try:
-            return {"references": json.loads(cached)}
+            references = json.loads(cached)
+            return {
+                "references": references,
+                "mentions": build_reference_mentions(references),
+            }
         except Exception:
             pass
 
@@ -343,7 +348,10 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
         references = {}
 
     save_page_insight(doc_id, 0, "reference_list", json.dumps(references, ensure_ascii=False))
-    return {"references": references}
+    return {
+        "references": references,
+        "mentions": build_reference_mentions(references),
+    }
 
 
 @router.get("/library/{doc_id}/references/{ref_num}")
@@ -406,4 +414,3 @@ async def update_doc_metadata(
         sessions[doc_id]["metadata"] = meta
         
     return {"status": "success", "metadata": meta}
-
