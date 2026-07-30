@@ -50,6 +50,9 @@
 
   --topbar-h:       64px;
   --panel-header-h: 48px;
+  /* 좌/우 세로 툴바(body.toolbar-pos-left/right) 전용 폭/버튼 크기 */
+  --toolbar-v-w:    56px;
+  --toolbar-v-btn:  32px;
 
   /* 테마 관련 동적 변수 (다크 기본) */
   --bg-topbar:      rgba(10, 8, 18, 0.75);
@@ -4215,20 +4218,28 @@ body.toolbar-hidden.toolbar-pos-bottom .floating-scroll-nav {
   bottom: 24px;
 }
 
-/* 왼쪽(left) / 오른쪽(right) 공통: 세로 컬럼 툴바 */
+/* 왼쪽(left) / 오른쪽(right) 공통: 세로 컬럼 툴바
+   컴팩트하고 아이콘 전용(flat) 스타일로 재정리:
+   1) 컬럼 폭/여백/그룹 패딩을 좁혀 전체적으로 두꺼워 보이던 느낌을 줄인다.
+   2) 모든 버튼(단독 아이콘/그룹 안 아이콘/독서완료/로고)을 동일한
+      var(--toolbar-v-btn) 정사각형으로 통일해, 가로 배치의 32px 기준과도
+      맞추고 서로 다른 크기로 인해 좌우 정렬이 어긋나 보이던 문제를 없앤다.
+   3) 단독 아이콘 버튼(.icon-btn)의 상시 테두리/배경 박스를 제거해, 버튼처럼
+      보이던 아이콘을 hover 시에만 반응하는 순수 아이콘으로 되돌린다.
+   (--toolbar-v-w, --toolbar-v-btn은 파일 상단 디자인 토큰 :root에 정의) */
 body.toolbar-pos-left .topbar,
 body.toolbar-pos-right .topbar {
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
-  width: 72px;
+  width: var(--toolbar-v-w);
   height: auto;
   flex-direction: column;
   justify-content: flex-start;
-  align-items: stretch;
-  padding: 16px 10px;
-  gap: 18px;
+  align-items: center;
+  padding: 12px 10px;
+  gap: 8px;
   border-bottom: none;
 }
 body.toolbar-pos-left .topbar {
@@ -4247,66 +4258,100 @@ body.toolbar-pos-right .topbar-center,
 body.toolbar-pos-right .topbar-right {
   flex-direction: column;
   flex: none;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
 }
+
+/* 단독 아이콘 버튼: 테두리/배경 박스를 없애 순수 아이콘처럼 보이게 하고,
+   그룹 안 아이콘과 동일한 크기로 통일해 세로 정렬을 맞춘다. */
+body.toolbar-pos-left .topbar .icon-btn,
+body.toolbar-pos-right .topbar .icon-btn {
+  width: var(--toolbar-v-btn) !important;
+  height: var(--toolbar-v-btn) !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: var(--radius-sm) !important;
+  flex-shrink: 0;
+}
+body.toolbar-pos-left .topbar .icon-btn:hover,
+body.toolbar-pos-right .topbar .icon-btn:hover {
+  background: var(--bg-hover) !important;
+  transform: none !important;
+}
+/* 배경을 transparent로 밀어버리는 위 규칙보다 활성(active) 상태 강조색이
+   항상 이겨야 한다(예: 스크롤 동기화 버튼 on/off) - 클래스 하나를 더 얹어
+   specificity를 높인다. */
+body.toolbar-pos-left .topbar .icon-btn.active,
+body.toolbar-pos-right .topbar .icon-btn.active {
+  background: rgba(126, 196, 232, 0.15) !important;
+  color: var(--accent-mid) !important;
+}
+
+/* .view-group은 가로 배치 기준 height:32px(box-sizing:border-box)로 고정돼
+   있는데, 세로 컬럼에서는 −/100%/+ 세 요소가 위아래로 쌓이므로 32px 안에
+   다 들어가지 못해 다음 그룹(tool-group)과 겹친다 - height를 내용에 맞게
+   풀어준다. */
 body.toolbar-pos-left .toolbar-group,
 body.toolbar-pos-right .toolbar-group {
   flex-direction: column;
+  height: auto;
+  padding: 2px;
+  gap: 2px;
 }
 body.toolbar-pos-left .toolbar-divider,
 body.toolbar-pos-right .toolbar-divider {
-  width: 100%;
+  width: 60%;
   height: 1px;
-  margin: 2px 0;
+  margin: 0;
 }
-/* .view-group(줌 컨트롤 캡슐)은 가로 배치 기준 height:32px, 내부 아이콘
-   버튼도 height:26px !important로 고정돼 있다. 세로 컬럼에서 이 캡슐이
-   flex-direction:column이 되면 −/100%/+ 세 요소를 32px 안에 다 넣으려고
-   flexbox가 버튼을 짓눌러(shrink) 아이콘 자체가 납작하게 찌그러진다 -
-   높이를 내용에 맞게 풀고, 버튼도 정사각형(24x24)으로 되돌린다. */
-body.toolbar-pos-left .view-group,
-body.toolbar-pos-right .view-group {
-  height: auto;
-  padding: 6px 2px;
-  gap: 2px;
+/* 줌 % 라벨은 세로 스택 안에서 버튼과 같은 폭을 차지하므로, 가로 배치용
+   min-width(44px) 대신 폭 전체를 쓰고 글자를 살짝 줄인다. */
+body.toolbar-pos-left .view-group .zoom-label,
+body.toolbar-pos-right .view-group .zoom-label {
+  min-width: 0;
+  width: 100%;
+  padding: 2px 0;
+  font-size: 10px;
 }
-body.toolbar-pos-left .view-group .icon-btn,
-body.toolbar-pos-right .view-group .icon-btn {
-  width: 24px !important;
-  height: 24px !important;
-  flex-shrink: 0;
-}
-/* "독서 완료" 버튼은 가로 배치 기준 좌우로 넓은 알약형(padding:0 12px)인데,
-   세로 컬럼에서는 텍스트가 숨겨져 아이콘만 남으면서도 폭이 그대로 남아
-   다른 정사각형 아이콘 버튼들과 크기/모양이 달라 보인다 - 동일한
-   32x32 정사각형 아이콘 버튼으로 맞춘다. */
+/* "독서 완료" 버튼은 가로 배치 기준 좌우로 넓은 알약형(padding:0 12px)에
+   테두리/배경이 있는데, 세로 컬럼에서는 텍스트가 숨겨져 아이콘만 남으므로
+   다른 flat 아이콘 버튼과 동일하게(테두리/배경 제거) 맞춘다. */
 body.toolbar-pos-left .viewer-read-btn,
 body.toolbar-pos-right .viewer-read-btn {
-  width: 32px;
-  height: 32px;
+  width: var(--toolbar-v-btn);
+  height: var(--toolbar-v-btn);
   padding: 0;
   justify-content: center;
+  border: none;
+  background: transparent;
   border-radius: var(--radius-sm);
   gap: 0;
 }
-/* 로고 버튼은 가로 배치에서 아이콘+글자 조합의 텍스트 버튼이라 별도 배경/
-   테두리가 없는데, 세로 컬럼에서 글자가 사라지면 아이콘만 배경 없이 붕
-   떠서 옆의 정사각형 아이콘 버튼들과 톤이 어긋난다 - 동일한 아이콘 버튼
-   프레임을 씌운다. */
+body.toolbar-pos-left .viewer-read-btn:hover,
+body.toolbar-pos-right .viewer-read-btn:hover {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+body.toolbar-pos-left .viewer-read-btn.active,
+body.toolbar-pos-right .viewer-read-btn.active {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: transparent;
+}
+/* 로고 버튼도 다른 아이콘 버튼과 동일한 flat 스타일(테두리/배경 없음)로
+   통일해 세로 컬럼에서 톤과 크기가 어긋나 보이지 않게 한다. */
 body.toolbar-pos-left .logo-small-btn,
 body.toolbar-pos-right .logo-small-btn {
-  width: 32px;
-  height: 32px;
+  width: var(--toolbar-v-btn);
+  height: var(--toolbar-v-btn);
   justify-content: center;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
+  border: none;
+  background: transparent;
 }
 body.toolbar-pos-left .logo-small-btn:hover,
 body.toolbar-pos-right .logo-small-btn:hover {
   background: var(--bg-hover);
-  border-color: var(--border-strong);
 }
 /* 세로 컬럼에서는 폭이 넓게 필요한 문서 제목/페이지 표시를 숨겨 공간을
    확보한다 - 각 버튼의 title 툴팁으로 기능은 그대로 확인 가능하다.
@@ -4328,35 +4373,38 @@ body.toolbar-pos-left .logo-small-btn,
 body.toolbar-pos-right .logo-small-btn {
   font-size: 0;
 }
-/* 기본 .page-display는 가로 배치 기준 height:32px로 고정돼 있는데, 세로
-   컬럼(left/right)에서는 입력창과 "/N" 텍스트가 위아래로 쌓여 32px보다
-   더 필요하다 - height를 고정하지 않으면 내용이 박스 밖으로 흘러넘쳐
-   바로 아래 줌 컨트롤 그룹과 겹친다. */
+/* 기본 .page-display는 가로 배치 기준 height:32px 고정 알약형(border-radius:
+   20px)인데, 세로 컬럼에서는 입력창과 "/N" 텍스트가 위아래로 쌓이고 폭도
+   좁아지므로 height를 내용에 맞게 풀고 좁은 컬럼에 어울리는 모양으로
+   축소한다. width는 고정하지 않고 내용에 맞춰 다른 버튼들처럼 컬럼 중앙에
+   자연스럽게 정렬되게 한다. */
 body.toolbar-pos-left .page-display,
 body.toolbar-pos-right .page-display {
   flex-direction: column;
   height: auto;
-  padding: 8px 12px;
-  gap: 4px;
+  width: auto;
+  padding: 6px 8px;
+  gap: 2px;
+  border-radius: var(--radius-sm);
 }
 body.toolbar-pos-left .page-display input[type=number],
 body.toolbar-pos-right .page-display input[type=number] {
-  width: 100%;
+  width: 28px;
 }
 body.toolbar-pos-left .panels {
   padding-top: 0;
-  padding-left: 72px;
+  padding-left: var(--toolbar-v-w);
 }
 body.toolbar-pos-right .panels {
   padding-top: 0;
-  padding-right: 72px;
+  padding-right: var(--toolbar-v-w);
 }
 /* 우측 하단 floating 스크롤 버튼도 기본적으로 --chat-sidebar-offset만 고려해
-   위치가 계산되는데, right 위치에서는 세로 툴바(72px)가 화면 우측에 추가로
-   깔려있어 그만큼 왼쪽으로 더 밀지 않으면 버튼이 툴바 컬럼 밑에 깔려 거의
-   보이지 않는다. */
+   위치가 계산되는데, right 위치에서는 세로 툴바(--toolbar-v-w)가 화면 우측에
+   추가로 깔려있어 그만큼 왼쪽으로 더 밀지 않으면 버튼이 툴바 컬럼 밑에 깔려
+   거의 보이지 않는다. */
 body.toolbar-pos-right .floating-scroll-nav {
-  right: calc(24px + var(--chat-sidebar-offset, 0px) + 72px);
+  right: calc(24px + var(--chat-sidebar-offset, 0px) + var(--toolbar-v-w));
 }
 /* 툴바 자동 숨김 시에는 툴바가 화면 밖으로 사라지므로 띄워둔 여백도 되돌린다. */
 body.toolbar-hidden.toolbar-pos-right .floating-scroll-nav {
@@ -4364,18 +4412,20 @@ body.toolbar-hidden.toolbar-pos-right .floating-scroll-nav {
 }
 body.toolbar-pos-left .outline-sidebar {
   top: 0;
-  left: 72px;
+  left: var(--toolbar-v-w);
 }
-/* left 위치에서는 사이드바의 평소 위치가 72px 밀려나 있으므로, 숨김 상태의
-   translateX(-100%)(자기 폭만큼만 이동)로는 왼쪽 툴바 영역(0~72px)을 완전히
-   벗어나지 못해 그 위에 그대로 겹쳐 클릭을 가로챈다 - 툴바 폭만큼 더 이동시킨다. */
+/* left 위치에서는 사이드바의 평소 위치가 --toolbar-v-w만큼 밀려나 있으므로,
+   숨김 상태의 translateX(-100%)(자기 폭만큼만 이동)로는 왼쪽 툴바 영역을
+   완전히 벗어나지 못해 그 위에 그대로 겹쳐 클릭을 가로챈다 - 툴바 폭만큼
+   더 이동시킨다. */
 body.toolbar-pos-left .outline-sidebar.hidden {
-  transform: translateX(calc(-100% - 72px));
+  transform: translateX(calc(-100% - var(--toolbar-v-w)));
 }
 body.toolbar-pos-right .outline-sidebar {
   top: 0;
 }
-/* left/right 위치에서 툴바 자동 숨김 시 세로 컬럼 폭(72px)만큼 좁힌 여백을 되돌린다. */
+/* left/right 위치에서 툴바 자동 숨김 시 세로 컬럼 폭(--toolbar-v-w)만큼
+   좁힌 여백을 되돌린다. */
 body.toolbar-hidden.toolbar-pos-left .panels {
   padding-left: 0;
 }
