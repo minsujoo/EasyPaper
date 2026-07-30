@@ -44,9 +44,9 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/orion-gz/EasyPaper/releases/latest/download/latest.json"
+        "https://github.com/minsujoo/EasyPaper/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBRDU1NEI3OEMwODA3OEMKUldTTUJ3aU10MVRWcXBra1krUnd2QlNCaTdDVUlzQnZLRWl4NDQrM1huTzgzb1c5V2IwdGdBSzUK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBMzREOUZBMzE1MTYwQzgKUldUSVlGRXgrdGswbWtJUCtuWUNjcEk3NVl2K0dtV0UzVWh2SXlPWmt3YSs3UitOL1BBSDE3bnMK"
     }
   }
 }

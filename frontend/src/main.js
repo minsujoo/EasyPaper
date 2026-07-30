@@ -2887,6 +2887,7 @@ const tauriUpdateNotes = $('tauri-update-notes')
 const settingTauriUpdateCheckInterval = $('setting-tauri-update-check-interval')
 
 let pendingTauriUpdate = null
+let tauriUpdateInstallInProgress = false
 // 같은 버전으로는 팝업을 한 세션에 한 번만 띄운다 - "나중에"를 눌러도
 // 주기적 재확인 때마다 같은 안내가 반복해서 뜨는 것을 막기 위함.
 let lastNotifiedTauriUpdateVersion = null
@@ -2988,12 +2989,12 @@ async function checkTauriUpdate({ silent = false } = {}) {
         tauriUpdateStatus.style.color = '#10b981'
         tauriUpdateStatus.textContent = '새 업데이트가 있습니다.'
       }
-      // 백그라운드(로그인 직후/주기적 재확인) 체크일 때만 팝업으로 알림 -
-      // 사용자가 설정 화면에서 직접 확인 버튼을 눌렀을 때는 이미 결과가
-      // 그 자리에 보이므로 팝업까지 겹쳐 띄우지 않는다.
+      // 백그라운드 확인은 사용자의 작업 없이 자동 설치·재시작한다. 수동
+      // 확인에서는 변경 내역을 보여주고 기존 설치 버튼/확인창 흐름을 유지한다.
       if (silent && update.version !== lastNotifiedTauriUpdateVersion) {
         lastNotifiedTauriUpdateVersion = update.version
-        showTauriUpdateAvailableModal(update)
+        setTauriUpdateStatusText(`v${update.version} 자동 업데이트를 시작합니다.`)
+        await installTauriUpdate({ skipConfirmation: true })
       }
     } else if (tauriUpdateStatus) {
       tauriUpdateStatus.style.color = 'var(--text-secondary)'
@@ -3022,14 +3023,15 @@ function setTauriUpdateStatusText(text, color = 'var(--text-secondary)') {
   })
 }
 
-async function installTauriUpdate() {
-  if (!pendingTauriUpdate) return
-  const ok = await showCustomConfirm(
-    `새 버전(v${pendingTauriUpdate.version})을 다운로드하고 설치한 뒤 앱을 재시작하시겠습니까?`,
-    { title: '앱 업데이트', confirmText: '설치 후 재시작', danger: false }
-  )
+async function installTauriUpdate({ skipConfirmation = false } = {}) {
+  if (!pendingTauriUpdate || tauriUpdateInstallInProgress) return
+  const ok = skipConfirmation || await showCustomConfirm(
+      `새 버전(v${pendingTauriUpdate.version})을 다운로드하고 설치한 뒤 앱을 재시작하시겠습니까?`,
+      { title: '앱 업데이트', confirmText: '설치 후 재시작', danger: false }
+    )
   if (!ok) return
 
+  tauriUpdateInstallInProgress = true
   if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = true
   if (tauriUpdateCheckBtn) tauriUpdateCheckBtn.disabled = true
   if (updateAvailableNowBtn) updateAvailableNowBtn.disabled = true
@@ -3083,6 +3085,7 @@ async function installTauriUpdate() {
 
     await relaunch()
   } catch (err) {
+    tauriUpdateInstallInProgress = false
     setTauriUpdateStatusText('설치 실패: ' + (err.message || err), '#ef4444')
     if (tauriUpdateInstallBtn) tauriUpdateInstallBtn.disabled = false
     if (tauriUpdateCheckBtn) tauriUpdateCheckBtn.disabled = false
@@ -3118,7 +3121,7 @@ if (tauriUpdateCheckBtn) {
   tauriUpdateCheckBtn.addEventListener('click', () => checkTauriUpdate())
 }
 if (tauriUpdateInstallBtn) {
-  tauriUpdateInstallBtn.addEventListener('click', installTauriUpdate)
+  tauriUpdateInstallBtn.addEventListener('click', () => installTauriUpdate())
 }
 
 if (systemUpdateCheckBtn && !isTauriDesktop) {
