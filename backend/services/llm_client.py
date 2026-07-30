@@ -781,7 +781,20 @@ async def stream_chat(
             formatted_prompt.append(f"System instructions:\n{system_prompt}\n")
         if history_messages:
             latest_msg = history_messages[-1]
-            formatted_prompt.append(f"User Question:\n{latest_msg.get('content', '')}")
+            question_text = latest_msg.get('content', '')
+            # claude code 세션은 이제 project root가 아니라 이 문서 전용 격리
+            # 폴더를 cwd로 쓰고 Read 도구만 열어두므로(stream_claude_code 참고),
+            # agy와 동일하게 캡처 이미지를 파일로 저장해두고 경로를 알려줘서
+            # 직접 열어보고 답하게 할 수 있다.
+            if page_image_b64:
+                image_path = _save_chat_capture_image(session_id, page_image_b64)
+                question_text += (
+                    f"\n\n[사용자가 캡처해 첨부한 이미지 파일: {image_path}]\n"
+                    "위 경로의 이미지 파일을 반드시 먼저 열어서 실제로 확인한 뒤, "
+                    "그 이미지에 보이는 내용을 근거로 답변하세요. 이미지를 열지 않고 "
+                    "추측으로 답하지 마세요."
+                )
+            formatted_prompt.append(f"User Question:\n{question_text}")
 
         chat_prompt = "\n".join(formatted_prompt)
         async for token in stream_claude_code(chat_prompt, model=model, session_id=session_id, is_chat=True):
@@ -1334,23 +1347,37 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
     import asyncio
     import os
     import codecs
+    from config import LIBRARY_DIR
 
     claude_path = get_claude_code_path()
     if not os.path.exists(claude_path):
         claude_path = "claude"
 
+    # 세션(session_id)마다 project root가 아니라 그 문서 전용 격리 폴더
+    # (LIBRARY_DIR/{session_id} - document.pdf/번역 캐시/채팅 캡처 이미지가
+    # 이미 저장되는 바로 그 폴더)를 cwd로 쓴다. project root를 그대로 cwd로
+    # 쓰면서 Read 도구를 켜면 .env를 포함한 프로젝트 전체 파일에 접근 가능해져
+    # (실측 확인됨) 캡처 이미지 하나만 안전하게 읽게 할 방법이 없었다 - 이제
+    # cwd 자체가 이 문서 데이터만 있는 폴더로 격리되므로, 악성 PDF의 프롬프트
+    # 인젝션이 Read 도구를 쓰게 만들어도 이 문서 자신의 데이터 밖으로는 못
+    # 나간다. LIBRARY_DIR는 Tauri 패키징 앱에서 app_data_dir/library(항상
+    # 쓰기 가능한 OS별 사용자 데이터 디렉토리)로 주입되므로, 사실상 폴백 값일
+    # 뿐인 project root보다 오히려 더 안전하다.
+    if session_id:
+        session_cwd = os.path.abspath(os.path.join(LIBRARY_DIR, session_id))
+        os.makedirs(session_cwd, exist_ok=True)
+    else:
+        session_cwd = get_project_root()
+
     # --print - : stdin으로 프롬프트를 받아 처리 (--print 인자로 넘기면 Claude가 수학 기호를 _MB_N 으로 치환하는 버그 발생)
     #
     # --permission-mode dontAsk는 비대화형 실행에 필수(TTY 없이 승인 프롬프트를
     # 띄우면 그냥 멈춘다)이지만, 이것만 있으면 세션이 Bash/Write/Edit 등 모든
-    # 도구를 승인 없이 실제로 실행할 수 있게 된다. 이 호출은 PDF에서 추출한
-    # 텍스트를 그대로 프롬프트에 넣는 순수 번역/QA 용도라 도구가 전혀 필요
-    # 없는데(codex 경로의 sandbox_mode=read-only와 동일한 이유), 악성 PDF에 프롬프트
-    # 인젝션이 심어져 있으면 이 세션이 cwd(프로젝트 루트, .env 포함)에서 임의
-    # 파일을 읽거나 쓰거나 셸 명령을 실행하도록 유도될 수 있다. --tools ""로
-    # 세션에서 쓸 수 있는 도구 자체를 완전히 비워, 인젝션이 성공해도 실행할
-    # 수단이 없도록 원천 차단한다.
-    base_cmd = [claude_path, "--permission-mode", "dontAsk", "--tools", "", "--output-format", "text", "--print", "-"]
+    # 도구를 승인 없이 실제로 실행할 수 있게 된다. cwd가 위에서 문서 전용 폴더로
+    # 격리되어 있으므로 Read 도구만 열어(캡처 이미지 첨부 질문에 실제로 답할 수
+    # 있어야 하니) 나머지(Bash/Write/Edit 등)는 여전히 막아둔다 - 격리 폴더
+    # 안에도 굳이 실행/수정 도구까지 열어줄 이유는 없다.
+    base_cmd = [claude_path, "--permission-mode", "dontAsk", "--tools", "Read", "--output-format", "text", "--print", "-"]
 
     # Prepare custom HOME for Claude Code session isolation to prevent concurrent locks
     env = get_agy_env()
@@ -1449,7 +1476,7 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
-                    cwd=get_project_root()
+                    cwd=session_cwd
                 )
                 stderr_task = _start_stderr_drain(process)
 
@@ -1489,7 +1516,10 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                 stderr_out = await _finish_stderr_drain(stderr_task)
 
                 # --resume 대상 세션이 아직 존재하지 않는 최초 호출인 경우에만
-                # --session-id로 세션을 새로 만들며 1회 재시도한다.
+                # --session-id로 세션을 새로 만들며 1회 재시도한다. (provider가
+                # 바뀐 경우뿐 아니라, cwd를 project root에서 문서별 격리
+                # 폴더로 바꾸는 배포 시점처럼 이전에 다른 cwd에서 만들어진
+                # 세션이라 이번 cwd에서는 못 찾는 경우도 여기로 들어온다.)
                 if (
                     not produced_output
                     and attempt == 0
@@ -1497,6 +1527,22 @@ async def stream_claude_code(prompt: str, model: str = None, session_id: str = N
                     and "No conversation found" in stderr_out
                 ):
                     session_flag = ["--session-id", session_id]
+                    # 위의 provider_switched 캐치업과 동일한 이유: 새로 만드는
+                    # 세션은 이전 대화 내용을 전혀 모르므로, catchup_prefix가
+                    # 아직 안 붙어 있었다면(= provider_switched로는 감지되지
+                    # 않았던 케이스) 여기서 DB 채팅 이력을 붙여 대화가 끊긴
+                    # 것처럼 보이지 않게 한다.
+                    if is_chat and not catchup_prefix:
+                        catchup_prefix = _build_catchup_prefix(session_id)
+                        guided_prompt = (
+                            "You are a direct-output translation/QA assistant. "
+                            "Output ONLY the result — no preambles, no explanations, no commentary. "
+                            "You MAY use markdown and LaTeX ($...$, $$...$$) in your output since the viewer renders them. "
+                            "Do NOT wrap math variables in placeholder tokens — preserve them as-is or wrap in $...$. "
+                            "Start the output immediately.\n\n"
+                            f"{catchup_prefix}{prompt}"
+                        )
+                        encoded_prompt = guided_prompt.encode("utf-8")
                     continue
 
                 logger.error(f"Claude Code CLI 실패: code={process.returncode} stderr={stderr_out}")
@@ -1533,12 +1579,25 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
     """
     import asyncio
     import os
+    from config import LIBRARY_DIR
 
     codex_path = get_codex_path()
     if not os.path.exists(codex_path):
         codex_path = "codex"
 
     env = get_agy_env()
+
+    # project root 대신 문서 전용 격리 폴더(LIBRARY_DIR/{session_id})를 cwd로
+    # 쓴다 - sandbox_mode=read-only라 하더라도 cwd 하위 파일을 읽을 수는 있어,
+    # project root를 그대로 두면 .env까지 그 범위 안에 들어간다. codex의
+    # resume은 cwd가 달라져도 대화 내용을 그대로 유지하는 것을 실측으로
+    # 확인했으므로 안전하게 바꿀 수 있다. LIBRARY_DIR는 Tauri 패키징 앱에서
+    # app_data_dir/library로 주입되므로 이 편이 project root보다 더 안전하다.
+    if session_id:
+        session_cwd = os.path.abspath(os.path.join(LIBRARY_DIR, session_id))
+        os.makedirs(session_cwd, exist_ok=True)
+    else:
+        session_cwd = get_project_root()
 
     # model 값이 'gpt-5.6-terra|high'처럼 파이프(|)로 모델과 reasoning effort를 구분할 수 있음
     model_name = None
@@ -1616,7 +1675,7 @@ async def stream_codex(prompt: str, model: str = None, session_id: str = None, i
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
-                    cwd=get_project_root()
+                    cwd=session_cwd
                 )
                 stderr_task = _start_stderr_drain(process)
 
@@ -1856,6 +1915,21 @@ async def stream_antigravity(
     if not os.path.exists(agy_path):
         agy_path = "agy"
 
+    # project root 대신 문서 전용 격리 폴더(LIBRARY_DIR/{session_id})를 cwd로
+    # 쓴다 - agy는 --dangerously-skip-permissions로 cwd 하위 파일/터미널 접근
+    # 권한을 이미 갖고 있어서, project root를 그대로 cwd로 쓰면 .env를 포함한
+    # 프로젝트 전체가 그 범위 안에 들어가 버린다. 이 폴더에는 해당 문서
+    # 데이터(PDF/번역 캐시/채팅 캡처 이미지)만 있어 비밀값이 없고, agy의
+    # --conversation resume은 cwd가 달라져도 대화 내용을 그대로 유지하는 것을
+    # 실측으로 확인했으므로(claude code의 --resume과 달리 cwd에 묶여있지
+    # 않음) 안전하게 바꿀 수 있다. LIBRARY_DIR는 Tauri 패키징 앱에서
+    # app_data_dir/library로 주입되므로 이 편이 project root보다 더 안전하다.
+    if session_id:
+        session_cwd = os.path.abspath(os.path.join(LIBRARY_DIR, session_id))
+        os.makedirs(session_cwd, exist_ok=True)
+    else:
+        session_cwd = get_project_root()
+
     # 문서(session_id)당 Antigravity 대화(conversation)를 하나만 만들어 재사용한다.
     # 번역뿐 아니라 채팅도 세션이 없으면 만들 수 있어야 한다 - "채팅은 절대 세션을
     # 안 만든다"고 해봤더니, agy는 --conversation 없이 호출하면 그때마다 자기
@@ -1883,18 +1957,13 @@ async def stream_antigravity(
             target_conv_id = None if provider_switched else (session_meta.get("conversation_id") if session_meta else None)
 
             if not target_conv_id:
-                log_dir = os.path.join(LIBRARY_DIR, session_id)
-                os.makedirs(log_dir, exist_ok=True)
-                # 반드시 절대경로로 만들어야 한다 - LIBRARY_DIR("./library")은 상대경로라
-                # 우리 프로세스의 cwd(backend/) 기준으로 풀리는데, agy 서브프로세스는
-                # cwd=get_project_root()(backend의 부모 디렉터리)로 띄운다. 상대경로
-                # 그대로 --log-file에 넘기면 agy는 그 부모 디렉터리 기준으로 로그를
-                # 써버려서(예: backend/library/... 대신 library/...), 우리 코드가
-                # 확인하는 경로에는 파일이 영영 나타나지 않는다(실측: agy는 실제로
-                # 로그를 정상적으로 남기고 "Created conversation" 줄도 있었지만,
-                # 전혀 다른 경로에 있었다 - 그래서 매핑 저장이 매번 실패해 페이지/
-                # 채팅마다 새 세션이 계속 생성되고 있었다).
-                temp_log_path = os.path.abspath(os.path.join(log_dir, f"agy_init_{os.urandom(4).hex()}.log"))
+                # session_cwd는 이미 절대경로다(위에서 os.path.abspath로 계산).
+                # 예전에는 LIBRARY_DIR("./library") 상대경로를 그대로 써서, 우리
+                # 프로세스의 cwd(backend/) 기준과 agy 서브프로세스의 cwd(당시
+                # project root) 기준이 서로 달라 로그 파일을 엉뚱한 위치에서
+                # 찾는 버그가 있었다 - 지금은 서브프로세스 cwd 자체가 session_cwd라
+                # 이 문제가 구조적으로 사라졌지만, 명시성을 위해 그대로 절대경로로 둔다.
+                temp_log_path = os.path.join(session_cwd, f"agy_init_{os.urandom(4).hex()}.log")
 
                 # --dangerously-skip-permissions는 비대화형 실행에 필수(TTY 없이
                 # 승인 프롬프트를 띄우면 그냥 멈춘다)이지만, 이것만 있으면 세션이
@@ -1921,7 +1990,7 @@ async def stream_antigravity(
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         env=get_agy_env(),
-                        cwd=get_project_root()
+                        cwd=session_cwd
                     )
                     # 출력을 계속 읽어서 소비해야 한다 - 읽지 않으면 파이프 버퍼가
                     # 가득 차서 프로세스가 멈출 수 있다(communicate가 자동으로 처리).
@@ -1991,7 +2060,7 @@ async def stream_antigravity(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=get_agy_env(),
-            cwd=get_project_root()
+            cwd=session_cwd
         )
         stderr_task = _start_stderr_drain(process)
 
