@@ -84,6 +84,24 @@ const state = {
 
 // ── DOM 참조 ──────────────────────────────────────
 const $ = (id) => document.getElementById(id)
+
+// ── 모달(.modal-overlay) 표시/숨김 공용 헬퍼 ──────────────────────
+// `.hidden`(display:none)과 opacity/transform 트랜지션을 같은 클래스 토글로
+// 동시에 바꾸면, 브라우저가 "opacity:0"인 시작 프레임을 그릴 기회가 없어
+// 트랜지션 없이 그냥 툭 튀어나오거나 사라지는 깜빡임이 생긴다. display 전환과
+// opacity/transform 전환을 두 단계(reflow 강제 → 다음 프레임에 클래스 적용)로
+// 분리해 트랜지션이 실제로 재생되게 한다.
+function openOverlayModal(modal) {
+  if (!modal) return
+  modal.classList.remove('hidden')
+  void modal.offsetWidth // 강제 리플로우: display:none 해제를 먼저 확정시킨다
+  modal.classList.add('is-visible')
+}
+function closeOverlayModal(modal) {
+  if (!modal) return
+  modal.classList.remove('is-visible')
+  window.setTimeout(() => { modal.classList.add('hidden') }, 300) // CSS 트랜지션(0.3s) 종료 후 display:none
+}
 const loginScreen       = $('login-screen')
 const loginForm         = $('login-form')
 const loginUsername     = $('login-username')
@@ -2109,7 +2127,7 @@ class ProviderModelPicker {
               
               // 1. 설정 모달 열기
               if (settingsModal) {
-                settingsModal.classList.remove('hidden')
+                openOverlayModal(settingsModal)
               }
               
               // 2. '모델 설정' 탭 활성화 처리
@@ -2451,8 +2469,8 @@ async function changeProviderAndModel(type, newProvider, newModel) {
 
 // ── EasyPaper 설정 모달 이벤트 ──────────────────────────
 globalSettingsBtn.addEventListener('click', async () => {
-  settingsModal.classList.remove('hidden')
-  
+  openOverlayModal(settingsModal)
+
   // 1. 기본적으로 첫 번째 탭(일반 설정)을 활성화
   tabBtns.forEach(b => b.classList.remove('active'))
   tabPanes.forEach(p => p.classList.remove('active'))
@@ -2501,12 +2519,12 @@ globalSettingsBtn.addEventListener('click', async () => {
 })
 
 closeSettingsBtn.addEventListener('click', () => {
-  settingsModal.classList.add('hidden')
+  closeOverlayModal(settingsModal)
 })
 
 settingsModal.addEventListener('click', (e) => {
   if (e.target === settingsModal) {
-    settingsModal.classList.add('hidden')
+    closeOverlayModal(settingsModal)
   }
 })
 
@@ -3093,7 +3111,7 @@ function showTauriUpdateAvailableModal(update) {
   if (updateAvailableActions) updateAvailableActions.style.display = 'flex'
   if (updateAvailableNowBtn) updateAvailableNowBtn.disabled = false
   if (updateAvailableLaterBtn) updateAvailableLaterBtn.disabled = false
-  updateAvailableModal.classList.remove('hidden')
+  openOverlayModal(updateAvailableModal)
 }
 
 if (tauriUpdateCheckBtn) {
@@ -3204,7 +3222,7 @@ const fullChangelogLoading = $('full-changelog-loading')
 const fullChangelogContent = $('full-changelog-content')
 
 function closeFullChangelogModal() {
-  if (fullChangelogModal) fullChangelogModal.classList.add('hidden')
+  if (fullChangelogModal) closeOverlayModal(fullChangelogModal)
 }
 
 if (fullChangelogCloseBtn) fullChangelogCloseBtn.addEventListener('click', closeFullChangelogModal)
@@ -3217,7 +3235,7 @@ if (fullChangelogModal) {
 if (currentVersionLabel) {
   currentVersionLabel.addEventListener('click', async () => {
     if (!fullChangelogModal) return
-    fullChangelogModal.classList.remove('hidden')
+    openOverlayModal(fullChangelogModal)
     fullChangelogLoading.classList.remove('hidden')
     fullChangelogContent.classList.add('hidden')
     fullChangelogContent.innerHTML = ''
@@ -3285,11 +3303,11 @@ if (settingUpdateCheckInterval) {
 }
 
 function closeUpdateAvailableModal() {
-  if (updateAvailableModal) updateAvailableModal.classList.add('hidden')
+  if (updateAvailableModal) closeOverlayModal(updateAvailableModal)
 }
 
 function closeUpdateCompleteModal() {
-  if (updateCompleteModal) updateCompleteModal.classList.add('hidden')
+  if (updateCompleteModal) closeOverlayModal(updateCompleteModal)
 }
 
 if (updateAvailableCloseBtn) updateAvailableCloseBtn.addEventListener('click', closeUpdateAvailableModal)
@@ -3391,7 +3409,7 @@ async function maybeAutoCheckForUpdate() {
     if (updateAvailableActions) updateAvailableActions.style.display = 'flex'
     if (updateAvailableNowBtn) updateAvailableNowBtn.disabled = false
     if (updateAvailableLaterBtn) updateAvailableLaterBtn.disabled = false
-    if (updateAvailableModal) updateAvailableModal.classList.remove('hidden')
+    if (updateAvailableModal) openOverlayModal(updateAvailableModal)
   } catch (err) {
     console.warn('자동 업데이트 확인 실패:', err)
   }
@@ -3412,7 +3430,7 @@ async function checkPostUpdateNoticeOnce() {
       updateCompleteVersionLine.textContent = `버전 ${formatVersionLabel(notice.version, notice.version_date)}로 업데이트되었습니다.`
     }
     renderChangelogList(updateCompleteChangelog, notice.changelog)
-    if (updateCompleteModal) updateCompleteModal.classList.remove('hidden')
+    if (updateCompleteModal) openOverlayModal(updateCompleteModal)
     return true
   } catch (err) {
     console.warn('업데이트 완료 안내 조회 실패:', err)
@@ -3430,7 +3448,7 @@ clearCacheBtn.addEventListener('click', async () => {
       }
     })
     showToast('캐시가 초기화되었습니다.', 'success')
-    settingsModal.classList.add('hidden')
+    closeOverlayModal(settingsModal)
     location.reload()
   }
 })
@@ -3473,7 +3491,7 @@ changeCredentialsForm.addEventListener('submit', async (e) => {
     const result = await changeCredentialsAPI(currentPassword, newUsername, newPassword)
     showToast(result.message || '아이디 및 비밀번호가 변경되었습니다.', 'success')
     state.username = newUsername
-    settingsModal.classList.add('hidden')
+    closeOverlayModal(settingsModal)
   } catch (err) {
     showToast(err.message, 'error')
   }
@@ -4996,7 +5014,7 @@ if (docPreviewOpenBtn) {
 let primerResolve = null
 
 function hidePrimerModal(result) {
-  primerModal.classList.add('hidden')
+  closeOverlayModal(primerModal)
   if (primerResolve) {
     const resolve = primerResolve
     primerResolve = null
@@ -5030,9 +5048,18 @@ if (primerTabsBar) {
   })
 }
 
+// 브리핑 텍스트는 LLM이 LaTeX($...$)나 마크다운(**볼드** 등)을 섞어 반환할 수
+// 있으므로, 번역창과 동일한 formatTranslationHtml/applyKatexToElement 파이프라인을
+// 통해 렌더링한다(기존에는 textContent/escapeHtml로만 표시해 원문 그대로 노출됐다).
+function renderPrimerRichText(el, text) {
+  if (!el) return
+  el.innerHTML = formatTranslationHtml(text)
+  applyKatexToElement(el)
+}
+
 function renderPrimerLineage(data) {
   if (data.lineage) {
-    primerLineageText.textContent = data.lineage
+    renderPrimerRichText(primerLineageText, data.lineage)
     primerLineageSection.classList.remove('hidden')
   } else {
     primerLineageSection.classList.add('hidden')
@@ -5042,7 +5069,7 @@ function renderPrimerLineage(data) {
 
 function renderPrimerFeynman(data) {
   if (data.feynman) {
-    primerFeynmanText.textContent = data.feynman
+    renderPrimerRichText(primerFeynmanText, data.feynman)
     primerFeynmanSection.classList.remove('hidden')
   } else {
     primerFeynmanSection.classList.add('hidden')
@@ -5062,14 +5089,15 @@ function renderPrimerExperimentFlow(data) {
     <li class="primer-experiment-step">
       <div class="primer-experiment-step-num">${i + 1}</div>
       <div class="primer-experiment-step-body">
-        <div class="primer-experiment-row"><span class="primer-experiment-tag">가설</span><span>${escapeHtml(step.hypothesis)}</span></div>
-        <div class="primer-experiment-row"><span class="primer-experiment-tag">방법</span><span>${escapeHtml(step.method)}</span></div>
-        <div class="primer-experiment-row"><span class="primer-experiment-tag">결과</span><span>${escapeHtml(step.result)}</span></div>
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">가설</span><span>${formatTranslationHtml(step.hypothesis)}</span></div>
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">방법</span><span>${formatTranslationHtml(step.method)}</span></div>
+        <div class="primer-experiment-row"><span class="primer-experiment-tag">결과</span><span>${formatTranslationHtml(step.result)}</span></div>
       </div>
     </li>
   `).join('')
   primerExperimentSection.classList.remove('hidden')
   togglePrimerTabButton('experiment', true)
+  applyKatexToElement(primerExperimentFlow)
 }
 
 function renderPrimerGlossary(data) {
@@ -5082,12 +5110,13 @@ function renderPrimerGlossary(data) {
   }
   primerGlossary.innerHTML = glossary.map(g => `
     <details class="primer-glossary-item">
-      <summary class="primer-glossary-term">${escapeHtml(g.term)}</summary>
-      <p class="primer-glossary-def">${escapeHtml(g.definition)}</p>
+      <summary class="primer-glossary-term">${formatTranslationHtml(g.term)}</summary>
+      <p class="primer-glossary-def">${formatTranslationHtml(g.definition)}</p>
     </details>
   `).join('')
   primerGlossarySection.classList.remove('hidden')
   togglePrimerTabButton('glossary', true)
+  applyKatexToElement(primerGlossary)
 }
 
 function renderPrimerCitationGraph(container, citationGraph, mode) {
@@ -5161,19 +5190,21 @@ function renderPrimerContent(doc, data, mode) {
   primerTitle.textContent = displayTitle
 
   if (data.hook) {
-    primerHookText.textContent = data.hook
+    renderPrimerRichText(primerHookText, data.hook)
     primerHookSection.classList.remove('hidden')
   } else {
     primerHookSection.classList.add('hidden')
   }
 
   const questions = data.questions || []
-  primerQuestions.innerHTML = questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')
+  primerQuestions.innerHTML = questions.map(q => `<li>${formatTranslationHtml(q)}</li>`).join('')
   primerQuestionsSection.classList.toggle('hidden', questions.length === 0)
+  applyKatexToElement(primerQuestions)
 
   const checklist = data.checklist || []
-  primerChecklist.innerHTML = checklist.map(c => `<li>${escapeHtml(c)}</li>`).join('')
+  primerChecklist.innerHTML = checklist.map(c => `<li>${formatTranslationHtml(c)}</li>`).join('')
   primerChecklistSection.classList.toggle('hidden', checklist.length === 0)
+  applyKatexToElement(primerChecklist)
 
   if (data.figure) {
     primerFigureImg.src = `/api/library/${doc.id}/primer-figure?ts=${Date.now()}`
@@ -5196,18 +5227,32 @@ let primerCurrentDoc = null
 let primerCurrentMode = 'gate'
 
 function _loadPrimerInto(doc, mode, dataPromise) {
-  primerLoading.classList.remove('hidden')
-  primerError.classList.add('hidden')
-  primerBody.classList.add('hidden')
+  // 이미 캐시된 브리핑은 fetch가 수십~수백ms 안에 끝나는 경우가 많다. 그때마다
+  // 로딩 화면을 곧장 띄웠다 지우면 눈 깜짝할 사이에 스피너가 번쩍이는 flicker로
+  // 보인다. 응답이 실제로 늦어질 때만(200ms 초과) 로딩 상태를 노출한다.
+  let settled = false
+  const loadingTimer = window.setTimeout(() => {
+    if (settled) return
+    primerLoading.classList.remove('hidden')
+    primerError.classList.add('hidden')
+    primerBody.classList.add('hidden')
+  }, 200)
+
   return dataPromise
     .then(data => {
+      settled = true
+      window.clearTimeout(loadingTimer)
       renderPrimerContent(doc, data, mode)
       primerLoading.classList.add('hidden')
+      primerError.classList.add('hidden')
       primerBody.classList.remove('hidden')
     })
     .catch(err => {
+      settled = true
+      window.clearTimeout(loadingTimer)
       console.error('브리핑 로드 실패:', err)
       primerLoading.classList.add('hidden')
+      primerBody.classList.add('hidden')
       primerError.classList.remove('hidden')
     })
 }
@@ -5217,7 +5262,7 @@ async function showPrimerModal(doc, { mode = 'gate' } = {}) {
   primerCurrentMode = mode
   return new Promise((resolve) => {
     primerResolve = resolve
-    primerModal.classList.remove('hidden')
+    openOverlayModal(primerModal)
     primerSkipBtn.classList.toggle('hidden', mode !== 'gate')
     primerContinueBtn.textContent = mode === 'gate' ? '읽으러 가기' : '닫기'
 
@@ -11875,13 +11920,13 @@ function showOnboardingStep(step) {
 }
 
 function openOnboarding() {
-  onboardingModal.classList.remove('hidden')
+  openOverlayModal(onboardingModal)
   showOnboardingStep('detecting')
   detectAndRenderOnboarding()
 }
 
 function closeOnboarding() {
-  onboardingModal.classList.add('hidden')
+  closeOverlayModal(onboardingModal)
   localStorage.setItem(ONBOARDING_SEEN_KEY, '1')
 }
 
