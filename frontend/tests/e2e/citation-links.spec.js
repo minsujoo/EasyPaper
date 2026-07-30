@@ -45,6 +45,56 @@ test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation �
   await expect(page.locator('.citation-paper-abstract')).toContainText('entirely on attention')
 })
 
+test('인용 역할 설명을 누르면 영역 문맥이 고정되고 같은 문맥으로 후속 채팅을 이어간다', async ({ page }) => {
+  const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
+  const chatRequests = []
+  await mockBaseRoutes(page, { documents: [docC] })
+  await page.route('**/api/library/doc-C/pdf', route =>
+    route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_CITATION }))
+  await page.route('**/api/library/doc-C/references', route =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
+    }))
+  await page.route('**/api/library/doc-C/references/1', route =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        title: 'Attention Is All You Need',
+        url: 'https://arxiv.org/abs/1706.03762',
+        year: 2017,
+        authors: ['Ashish Vaswani'],
+        abstract: 'A sequence transduction model based entirely on attention.',
+      }),
+    }))
+  await page.route('**/api/chat/stream', async route => {
+    chatRequests.push(route.request().postDataJSON())
+    await route.fulfill({ status: 200, contentType: 'text/plain', body: '이 인용은 선행 방법의 배경 근거로 사용됩니다.' })
+  })
+
+  await gotoApp(page)
+  await page.evaluate(() => { location.hash = '#viewer?id=doc-C' })
+
+  await page.locator('.citation-marker-box').first().click()
+  await expect(page.locator('.citation-tooltip-explain-btn')).toBeVisible()
+  await page.locator('.citation-tooltip-explain-btn').click()
+
+  await expect(page.locator('#chat-sidebar')).not.toHaveClass(/hidden/)
+  await expect(page.locator('#explanation-context-card')).not.toHaveClass(/hidden/)
+  await expect(page.locator('#explanation-context-kind')).toHaveText('인용')
+  await expect(page.locator('#explanation-context-label')).toContainText('참고문헌 1')
+  await expect.poll(() => chatRequests.length).toBe(1)
+  expect(chatRequests[0].messages.at(-1).content).toContain('Vaswani et al. Attention Is All You Need')
+  expect(chatRequests[0].messages.at(-1).content).toContain('왜 언급되었는지 설명해줘')
+
+  await page.fill('#chat-input', '이 방법과 현재 논문의 차이는 뭐야?')
+  await page.click('#chat-send-btn')
+  await expect.poll(() => chatRequests.length).toBe(2)
+  expect(chatRequests[1].messages.at(-1).content).toContain('[현재 설명 영역: 인용')
+  expect(chatRequests[1].messages.at(-1).content).toContain('이 방법과 현재 논문의 차이는 뭐야?')
+  await expect(page.locator('#explanation-context-card')).not.toHaveClass(/hidden/)
+})
+
 test('참고문헌 목록에 있는 번호의 본문 인용 표기만 클릭 가능한 오버레이가 생기고, 클릭하면 원문 텍스트와 함께 툴팁이 뜬다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   await mockBaseRoutes(page, { documents: [docC] })

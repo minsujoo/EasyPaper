@@ -44,6 +44,7 @@ const state = {
   chatHistory: [],             // AI 채팅 히스토리
   chatActiveStream: null,      // 현재 활성화된 채팅 스트림 abort 함수
   chatCurrentText: '',         // 현재 스트리밍 답변 텍스트 임시 저장
+  explanationContext: null,    // 영역별 설명 후속 채팅에서 계속 유지할 문맥
   availableOllamaModels: [],   // Ollama에서 설치된 모델 목록
   quotedText: null,            // AI 질문 시 인용구 보관용
   documentImages: [],          // 문서 내 이미지 좌표 목록
@@ -304,6 +305,12 @@ const chatSidebar        = $('chat-sidebar')
 const chatResizer        = $('chat-resizer')
 const chatCloseBtn       = $('chat-close-btn')
 const chatMessages       = $('chat-messages')
+const explanationContextCard = $('explanation-context-card')
+const explanationContextKind = $('explanation-context-kind')
+const explanationContextLabel = $('explanation-context-label')
+const explanationContextPreview = $('explanation-context-preview')
+const explanationContextImage = $('explanation-context-image')
+const explanationContextClose = $('explanation-context-close')
 const floatingScrollNav  = $('floating-scroll-nav')
 const outlineToggleBtn   = $('outline-toggle-btn')
 const outlineSidebar     = $('outline-sidebar')
@@ -7125,6 +7132,10 @@ function createSelectionMenu() {
       
       <div class="menu-divider" style="width: 1px; background: var(--border-strong); height: 16px; margin: 0 2px;"></div>
     </div>
+    <button class="menu-btn explain-ai-btn" title="선택 영역 바로 설명" style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 0 8px;">
+      ${icon('lightbulb', 14)}
+      <span>설명</span>
+    </button>
     <button class="menu-btn ask-ai-btn" title="AI 어시스턴트에게 질문" style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent-mid); padding: 0 8px;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
       <span>Ask AI</span>
@@ -7289,6 +7300,23 @@ function createSelectionMenu() {
     hideSelectionMenu()
   })
 
+  menu.querySelector('.explain-ai-btn').addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const selection = window.getSelection()
+    const text = extractSelectionText(selection).trim()
+    if (text) {
+      let pageNum = state.hoverSelectedPageNum || null
+      if (!pageNum && selection?.rangeCount) {
+        const node = selection.getRangeAt(0).startContainer
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node
+        pageNum = parseInt(el?.closest?.('.pdf-page-wrapper, .trans-page-block')?.dataset.page || '0', 10) || null
+      }
+      explainContext({ kind: 'sentence', label: pageNum ? `선택 영역 · p.${pageNum}` : '선택 영역', text, pageNum })
+    }
+    selection.removeAllRanges()
+    hideSelectionMenu()
+  })
+
   updateActiveColors()
   return menu
 }
@@ -7384,6 +7412,10 @@ function createAnnHoverTooltip() {
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
     </button>
     <div class="menu-divider" style="width: 1px; background: var(--border-strong); height: 16px; margin: 0 2px;"></div>
+    <button class="menu-btn explain-ai-btn explain-ai-ann-btn" title="이 영역 설명">
+      ${icon('lightbulb', 14)}
+      <span>설명</span>
+    </button>
     <button class="menu-btn ask-ai-btn ask-ai-ann-btn" title="AI 어시스턴트에게 질문">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
       <span>Ask AI</span>
@@ -7518,6 +7550,20 @@ function createAnnHoverTooltip() {
     const text = activeHoveredSpan ? activeHoveredSpan.textContent.trim() : activeHoveredText
     if (text) {
       askAIAssistant(text)
+    }
+    hideAnnHoverTooltip()
+  })
+
+  tooltip.querySelector('.explain-ai-ann-btn').addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const text = activeHoveredSpan ? activeHoveredSpan.textContent.trim() : activeHoveredText
+    if (text) {
+      explainContext({
+        kind: 'sentence',
+        label: activeHoveredPageNum ? `표시한 영역 · p.${activeHoveredPageNum}` : '표시한 영역',
+        text,
+        pageNum: activeHoveredPageNum,
+      })
     }
     hideAnnHoverTooltip()
   })
@@ -8175,6 +8221,34 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
     overlay.style.pointerEvents = 'auto'
     overlay.style.cursor = 'pointer'
 
+    const explainBtn = document.createElement('button')
+    explainBtn.type = 'button'
+    explainBtn.className = 'pdf-figure-explain-btn'
+    explainBtn.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
+    explainBtn.title = `${imgPercent.label || '그림/표'} 설명`
+    explainBtn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const canvas = inner.querySelector('canvas')
+      if (!canvas) return
+      try {
+        const base64Img = cropFigureFromCanvas(canvas, imgPercent)
+        const kind = /^table/i.test(imgPercent.label || '') ? 'table' : 'figure'
+        toggleCropMode(false)
+        explainContext({
+          kind,
+          label: `${imgPercent.label || (kind === 'table' ? 'Table' : 'Figure')} · p.${pageNum}`,
+          text: imgPercent.caption || imgPercent.label || '',
+          pageNum,
+          imageBase64: base64Img,
+        })
+      } catch (err) {
+        console.error('그림 설명용 크롭 실패:', err)
+        showToast('설명할 영역을 캡처하지 못했습니다.', 'error')
+      }
+    })
+    overlay.appendChild(explainBtn)
+
     overlay.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -8470,6 +8544,9 @@ function renderCitationOverlayLayer(textLayerDiv, pageNum) {
       box.style.height = `${r.height}px`
       box.dataset.refNum = validKeys.join(',')
       box.dataset.mentionKind = mentionKind
+      box.dataset.page = pageNum
+      box.dataset.charStart = charStart
+      box.dataset.charEnd = charEnd
       box.addEventListener('mouseenter', () => showCitationTooltip(docId, validKeys, refMap, box))
       box.addEventListener('mouseleave', scheduleCitationTooltipHide)
       // 클릭도 항상 툴팁을 띄운다(호버가 없는 터치 기기 대응). 실제 마우스
@@ -8804,6 +8881,34 @@ function getOrCreateFigurePreviewTooltip() {
     if (!itemEl) return
     const target = figurePreviewCurrentTargets[parseInt(itemEl.dataset.idx, 10)]
     if (!target) return
+    const explainBtn = e.target.closest('.figure-preview-explain-btn')
+    if (explainBtn) {
+      e.preventDefault()
+      e.stopPropagation()
+      explainBtn.disabled = true
+      explainBtn.textContent = '준비 중...'
+      Promise.resolve(
+        itemEl.querySelector('.figure-preview-tooltip-img:not(.hidden)')?.src || renderFigureCrop(target.page, target)
+      ).then((dataUrl) => {
+        if (!dataUrl) throw new Error('empty crop')
+        const label = target.label || 'Figure'
+        const kind = /^table/i.test(label) ? 'table' : 'figure'
+        hideFigurePreviewTooltip()
+        explainContext({
+          kind,
+          label: `${label} · p.${target.page}`,
+          text: target.caption || label,
+          pageNum: target.page,
+          imageBase64: dataUrl,
+        })
+      }).catch((err) => {
+        console.warn('그림/표 설명 준비 실패:', err)
+        explainBtn.disabled = false
+        explainBtn.innerHTML = `${icon('lightbulb', 12)} 설명`
+        showToast('그림/표를 불러오지 못했습니다.', 'error')
+      })
+      return
+    }
     hideFigurePreviewTooltip()
     scrollToPage(viewerScrollContainer, target.page)
   })
@@ -8896,6 +9001,7 @@ async function showFigurePreviewTooltip(targets, boxEl) {
       <div class="figure-preview-tooltip-loading">${icon('refreshCw', 14, 'style="vertical-align:-2px;margin-right:4px"')}불러오는 중...</div>
       <img class="figure-preview-tooltip-img hidden" alt="" />
       ${t.caption ? `<div class="figure-preview-tooltip-caption">${renderBoldText(t.caption)}</div>` : ''}
+      <button type="button" class="figure-preview-explain-btn">${icon('lightbulb', 12)} 설명하고 질문하기</button>
     </div>
   `).join('')
 
@@ -8979,6 +9085,7 @@ function getOrCreateCitationTooltip() {
     <div class="citation-tooltip-text"></div>
     <div class="citation-tooltip-result hidden"></div>
     <div class="citation-tooltip-actions">
+      <button type="button" class="citation-tooltip-action-btn citation-tooltip-explain-btn">${icon('lightbulb', 12, 'style="vertical-align:-2px;margin-right:4px"')}이 인용의 역할 설명</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-resolve-btn">${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-scholar-btn">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px"')}Google Scholar 검색</button>
     </div>
@@ -8989,6 +9096,34 @@ function getOrCreateCitationTooltip() {
     if (citationTooltipHideTimer) { clearTimeout(citationTooltipHideTimer); citationTooltipHideTimer = null }
   })
   el.addEventListener('mouseleave', scheduleCitationTooltipHide)
+  el.querySelector('.citation-tooltip-explain-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    const box = citationTooltipBoxEl
+    if (!box) return
+    const pageNum = parseInt(box.dataset.page || '0', 10) || null
+    const charStart = parseInt(box.dataset.charStart || '0', 10)
+    const charEnd = parseInt(box.dataset.charEnd || '0', 10)
+    const pageText = pageNum ? state.virtualTextMaps?.[pageNum]?.fullText || '' : ''
+    const surrounding = pageText
+      ? pageText.slice(Math.max(0, charStart - 450), Math.min(pageText.length, charEnd + 450)).trim()
+      : ''
+    const referenceText = el.querySelector('.citation-tooltip-text').textContent.trim()
+    const resolved = citationResolveCache.get(`${citationTooltipDocId}:${citationTooltipRefNum}`)
+    const resolvedText = resolved
+      ? [resolved.title, (resolved.authors || []).join(', '), resolved.abstract].filter(Boolean).join('\n')
+      : ''
+    hideCitationTooltip()
+    explainContext({
+      kind: 'citation',
+      label: `참고문헌 ${box.dataset.refNum || citationTooltipRefNum}`,
+      pageNum,
+      text: [
+        surrounding && `[현재 논문의 인용 주변 문맥]\n${surrounding}`,
+        referenceText && `[참고문헌 정보]\n${referenceText}`,
+        resolvedText && `[확인된 논문 정보]\n${resolvedText}`,
+      ].filter(Boolean).join('\n\n'),
+    })
+  })
   el.querySelector('.citation-tooltip-resolve-btn').addEventListener('click', (e) => {
     e.stopPropagation()
     if (citationTooltipDocId && citationTooltipRefNum) {
@@ -9157,6 +9292,88 @@ document.addEventListener('click', (e) => {
 })
 
 // ── AI Chat Sidebar ──────────────────────────────
+const EXPLANATION_KIND_LABELS = {
+  sentence: '문장·문단',
+  section: '섹션',
+  equation: '수식',
+  figure: 'Figure',
+  table: 'Table',
+  citation: '인용',
+}
+
+const EXPLANATION_PROMPTS = {
+  sentence: '선택한 문장이나 문단을 논문의 전체 흐름에 맞춰 설명해줘. 단순 번역이 아니라 핵심 의미, 이 문맥에서의 역할, 이해에 필요한 전제 개념을 구분해서 알려줘.',
+  section: '이 섹션을 처음 읽는 사람도 따라갈 수 있게 설명해줘. 먼저 핵심 요약, 이어서 논리 전개, 마지막으로 꼭 기억할 용어와 결론을 정리해줘.',
+  equation: '이 수식을 단계적으로 설명해줘. 각 기호의 의미, 연산이 하는 일, 직관적인 해석, 논문 방법론에서 이 수식이 맡는 역할을 구분해줘. 보이지 않거나 확실하지 않은 기호는 추측하지 말고 밝혀줘.',
+  figure: '이 Figure를 설명해줘. 구성 요소와 축/범례, 저자가 보여주려는 핵심 비교나 결과, 본문 주장과의 연결을 순서대로 알려줘. 이미지에서 확인되지 않는 내용은 추측하지 말아줘.',
+  table: '이 Table을 설명해줘. 행과 열 및 지표의 의미, 중요한 비교와 수치, 가장 강한 결과와 예외, 논문 결론에 주는 의미를 정리해줘. 이미지에서 확인되지 않는 값은 만들지 말아줘.',
+  citation: '이 참고문헌이 현재 논문의 이 위치에서 왜 언급되었는지 설명해줘. 배경 근거, 방법 차용, 비교 대상, 한계 보완 중 어떤 역할인지 문맥 근거와 함께 판단하고, 현재 논문의 주장과 인용 논문의 내용을 분리해서 써줘.',
+}
+
+function renderExplanationContext() {
+  const context = state.explanationContext
+  const titleEl = chatSidebar?.querySelector('.chat-title')
+  if (!context) {
+    explanationContextCard?.classList.add('hidden')
+    if (titleEl) titleEl.textContent = 'AI 어시스턴트'
+    return
+  }
+
+  if (titleEl) titleEl.textContent = '영역 설명 · 채팅'
+  if (explanationContextKind) explanationContextKind.textContent = EXPLANATION_KIND_LABELS[context.kind] || '영역'
+  if (explanationContextLabel) explanationContextLabel.textContent = context.label || `${context.pageNum ? `p.${context.pageNum}` : ''}`
+  if (explanationContextPreview) explanationContextPreview.textContent = context.text || ''
+  if (explanationContextImage) {
+    if (context.imageBase64) {
+      explanationContextImage.src = context.imageBase64
+      explanationContextImage.classList.remove('hidden')
+    } else {
+      explanationContextImage.removeAttribute('src')
+      explanationContextImage.classList.add('hidden')
+    }
+  }
+  explanationContextCard?.classList.remove('hidden')
+}
+
+function clearExplanationContext() {
+  state.explanationContext = null
+  renderExplanationContext()
+}
+
+function explainContext({ kind = 'sentence', label = '', text = '', pageNum = null, imageBase64 = null }) {
+  if (!state.sessionId) {
+    showToast('논문을 먼저 업로드하거나 선택해주세요.', 'error')
+    return
+  }
+  if (state.chatActiveStream) {
+    showToast('현재 답변이 끝난 뒤 새 영역을 설명할 수 있습니다.', 'info')
+    return
+  }
+
+  const cleanText = String(text || '').trim()
+  state.explanationContext = {
+    kind,
+    label: label || `${EXPLANATION_KIND_LABELS[kind] || '영역'}${pageNum ? ` · p.${pageNum}` : ''}`,
+    text: cleanText,
+    pageNum,
+    imageBase64,
+  }
+  renderExplanationContext()
+
+  if (imageBase64) askAIAssistantImage(imageBase64, pageNum)
+  else askAIAssistant(cleanText)
+
+  const prompt = EXPLANATION_PROMPTS[kind] || EXPLANATION_PROMPTS.sentence
+  chatInput.value = prompt
+  chatInput.style.height = 'auto'
+  openChatSidebar()
+  window.requestAnimationFrame(() => sendChatMessage())
+}
+
+if (explanationContextClose) {
+  explanationContextClose.addEventListener('click', clearExplanationContext)
+}
+
 function toggleChatSidebar() {
   if (!state.sessionId) {
     showToast('논문을 먼저 업로드하거나 선택해주세요.', 'error')
@@ -9190,6 +9407,7 @@ function openChatSidebar() {
 }
 
 function resetChatUI() {
+  clearExplanationContext()
   chatMessages.innerHTML = `<div class="chat-message assistant"><div class="message-bubble">안녕하세요! 이 논문의 내용에 대해 궁금한 점을 질문하시면 해당 분야의 전문가로서 답변해 드립니다.<br><br><strong>${icon('info', 13, 'style="vertical-align:-2px;margin-right:3px"')}질문 예시:</strong><ul><li>이 논문의 핵심 연구 내용과 기여도를 요약해줘.</li><li>본문에서 제안하는 알고리즘/방법론의 상세 과정을 설명해줘.</li><li>실험 결과에서 제시된 주요 수치와 의의는 무엇이야?</li></ul></div></div>`
   chatInput.value = ''
   chatInput.style.height = 'auto'
@@ -9672,7 +9890,11 @@ async function sendChatMessage() {
     if (quoteTextEl) quoteTextEl.classList.remove('hidden')
   } else {
     appendChatMessage('user', text)
-    state.chatHistory.push({ role: 'user', content: text })
+    const context = state.explanationContext
+    const contextualPayload = context
+      ? `[현재 설명 영역: ${EXPLANATION_KIND_LABELS[context.kind] || '영역'}${context.label ? ` / ${context.label}` : ''}${context.pageNum ? ` / Page ${context.pageNum}` : ''}]\n${context.text || '(이미지 영역)'}\n\n[후속 질문]\n${text}`
+      : text
+    state.chatHistory.push({ role: 'user', content: contextualPayload })
   }
   
   appendTypingIndicator()
@@ -10739,12 +10961,40 @@ function renderSentenceOverlay(overlayEl, rects, boxClass) {
   }
 }
 
+function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
+  if (!rects.length) return
+  overlayEl.querySelectorAll('.equation-explain-btn').forEach(el => el.remove())
+  const anchor = rects[rects.length - 1]
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'equation-explain-btn'
+  button.innerHTML = `${icon('lightbulb', 12)}<span>수식 설명</span>`
+  button.style.left = `${Math.max(4, anchor.left + anchor.width - 82)}px`
+  button.style.top = `${anchor.top + anchor.height + 4}px`
+  button.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const fullText = state.virtualTextMaps?.[pageNum]?.fullText || ''
+    const formulaText = fullText.slice(sentenceRange.charStart, sentenceRange.charEnd).trim()
+    explainContext({
+      kind: 'equation',
+      label: `수식 · p.${pageNum}`,
+      text: formulaText,
+      pageNum,
+    })
+  })
+  overlayEl.appendChild(button)
+}
+
 // 오버레이 레이어에서 특정 클래스 상자들만 제거
 function clearOverlayBoxes(overlayEl, ...classes) {
   if (!overlayEl) return;
   classes.forEach(cls => {
     overlayEl.querySelectorAll(`.${cls}`).forEach(b => b.remove());
   });
+  if (classes.includes('sentence-active-box')) {
+    overlayEl.querySelectorAll('.equation-explain-btn').forEach(b => b.remove())
+  }
 }
 
 // 오버레이 레이어를 반환 (없으면 생성)
@@ -11420,6 +11670,9 @@ function applyActiveHighlight(pageNum, sentenceRange) {
   const overlay = getOrCreateOverlay(pageWrapper);
   const rects = getSentenceRects(sentenceRange, vtm, textLayer);
   renderSentenceOverlay(overlay, rects, 'sentence-active-box');
+  if (sentenceRange.isEquation) {
+    renderEquationExplainButton(overlay, rects, pageNum, sentenceRange)
+  }
 
   const sentenceIdx = sentenceRange.sentenceIdx >= 10000 ? (sentenceRange.originalSentenceIdx ?? sentenceRange.sentenceIdx) : sentenceRange.sentenceIdx;
   viewerScrollContainer.querySelectorAll(
@@ -12071,6 +12324,37 @@ window.addEventListener('hashchange', () => {
 })
 
 // ── 논문 목차(Outline) 제어 및 바인딩 ─────────────────
+function getSectionExplanationText(title, pageNum) {
+  const original = state.virtualTextMaps?.[pageNum]?.fullText || ''
+  const translated = typeof state.translationCache?.[pageNum] === 'string'
+    ? state.translationCache[pageNum]
+    : ''
+  return [
+    `[섹션 제목]\n${title}`,
+    original && `[해당 페이지 원문]\n${original.slice(0, 10000)}`,
+    translated && `[해당 페이지 번역]\n${translated.slice(0, 6000)}`,
+  ].filter(Boolean).join('\n\n')
+}
+
+function appendOutlineExplainButton(container, title, pageNum) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'outline-explain-btn'
+  button.innerHTML = icon('lightbulb', 12)
+  button.title = `${title} 섹션 설명`
+  button.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    explainContext({
+      kind: 'section',
+      label: `${title}${pageNum ? ` · p.${pageNum}` : ''}`,
+      text: getSectionExplanationText(title, pageNum || state.currentPage || 1),
+      pageNum: pageNum || state.currentPage || 1,
+    })
+  })
+  container.appendChild(button)
+}
+
 async function loadPDFOutline() {
   if (!outlineContent) return
   outlineContent.innerHTML = '<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:20px;">목차 로드 중...</div>'
@@ -12095,6 +12379,7 @@ async function loadPDFOutline() {
           scrollToPage(viewerScrollContainer, p)
         })
         div.title = `${p}페이지로 이동`
+        appendOutlineExplainButton(div, `${p} 페이지`, p)
         outlineContent.appendChild(div)
       }
       return
@@ -12107,13 +12392,14 @@ async function loadPDFOutline() {
         const iconSvg = depth === 0 
           ? `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="opacity:0.6; margin-right:8px; flex-shrink:0;"><circle cx="12" cy="12" r="8"/></svg>`
           : `<svg width="5" height="5" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.4; margin-right:8px; flex-shrink:0; margin-left:4px;"><circle cx="12" cy="12" r="10"/></svg>`
-        div.innerHTML = `${iconSvg}<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.title)}</span>`
+        div.innerHTML = `${iconSvg}<span class="outline-item-title">${escapeHtml(item.title)}</span>`
         if (item.pageNum) {
           div.addEventListener('click', () => {
             scrollToPage(viewerScrollContainer, item.pageNum)
           })
           div.title = `${item.pageNum}페이지로 이동`
         }
+        appendOutlineExplainButton(div, item.title, item.pageNum)
         outlineContent.appendChild(div)
         if (item.items && item.items.length > 0) {
           renderTree(item.items, depth + 1)

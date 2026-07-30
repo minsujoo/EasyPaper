@@ -2185,6 +2185,16 @@ body.light-theme .pdf-annotation-underline {
   background: rgba(126, 196, 232, 0.15) !important;
   color: var(--accent-mid) !important;
 }
+.selection-menu .menu-btn.explain-ai-btn {
+  width: auto;
+  white-space: nowrap;
+  color: #d99e2f;
+  font-family: var(--font-sans);
+}
+.selection-menu .menu-btn.explain-ai-btn:hover {
+  color: #f0b94c;
+  background: rgba(217, 158, 47, 0.14);
+}
 
 /* ── 비밀번호 변경 모달 스타일 ── */
 .modal-overlay {
@@ -2780,6 +2790,78 @@ body.light-theme .pdf-annotation-underline {
   background: var(--bg-hover);
   color: var(--text-primary);
   transform: scale(1.05);
+}
+
+.explanation-context-card {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 12px 14px 0;
+  padding: 11px 34px 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 42%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-mid) 9%, var(--bg-elevated));
+  flex-shrink: 0;
+}
+.explanation-context-card.hidden {
+  display: none;
+}
+.explanation-context-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.explanation-context-kind {
+  align-self: flex-start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-mid) 20%, transparent);
+  color: var(--accent-mid);
+  font-size: 10px;
+  font-weight: 800;
+}
+.explanation-context-label {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explanation-context-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.explanation-context-image {
+  width: 66px;
+  max-height: 58px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #fff;
+  object-fit: contain;
+}
+.explanation-context-image.hidden {
+  display: none;
+}
+.explanation-context-close {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 17px;
+}
+.explanation-context-close:hover {
+  color: var(--text-primary);
 }
 
 .chat-messages {
@@ -3882,6 +3964,27 @@ body.light-theme .chat-quote-area {
   border-color: rgba(126, 196, 232, 1.0);
   box-shadow: 0 0 3px rgba(126, 196, 232, 0.3);
 }
+.pdf-figure-explain-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(23, 20, 38, 0.9);
+  color: #f0b94c;
+  font: 700 11px var(--font-sans);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+.pdf-figure-explain-btn:hover {
+  background: rgba(45, 39, 66, 0.98);
+  transform: translateY(-1px);
+}
 
 /* 드래그 중에는 transition을 꺼서 마우스 움직임에 박스가 지연 없이 붙어오게 함 */
 .pdf-figure-overlay.resizing {
@@ -4620,6 +4723,37 @@ body.toolbar-hidden .outline-sidebar {
 .outline-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+.outline-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-explain-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+.outline-item:hover .outline-explain-btn,
+.outline-explain-btn:focus-visible {
+  opacity: 1;
+}
+.outline-explain-btn:hover {
+  background: rgba(217, 158, 47, 0.14);
+  color: #d99e2f;
 }
 .outline-item.depth-1 { padding-left: 22px; font-weight: 400; opacity: 0.85; }
 .outline-item.depth-2 { padding-left: 32px; font-weight: 400; opacity: 0.75; }
@@ -5469,6 +5603,26 @@ body.light-theme .sentence-memo-box.color-red {
   border-radius: 2px;
   border: 1px dashed rgba(59, 130, 246, 0.40);
 }
+.equation-explain-btn {
+  position: absolute;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 78px;
+  padding: 4px 7px;
+  border: 1px solid rgba(59, 130, 246, 0.55);
+  border-radius: 999px;
+  background: rgba(23, 20, 38, 0.94);
+  color: #93c5fd;
+  font: 700 10px var(--font-sans);
+  cursor: pointer;
+  pointer-events: auto !important;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.25);
+}
+.equation-explain-btn:hover {
+  background: rgba(35, 52, 82, 0.98);
+}
 
 /* 클릭 펄스 애니메이션 (오버레이 상자용) */
 @keyframes overlayPulse {
@@ -5766,6 +5920,28 @@ body.light-theme .figure-preview-tooltip {
   line-height: 1.5;
   color: var(--text-secondary);
   margin-top: 8px;
+}
+.figure-preview-explain-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 9px;
+  padding: 7px 10px;
+  border: 1px solid rgba(217, 158, 47, 0.48);
+  border-radius: var(--radius-sm);
+  background: rgba(217, 158, 47, 0.10);
+  color: #d99e2f;
+  font: 700 12px var(--font-sans);
+  cursor: pointer;
+}
+.figure-preview-explain-btn:hover:not(:disabled) {
+  background: rgba(217, 158, 47, 0.18);
+}
+.figure-preview-explain-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 /* ── 여러 논문 비교 채팅 ── */
