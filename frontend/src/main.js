@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -215,6 +215,7 @@ const libTabHistory     = $('lib-tab-history')
 const libTabTrash       = $('lib-tab-trash')
 const libTabChat        = $('lib-tab-chat')
 const libTabAnnotations = $('lib-tab-annotations')
+const libTabNotes       = $('lib-tab-notes')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 const librarySearchBox  = $('library-search-box')
@@ -227,6 +228,13 @@ const annotationSubtabMemo      = $('annotation-subtab-memo')
 const annotationSubtabHighlight = $('annotation-subtab-highlight')
 const annotationSubtabUnderline = $('annotation-subtab-underline')
 const annotationList            = $('annotation-list')
+const libraryNotesSection       = $('library-notes-section')
+const paperNoteList             = $('paper-note-list')
+const notesRefreshBtn           = $('notes-refresh-btn')
+const paperNoteModal            = $('paper-note-modal')
+const paperNoteModalBody        = $('paper-note-modal-body')
+const paperNoteCloseBtn         = $('paper-note-close-btn')
+const paperNoteRegenerateBtn    = $('paper-note-regenerate-btn')
 
 const libCompareToggleBtn   = $('lib-compare-toggle-btn')
 const compareSelectBar      = $('compare-select-bar')
@@ -3596,6 +3604,7 @@ function updateTabUI(activeTab) {
   if (libTabTrash) libTabTrash.classList.toggle('active', activeTab === 'trash')
   if (libTabChat) libTabChat.classList.toggle('active', activeTab === 'chat')
   if (libTabAnnotations) libTabAnnotations.classList.toggle('active', activeTab === 'annotations')
+  if (libTabNotes) libTabNotes.classList.toggle('active', activeTab === 'notes')
 
   if (libEmptyTrashBtn) {
     if (activeTab === 'trash') {
@@ -3606,7 +3615,7 @@ function updateTabUI(activeTab) {
   }
 
   // 휴지통/채팅/주석 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
-  const isListOnlyTab = activeTab === 'trash' || activeTab === 'chat' || activeTab === 'annotations'
+  const isListOnlyTab = activeTab === 'trash' || activeTab === 'chat' || activeTab === 'annotations' || activeTab === 'notes'
   if (libUploadBtn) {
     if (isListOnlyTab) {
       libUploadBtn.classList.add('hidden')
@@ -3623,10 +3632,12 @@ function updateTabUI(activeTab) {
   // 전용 UI는 숨긴다.
   const isChatTab = activeTab === 'chat'
   const isAnnotationsTab = activeTab === 'annotations'
-  const hidesGrid = isChatTab || isAnnotationsTab
+  const isNotesTab = activeTab === 'notes'
+  const hidesGrid = isChatTab || isAnnotationsTab || isNotesTab
   if (libraryGrid) libraryGrid.classList.toggle('hidden', hidesGrid)
   if (libraryChatSection) libraryChatSection.classList.toggle('hidden', !isChatTab)
   if (libraryAnnotationsSection) libraryAnnotationsSection.classList.toggle('hidden', !isAnnotationsTab)
+  if (libraryNotesSection) libraryNotesSection.classList.toggle('hidden', !isNotesTab)
   if (librarySearchBox) librarySearchBox.classList.toggle('hidden', hidesGrid)
   if (librarySearchStatus && hidesGrid) librarySearchStatus.classList.add('hidden')
   if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', hidesGrid)
@@ -3667,6 +3678,12 @@ if (libTabAnnotations) {
   libTabAnnotations.addEventListener('click', () => {
     if (state.currentLibraryTab === 'annotations') return
     updateTabUI('annotations')
+  })
+}
+if (libTabNotes) {
+  libTabNotes.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'notes') return
+    updateTabUI('notes')
   })
 }
 
@@ -4032,6 +4049,10 @@ async function renderLibrary() {
   }
   if (state.currentLibraryTab === 'annotations') {
     await renderAnnotationsBrowser()
+    return
+  }
+  if (state.currentLibraryTab === 'notes') {
+    await renderPaperNotes()
     return
   }
 
@@ -4429,6 +4450,185 @@ function renderAnnotationItems(items) {
     }
 
     annotationList.appendChild(item)
+  })
+}
+
+// ── 자동 논문 노트 ──────────────────────────────────────────────
+let activePaperNoteDocId = null
+let paperNotePollingTimer = null
+
+function stopPaperNotePolling() {
+  if (paperNotePollingTimer) {
+    clearTimeout(paperNotePollingTimer)
+    paperNotePollingTimer = null
+  }
+}
+
+function paperNoteStatusLabel(status) {
+  return {
+    ready: '완료',
+    generating: '생성 중',
+    error: '생성 실패',
+    not_started: '미생성',
+  }[status] || status
+}
+
+async function requestPaperNoteGeneration(docId) {
+  try {
+    await regeneratePaperNote(docId, getTranslationOptions().targetLang || '한국어')
+    showToast('논문 노트 생성을 시작했습니다.', 'success')
+    await renderPaperNotes()
+  } catch (err) {
+    console.error('논문 노트 생성 시작 실패:', err)
+    showToast('논문 노트 생성을 시작하지 못했습니다.', 'error')
+  }
+}
+
+async function renderPaperNotes() {
+  stopPaperNotePolling()
+  if (!paperNoteList) return
+  paperNoteList.innerHTML = `<div class="lib-empty"><p>논문 노트를 불러오는 중...</p></div>`
+
+  try {
+    const data = await fetchPaperNotes()
+    const notes = data.notes || []
+    if (!notes.length) {
+      paperNoteList.innerHTML = `<div class="lib-empty"><p>저장된 논문이 없습니다</p></div>`
+      return
+    }
+
+    paperNoteList.innerHTML = ''
+    let hasGenerating = false
+    notes.forEach(note => {
+      const content = note.content || {}
+      const title = content.title || note.metadata?.title || note.filename
+      const summary = content.summary || content.one_line_summary || (
+        note.status === 'generating'
+          ? '논문 전체를 분석하고 Figure와 Table을 정리하고 있습니다.'
+          : note.status === 'error'
+            ? (note.error || '노트를 생성하지 못했습니다. 다시 시도할 수 있습니다.')
+            : '이 논문의 자동 정리 노트가 아직 생성되지 않았습니다.'
+      )
+      const visualsCount = (content.visuals || []).length
+      if (note.status === 'generating') hasGenerating = true
+
+      const card = document.createElement('article')
+      card.className = 'paper-note-card'
+      card.innerHTML = `
+        <div class="paper-note-card-header">
+          <div class="paper-note-card-icon">${icon('fileText', 18)}</div>
+          <div class="paper-note-card-title">${escapeHtml(title || '제목 없는 논문')}</div>
+        </div>
+        <div class="paper-note-card-summary">${escapeHtml(summary)}</div>
+        <div class="paper-note-card-footer">
+          <span class="paper-note-status ${escapeHtml(note.status)}">
+            ${note.status === 'generating' ? '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>' : ''}
+            ${paperNoteStatusLabel(note.status)}
+          </span>
+          <span>${visualsCount ? `시각 자료 ${visualsCount}개` : `${note.total_pages || 0}페이지`}</span>
+        </div>
+      `
+      card.addEventListener('click', () => {
+        if (note.content) openPaperNote(note.doc_id)
+        else if (note.status !== 'generating') requestPaperNoteGeneration(note.doc_id)
+      })
+      paperNoteList.appendChild(card)
+    })
+
+    if (hasGenerating && state.currentLibraryTab === 'notes') {
+      paperNotePollingTimer = setTimeout(() => renderPaperNotes(), 3000)
+    }
+  } catch (err) {
+    console.error('논문 노트 목록 로드 실패:', err)
+    paperNoteList.innerHTML = `<div class="lib-empty"><p style="color:var(--error)">논문 노트를 불러오지 못했습니다</p></div>`
+  }
+}
+
+function noteListHtml(items) {
+  if (!Array.isArray(items) || !items.length) return ''
+  return `<ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+}
+
+function noteTextSection(title, text) {
+  if (!text) return ''
+  return `<section class="paper-note-section"><h2>${escapeHtml(title)}</h2><p>${escapeHtml(text)}</p></section>`
+}
+
+function renderPaperNoteDetail(note) {
+  const content = note.content || {}
+  const visuals = content.visuals || []
+  const experimentFlow = content.experiment_flow || []
+  const keywords = content.keywords || []
+
+  const contributionsHtml = content.contributions?.length
+    ? `<section class="paper-note-section"><h2>핵심 기여</h2>${noteListHtml(content.contributions)}</section>`
+    : ''
+  const takeawaysHtml = content.takeaways?.length
+    ? `<section class="paper-note-section"><h2>기억할 점</h2>${noteListHtml(content.takeaways)}</section>`
+    : ''
+  const experimentHtml = experimentFlow.length
+    ? `<section class="paper-note-section"><h2>가설 · 방법 · 결과</h2><ol>${
+        experimentFlow.map(flow => `<li><strong>가설:</strong> ${escapeHtml(flow.hypothesis || '')}<br><strong>방법:</strong> ${escapeHtml(flow.method || '')}<br><strong>결과:</strong> ${escapeHtml(flow.result || '')}</li>`).join('')
+      }</ol></section>`
+    : ''
+  const visualsHtml = visuals.length
+    ? `<section class="paper-note-section"><h2>주요 Figure · Table</h2><div class="paper-note-visual-grid">${
+        visuals.map(visual => `
+          <figure class="paper-note-visual">
+            <img loading="lazy" src="/api/notes/${encodeURIComponent(note.doc_id)}/assets/${visual.index}" alt="${escapeHtml(visual.label || '논문 시각 자료')}">
+            <figcaption><strong>${escapeHtml(visual.label || `${visual.page}페이지`)}</strong>${visual.caption ? `<br>${escapeHtml(visual.caption)}` : ''}</figcaption>
+          </figure>
+        `).join('')
+      }</div></section>`
+    : ''
+
+  paperNoteModalBody.innerHTML = `
+    <header class="paper-note-hero">
+      <div class="paper-note-eyebrow">Automatic Paper Note</div>
+      <h1>${escapeHtml(content.title || '논문 노트')}</h1>
+      <p class="paper-note-lead">${escapeHtml(content.one_line_summary || content.summary || '')}</p>
+      ${keywords.length ? `<div class="paper-note-keywords">${keywords.map(word => `<span>${escapeHtml(word)}</span>`).join('')}</div>` : ''}
+    </header>
+    ${noteTextSection('논문 요약', content.summary)}
+    ${contributionsHtml}
+    ${noteTextSection('핵심 방법', content.method_summary)}
+    ${noteTextSection('실험 및 결과', content.results_summary)}
+    ${experimentHtml}
+    ${visualsHtml}
+    ${noteTextSection('한계와 향후 연구', content.limitations)}
+    ${takeawaysHtml}
+  `
+}
+
+async function openPaperNote(docId) {
+  activePaperNoteDocId = docId
+  paperNoteModalBody.innerHTML = `<div class="paper-note-empty-detail"><div class="spinner" style="margin:0 auto 14px"></div>노트를 불러오는 중...</div>`
+  openOverlayModal(paperNoteModal)
+  try {
+    const note = await fetchPaperNote(docId)
+    if (!note.content) {
+      paperNoteModalBody.innerHTML = `<div class="paper-note-empty-detail">아직 노트가 준비되지 않았습니다.</div>`
+      return
+    }
+    renderPaperNoteDetail(note)
+  } catch (err) {
+    console.error('논문 노트 상세 조회 실패:', err)
+    paperNoteModalBody.innerHTML = `<div class="paper-note-empty-detail">노트를 불러오지 못했습니다.</div>`
+  }
+}
+
+if (notesRefreshBtn) notesRefreshBtn.addEventListener('click', () => renderPaperNotes())
+if (paperNoteCloseBtn) paperNoteCloseBtn.addEventListener('click', () => closeOverlayModal(paperNoteModal))
+if (paperNoteModal) {
+  paperNoteModal.addEventListener('click', event => {
+    if (event.target === paperNoteModal) closeOverlayModal(paperNoteModal)
+  })
+}
+if (paperNoteRegenerateBtn) {
+  paperNoteRegenerateBtn.addEventListener('click', async () => {
+    if (!activePaperNoteDocId) return
+    closeOverlayModal(paperNoteModal)
+    await requestPaperNoteGeneration(activePaperNoteDocId)
   })
 }
 

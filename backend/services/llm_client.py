@@ -1003,7 +1003,10 @@ async def stream_page_insight(
 
 
 _PRIMER_LINE_RE = re.compile(
-    r'^[\s\-\*>]*\**\s*(HOOK|LINEAGE|FEYNMAN|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|'
+    r'^[\s\-\*>]*\**\s*(HOOK|SUMMARY|METHOD_SUMMARY|RESULTS_SUMMARY|LIMITATIONS|'
+    r'KEYWORDS|LINEAGE|FEYNMAN|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|'
+    r'CONTRIBUTION1|CONTRIBUTION2|CONTRIBUTION3|CONTRIBUTION4|CONTRIBUTION5|'
+    r'TAKEAWAY1|TAKEAWAY2|TAKEAWAY3|'
     r'HYPOTHESIS1|HYPOTHESIS2|HYPOTHESIS3|METHOD1|METHOD2|METHOD3|'
     r'RESULT1|RESULT2|RESULT3|GLOSSARY1|GLOSSARY2|GLOSSARY3|GLOSSARY4|GLOSSARY5|'
     r'REC1|REC2|REC3|REC4|REC5)\**\s*[:.\)]\s*(.+)$',
@@ -1060,6 +1063,16 @@ async def generate_reading_primer(
         f"- FEYNMAN: 전문용어를 최대한 배제하고 일상적인 비유를 사용해 이 논문의 핵심 "
         f"아이디어를 비전문가에게 설명하듯 2~4문장으로 쉽게 풀어 쓰세요(파인만 기법). "
         f"줄바꿈 없이 한 줄로 쓰세요.\n"
+        f"- SUMMARY: 연구 문제, 제안 방법, 주요 실험 결과와 의미를 연결한 논문 전체 요약을 "
+        f"4~6문장으로 작성하세요. 발췌에 없는 사실이나 수치를 만들지 마세요.\n"
+        f"- CONTRIBUTION1~5: 이 논문의 핵심 기여를 3~5개로 나누어 각각 한 문장으로 쓰세요.\n"
+        f"- METHOD_SUMMARY: 입력에서 출력까지 핵심 방법의 흐름을 3~5문장으로 정리하세요.\n"
+        f"- RESULTS_SUMMARY: 비교 대상, 핵심 결과, 저자의 해석을 근거가 있는 범위에서 "
+        f"3~5문장으로 정리하세요.\n"
+        f"- LIMITATIONS: 논문이 직접 언급했거나 실험 설계에서 명확히 확인되는 한계와 향후 "
+        f"연구 방향을 2~4문장으로 쓰세요. 근거가 없으면 '명시적으로 확인되는 한계가 제한적입니다.'라고 쓰세요.\n"
+        f"- TAKEAWAY1~3: 독자가 이 논문에서 기억할 핵심 교훈을 3개, 각각 한 문장으로 쓰세요.\n"
+        f"- KEYWORDS: 논문의 핵심 검색어 5~8개를 쉼표로 구분하세요.\n"
         f"- Q1/Q2/Q3: 독자가 본문을 읽기 전 스스로 답을 예측해볼 만한 질문 3개. 각각 한 문장.\n"
         f"- CHECK1/CHECK2/CHECK3: 본문을 읽는 동안 확인하면 좋을 구체적인 포인트(예: 비교 대상, "
         f"핵심 수치, 한계점 등) 3개. 각각 한 문장.\n"
@@ -1080,7 +1093,10 @@ async def generate_reading_primer(
         f"반드시 아래 형식으로만 출력하세요(HYPOTHESIS/METHOD/RESULT, GLOSSARY, REC 항목은 "
         f"확신하는 만큼만 채우고 나머지는 통째로 생략). 다른 설명이나 서론은 절대 추가하지 "
         f"마세요.\n"
-        f"HOOK: <내용>\nLINEAGE: <내용>\nFEYNMAN: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\n"
+        f"HOOK: <내용>\nSUMMARY: <내용>\nCONTRIBUTION1: <내용>\n...\n"
+        f"METHOD_SUMMARY: <내용>\nRESULTS_SUMMARY: <내용>\nLIMITATIONS: <내용>\n"
+        f"TAKEAWAY1: <내용>\nTAKEAWAY2: <내용>\nTAKEAWAY3: <내용>\nKEYWORDS: <키워드1>, <키워드2>, ...\n"
+        f"LINEAGE: <내용>\nFEYNMAN: <내용>\nQ1: <내용>\nQ2: <내용>\nQ3: <내용>\n"
         f"CHECK1: <내용>\nCHECK2: <내용>\nCHECK3: <내용>\nHYPOTHESIS1: <내용>\nMETHOD1: <내용>\n"
         f"RESULT1: <내용>\n...\nGLOSSARY1: <용어> :: <정의>\n...\nREC1: <논문 원제>\n..."
     )
@@ -1146,9 +1162,9 @@ async def generate_reading_primer(
                 # num_predict을 지정하지 않으면 모델이 지시를 벗어나 장황하게
                 # 늘어지는 경우 생성이 끝없이 길어져 아래 타임아웃까지 그대로
                 # 소모할 수 있다(실측: 로컬 8~9B 모델에서 360초 타임아웃을 실제로
-                # 초과하는 경우를 확인). 항목이 최대 28줄인 이 응답 형식은 2048
-                # 토큰이면 충분히 넉넉하므로 상한을 걸어 최악의 경우를 방지한다.
-                "options": {"temperature": 0.5, "num_ctx": 16384, "num_predict": 2048},
+                # 초과하는 경우를 확인). 노트용 요약/기여/방법/결과까지 포함한
+                # 응답에 3072 토큰이면 충분히 넉넉하므로 이 값으로 상한을 둔다.
+                "options": {"temperature": 0.5, "num_ctx": 16384, "num_predict": 3072},
             }
             # LINEAGE/FEYNMAN/실험 흐름/용어집이 추가되며 응답 항목이 늘어나
             # 로컬 CPU/GPU 환경에서 1~3분씩 걸리는 경우를 실측했다 - 기존
@@ -1163,6 +1179,13 @@ async def generate_reading_primer(
     def _parse(raw: str) -> dict:
         result = {
             "hook": "",
+            "summary": "",
+            "contributions": [],
+            "method_summary": "",
+            "results_summary": "",
+            "limitations": "",
+            "takeaways": [],
+            "keywords": [],
             "lineage": "",
             "feynman": "",
             "questions": [],
@@ -1179,6 +1202,22 @@ async def generate_reading_primer(
             key, value = m.group(1).upper(), m.group(2).strip().rstrip('*').strip()
             if key == "HOOK":
                 result["hook"] = value
+            elif key == "SUMMARY":
+                result["summary"] = value
+            elif key.startswith("CONTRIBUTION"):
+                result["contributions"].append(value)
+            elif key == "METHOD_SUMMARY":
+                result["method_summary"] = value
+            elif key == "RESULTS_SUMMARY":
+                result["results_summary"] = value
+            elif key == "LIMITATIONS":
+                result["limitations"] = value
+            elif key.startswith("TAKEAWAY"):
+                result["takeaways"].append(value)
+            elif key == "KEYWORDS":
+                result["keywords"] = [
+                    item.strip() for item in re.split(r"[,，;]", value) if item.strip()
+                ][:8]
             elif key == "LINEAGE":
                 result["lineage"] = value
             elif key == "FEYNMAN":
@@ -2168,4 +2207,3 @@ Category Tags:"""
         
     tags = [t.strip() for t in result.split(",") if t.strip()]
     return tags
-

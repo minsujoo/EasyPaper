@@ -219,6 +219,13 @@ async def generate_primer(
 
     result = {
         "hook": llm_part.get("hook", ""),
+        "summary": llm_part.get("summary", ""),
+        "contributions": llm_part.get("contributions", []),
+        "method_summary": llm_part.get("method_summary", ""),
+        "results_summary": llm_part.get("results_summary", ""),
+        "limitations": llm_part.get("limitations", ""),
+        "takeaways": llm_part.get("takeaways", []),
+        "keywords": llm_part.get("keywords", []),
         "lineage": llm_part.get("lineage", ""),
         "feynman": llm_part.get("feynman", ""),
         "questions": llm_part.get("questions", []),

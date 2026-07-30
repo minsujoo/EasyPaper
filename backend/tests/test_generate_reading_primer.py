@@ -27,6 +27,15 @@ def fake_provider(monkeypatch):
 
 _FULL_RESPONSE = (
     "HOOK: 기존 접근이 왜 실패하는가?\n"
+    "SUMMARY: 문제와 방법 및 결과를 연결한 전체 요약입니다.\n"
+    "CONTRIBUTION1: 새로운 벤치마크를 제안했습니다.\n"
+    "CONTRIBUTION2: 효율적인 모델을 설계했습니다.\n"
+    "METHOD_SUMMARY: 입력을 인코딩해 예측 결과를 생성합니다.\n"
+    "RESULTS_SUMMARY: 주요 기준선보다 우수한 결과를 보였습니다.\n"
+    "LIMITATIONS: 긴 시간 예측에는 한계가 있습니다.\n"
+    "TAKEAWAY1: 시공간 정보를 함께 모델링해야 합니다.\n"
+    "TAKEAWAY2: 평가 프로토콜이 중요합니다.\n"
+    "KEYWORDS: 점유 예측, 시공간 모델링, 자율주행\n"
     "LINEAGE: 기존 방법은 한계가 있었는데, 이 논문은 이를 해결해 성능을 높였다.\n"
     "FEYNMAN: 마치 지도를 그리듯 핵심 아이디어를 비유로 설명한다.\n"
     "Q1: 질문1\nQ2: 질문2\nQ3: 질문3\n"
@@ -49,6 +58,19 @@ async def test_parses_all_new_fields(fake_provider):
     )
 
     assert result["hook"] == "기존 접근이 왜 실패하는가?"
+    assert result["summary"] == "문제와 방법 및 결과를 연결한 전체 요약입니다."
+    assert result["contributions"] == [
+        "새로운 벤치마크를 제안했습니다.",
+        "효율적인 모델을 설계했습니다.",
+    ]
+    assert result["method_summary"] == "입력을 인코딩해 예측 결과를 생성합니다."
+    assert result["results_summary"] == "주요 기준선보다 우수한 결과를 보였습니다."
+    assert result["limitations"] == "긴 시간 예측에는 한계가 있습니다."
+    assert result["takeaways"] == [
+        "시공간 정보를 함께 모델링해야 합니다.",
+        "평가 프로토콜이 중요합니다.",
+    ]
+    assert result["keywords"] == ["점유 예측", "시공간 모델링", "자율주행"]
     assert "해결해 성능을 높였다" in result["lineage"]
     assert "비유로 설명한다" in result["feynman"]
     assert result["questions"] == ["질문1", "질문2", "질문3"]

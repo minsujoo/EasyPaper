@@ -153,3 +153,24 @@ export async function regeneratePrimer(docId, targetLang = '한국어') {
   if (!res.ok) throw new Error('브리핑 재생성 요청 실패')
   return res.json()
 }
+
+export async function fetchPaperNotes() {
+  const res = await fetch(`${API_BASE}/notes`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('논문 노트 목록을 불러오지 못했습니다.')
+  return res.json()
+}
+
+export async function fetchPaperNote(docId) {
+  const res = await fetch(`${API_BASE}/notes/${encodeURIComponent(docId)}`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('논문 노트를 불러오지 못했습니다.')
+  return res.json()
+}
+
+export async function regeneratePaperNote(docId, language = '한국어') {
+  const res = await fetch(
+    `${API_BASE}/notes/${encodeURIComponent(docId)}/regenerate?language=${encodeURIComponent(language)}`,
+    { method: 'POST' }
+  )
+  if (!res.ok) throw new Error('논문 노트 생성을 시작하지 못했습니다.')
+  return res.json()
+}

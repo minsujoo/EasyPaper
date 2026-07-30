@@ -4,6 +4,7 @@ save_pages_cache / clear_all_pages_cache) 테스트.
 서버(또는 Tauri 앱 백엔드) 재시작 후 문서를 다시 열 때 PDF를 매번
 재파싱하지 않도록, extract_pages() 결과를 디스크에 캐싱해두는 기능이다."""
 
+import json
 import os
 
 from services.cache import get_cached_pages, save_pages_cache, clear_all_pages_cache
@@ -41,6 +42,21 @@ def test_cache_invalidated_when_pdf_content_changes(isolated_dirs, tmp_path):
     import time
     time.sleep(0.01)
     _make_pdf(pdf_path, size_bytes=500)
+
+    assert get_cached_pages("doc-1", str(pdf_path)) is None
+
+
+def test_cache_invalidated_when_parser_version_changes(isolated_dirs, tmp_path):
+    """PDF 파일이 그대로여도 추출 파서 규칙이 바뀐 릴리스에서는 이전 캐시를
+    재사용하지 않아야 한다."""
+    pdf_path = tmp_path / "doc.pdf"
+    _make_pdf(pdf_path)
+    save_pages_cache("doc-1", str(pdf_path), [{"page_num": 1, "text": "old parser"}])
+
+    cache_path = isolated_dirs["cache_dir"] / "doc-1_pages_extract.json"
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    data["version"] = 1
+    cache_path.write_text(json.dumps(data), encoding="utf-8")
 
     assert get_cached_pages("doc-1", str(pdf_path)) is None
 

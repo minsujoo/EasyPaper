@@ -92,6 +92,7 @@
         <button id="lib-tab-history" class="library-tab-btn" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>히스토리</button>
         <button id="lib-tab-chat" class="library-tab-btn" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>채팅</button>
         <button id="lib-tab-annotations" class="library-tab-btn" data-tab="annotations"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>주석</button>
+        <button id="lib-tab-notes" class="library-tab-btn" data-tab="notes"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>노트</button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->
@@ -141,6 +142,18 @@
           <button id="annotation-subtab-underline" class="chat-session-subtab-btn" data-subtab="underline">언더라인</button>
         </div>
         <div id="annotation-list" class="chat-session-list"></div>
+      </div>
+
+      <!-- 업로드 시 자동 생성되는 논문 요약/정리 노트 -->
+      <div id="library-notes-section" class="hidden">
+        <div class="paper-note-toolbar">
+          <div>
+            <h2>논문 노트</h2>
+            <p>업로드한 논문의 핵심 내용과 Figure·Table을 자동으로 정리합니다.</p>
+          </div>
+          <button id="notes-refresh-btn" class="file-btn-outline compact">새로고침</button>
+        </div>
+        <div id="paper-note-list" class="paper-note-list"></div>
       </div>
     </div>
     <!-- 우하단 휴지통 비우기 플로팅 버튼 -->
@@ -1085,6 +1098,19 @@
   </div>
 
   <!-- 읽기 전 브리핑(Reading Primer) 모달 -->
+  <!-- 논문 노트 상세 보기 -->
+  <div id="paper-note-modal" class="modal-overlay hidden">
+    <div class="paper-note-content">
+      <div class="paper-note-modal-actions">
+        <button id="paper-note-regenerate-btn" class="close-btn" title="노트 다시 생성">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
+        </button>
+        <button id="paper-note-close-btn" class="close-btn" title="닫기">&times;</button>
+      </div>
+      <div id="paper-note-modal-body" class="paper-note-modal-body"></div>
+    </div>
+  </div>
+
   <div id="primer-modal" class="modal-overlay hidden">
     <div class="primer-content">
       <div class="primer-modal-actions">

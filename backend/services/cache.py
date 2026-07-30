@@ -84,6 +84,10 @@ def clear_session_cache(session_id: str) -> None:
 
 
 _PAGES_CACHE_SUFFIX = "_pages_extract.json"
+# PDF 텍스트 추출 규칙이 바뀌어도 원본 파일의 mtime/크기는 그대로라 예전
+# 캐시가 영구히 재사용될 수 있다. 파서 동작을 바꾸는 릴리스에서는 이 값을
+# 올려 모든 문서가 새 규칙으로 한 번씩 자동 재추출되게 한다.
+_PAGES_CACHE_VERSION = 2
 
 
 def _pages_cache_path(doc_id: str) -> str:
@@ -102,7 +106,11 @@ def get_cached_pages(doc_id: str, pdf_path: str) -> Optional[list]:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         stat = os.stat(pdf_path)
-        if data.get("mtime") != stat.st_mtime or data.get("size") != stat.st_size:
+        if (
+            data.get("version") != _PAGES_CACHE_VERSION
+            or data.get("mtime") != stat.st_mtime
+            or data.get("size") != stat.st_size
+        ):
             return None
         return data.get("pages")
     except Exception:
@@ -115,6 +123,7 @@ def save_pages_cache(doc_id: str, pdf_path: str, pages: list) -> None:
     try:
         stat = os.stat(pdf_path)
         atomic_write_text(_pages_cache_path(doc_id), json.dumps({
+            "version": _PAGES_CACHE_VERSION,
             "mtime": stat.st_mtime,
             "size": stat.st_size,
             "pages": pages,
