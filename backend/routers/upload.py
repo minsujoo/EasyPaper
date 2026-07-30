@@ -12,6 +12,8 @@ from services.pdf_parser import extract_pages, get_pdf_metadata
 from services.library import save_document, get_document, get_pdf_path as lib_pdf_path, list_documents
 from services.translation_job import start_job, resume_incomplete_jobs, get_job_status
 from services.primer import generate_primer
+from services.paper_note import save_note_from_analysis
+from services.db import db_set_paper_note_status
 from models.schemas import UploadResponse
 
 router = APIRouter()
@@ -181,8 +183,9 @@ async def upload_pdf(
     # 번역은 프런트엔드가 상황에 맞춰 /jobs/{id}/restart(pane) 또는
     # /translate/{id}/{page}(scroll) 를 호출해 트리거한다.
     async def _run_primer_then_translate():
+        db_set_paper_note_status(session_id, target_lang, "generating")
         try:
-            await generate_primer(
+            analysis = await generate_primer(
                 session_id,
                 pages,
                 metadata,
@@ -191,8 +194,16 @@ async def upload_pdf(
                 target_lang=target_lang,
                 session_id=session_id,
             )
+            await save_note_from_analysis(
+                session_id,
+                metadata,
+                analysis,
+                pdf_path,
+                target_lang=target_lang,
+            )
         except Exception as e:
             print(f"[Upload {session_id}] Primer 생성 실패: {e}")
+            db_set_paper_note_status(session_id, target_lang, "error", str(e)[:500])
         if translation_mode == "auto":
             start_job(
                 session_id,

@@ -120,6 +120,22 @@ def init_db():
         )
         """)
 
+        # 8. paper_notes 테이블 (업로드 직후 자동 생성되는 논문 정리 노트).
+        # page_insights와 달리 생성 상태/실패 원인을 홈 대시보드에서 바로
+        # 보여줘야 하므로 독립 테이블로 관리한다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS paper_notes (
+            doc_id TEXT PRIMARY KEY,
+            language TEXT NOT NULL,
+            status TEXT NOT NULL,
+            content TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (doc_id) REFERENCES documents (id) ON DELETE CASCADE
+        )
+        """)
+
         # 라이브러리 목록/문서 조회가 doc_id(+suffix)로 translations를,
         # doc_id로 documents/page_insights/chats를 매번 훑는데(문서 수 x
         # 페이지 수만큼 뻥튀기됨) 인덱스가 없어 전부 풀스캔이었다. 목록
@@ -129,6 +145,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_page_insights_doc ON page_insights(doc_id, kind, suffix)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_username_deleted ON documents(username, is_deleted, created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_doc ON chats(doc_id, id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_notes_status ON paper_notes(status, updated_at)")
 
         conn.commit()
 
@@ -316,6 +333,9 @@ def db_delete_document(doc_id: str) -> bool:
         cursor.execute("SELECT id FROM documents WHERE id = ?", (doc_id,))
         if not cursor.fetchone():
             return False
+        # SQLite foreign_keys가 커넥션마다 활성화되지 않는 현재 구조에서는
+        # ON DELETE CASCADE만 믿으면 노트가 고아 레코드로 남는다.
+        cursor.execute("DELETE FROM paper_notes WHERE doc_id = ?", (doc_id,))
         cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
         conn.commit()
         return True
@@ -584,6 +604,124 @@ def db_delete_page_insight(doc_id: str, page_num: int, kind: str, suffix: str = 
             (doc_id, page_num, kind, suffix)
         )
         conn.commit()
+
+
+# ── 논문 노트 (Paper Notes) ───────────────────────────────────────────────────
+
+def db_set_paper_note_status(
+    doc_id: str,
+    language: str,
+    status: str,
+    error: Optional[str] = None,
+) -> None:
+    """노트 생성 상태를 갱신한다. 재생성 중에는 기존 content를 유지해, 생성이
+    끝나기 전에도 사용자가 이전 노트를 계속 열어볼 수 있게 한다."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO paper_notes
+                (doc_id, language, status, content, error, created_at, updated_at)
+            VALUES (?, ?, ?, NULL, ?, ?, ?)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                language = excluded.language,
+                status = excluded.status,
+                error = excluded.error,
+                updated_at = excluded.updated_at
+            """,
+            (doc_id, language, status, error, now, now),
+        )
+        conn.commit()
+
+
+def db_save_paper_note(doc_id: str, language: str, content: dict) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    content_json = json.dumps(content, ensure_ascii=False)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO paper_notes
+                (doc_id, language, status, content, error, created_at, updated_at)
+            VALUES (?, ?, 'ready', ?, NULL, ?, ?)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                language = excluded.language,
+                status = 'ready',
+                content = excluded.content,
+                error = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (doc_id, language, content_json, now, now),
+        )
+        conn.commit()
+
+
+def _decode_paper_note_row(row) -> Optional[dict]:
+    if not row:
+        return None
+    note = dict(row)
+    raw_content = note.get("content")
+    if raw_content:
+        try:
+            note["content"] = json.loads(raw_content)
+        except (json.JSONDecodeError, TypeError):
+            note["content"] = None
+    else:
+        note["content"] = None
+    return note
+
+
+def db_get_paper_note(doc_id: str) -> Optional[dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT doc_id, language, status, content, error, created_at, updated_at
+            FROM paper_notes WHERE doc_id = ?
+            """,
+            (doc_id,),
+        )
+        return _decode_paper_note_row(cursor.fetchone())
+
+
+def db_list_paper_notes(username: str) -> List[dict]:
+    """홈 노트 탭용 목록. 아직 노트가 생성되지 않은 기존 문서도
+    status='not_started'로 포함해 사용자가 수동 생성할 수 있게 한다."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT d.id AS doc_id, d.filename, d.metadata, d.total_pages,
+                   d.created_at AS document_created_at,
+                   n.language, n.status, n.content, n.error,
+                   n.created_at, n.updated_at
+            FROM documents d
+            LEFT JOIN paper_notes n ON n.doc_id = d.id
+            WHERE d.username = ? AND d.is_deleted = 0
+            ORDER BY COALESCE(n.updated_at, d.created_at) DESC
+            """,
+            (username,),
+        )
+        results = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            try:
+                item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else {}
+            except (json.JSONDecodeError, TypeError):
+                item["metadata"] = {}
+            raw_content = item.get("content")
+            if raw_content:
+                try:
+                    item["content"] = json.loads(raw_content)
+                except (json.JSONDecodeError, TypeError):
+                    item["content"] = None
+            else:
+                item["content"] = None
+            if not item.get("status"):
+                item["status"] = "not_started"
+            results.append(item)
+        return results
 
 
 def db_clear_translations(doc_id: str) -> None:
