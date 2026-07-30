@@ -142,3 +142,43 @@ def test_tiny_raster_tiles_are_merged_before_size_filtering(tmp_path):
     assert "FRONT LEFT" not in page_text
     assert "OccProphet" not in page_text
     assert "1 T" not in page_text
+
+
+def test_figure_caption_groups_distant_raster_diagram_parts(tmp_path):
+    """서로 멀리 떨어진 여러 래스터 도식도 하나의 전체 폭 Figure 캡션 바로 위에
+    있으면 같은 그림으로 묶어 내부 라벨을 제외해야 한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    body_text = "The evaluation protocol is described below the figure."
+    page.insert_text((50, 60), body_text, fontsize=11)
+
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 45, 45), False)
+    pix.clear_with(215)
+    for x0 in (60, 190, 320, 450):
+        page.insert_image(fitz.Rect(x0, 150, x0 + 45, 195), pixmap=pix)
+
+    page.insert_text((65, 170), "Occupancy Prediction", fontsize=7)
+    page.insert_text((195, 170), "Ray Casting", fontsize=7)
+    page.insert_text((325, 170), "3D Lifting", fontsize=7)
+    page.insert_text((455, 170), "4D Forecasting", fontsize=7)
+
+    caption_text = (
+        "Figure 3: Four types of baselines are proposed from occupancy prediction, "
+        "point cloud prediction, instance prediction, and forecasting."
+    )
+    page.insert_textbox(fitz.Rect(50, 220, 545, 250), caption_text, fontsize=9)
+
+    path = tmp_path / "distant_raster_groups.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    page_text = extract_pages(str(path))[0]["text"]
+
+    assert body_text in page_text
+    assert "Figure 3" in page_text
+    assert "Four types of baselines" in page_text
+    assert "Occupancy Prediction" not in page_text
+    assert "Ray Casting" not in page_text
+    assert "3D Lifting" not in page_text
+    assert "4D Forecasting" not in page_text
