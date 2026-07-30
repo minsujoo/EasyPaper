@@ -182,6 +182,15 @@ fn die_msg(context: &str) -> ! {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 일부 Ubuntu 22.04 + NVIDIA/가상 GPU 환경에서는 WebKitGTK가 DMA-BUF
+    // 렌더러용 GBM EGL display를 만들지 못하고 WebView 생성 전에 SIGABRT로
+    // 종료된다("Could not create GBM EGL display: EGL_NOT_INITIALIZED").
+    // Linux에서는 호환 렌더러를 기본 적용하되 사용자가 지정한 값은 존중한다.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

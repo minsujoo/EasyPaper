@@ -1,26 +1,26 @@
 name: Tauri Release
 
-# 태그 push(v*) 또는 수동 트리거로 win/mac-arm64/linux 3개 플랫폼을
-# 빌드해 GitHub Release에 업로드하고, Tauri updater가 읽는 latest.json도
-# 함께 생성한다. TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)로 업데이트 페이로드에
-# 서명하지만, OS 코드사이닝(macOS 공증/Windows Authenticode)은 아직 하지
-# 않으므로 설치 시 Gatekeeper/SmartScreen 경고가 뜬다 - 유료 인증서 발급
-# 후 별도로 추가 필요.
+# 개인 Fork의 Ubuntu 22.04용 설치 파일과 Tauri updater latest.json을
+# 생성한다. 원본 동기화 워크플로는 새 앱 버전을 발견했을 때 이 워크플로를
+# publish=true로 호출한다.
 #
-# macos-13(Intel) 러너는 GitHub Actions 큐에서 몇 시간째 시작되지 않는
-# 문제(용량 부족/단종 추정)로 인해 매트릭스에서 제외했다 - macOS Intel
-# 빌드가 다시 필요하면 macos-13 대신 다른 macOS 러너 이미지를 확인할 것.
-#
-# v* 태그 push는 빌드가 끝나면 릴리스를 즉시 게시(draft=false)한다 - 실제
-# 배포 트리거이므로 사람이 다시 "Publish" 버튼을 누르지 않아도 updater
-# 엔드포인트(releases/latest/download/latest.json)가 바로 응답하게 하기
-# 위함. workflow_dispatch(수동 테스트 빌드)는 실수로 공개 릴리스가 되지
-# 않도록 계속 초안(draft)으로 남긴다.
+# v* 태그 push 또는 publish=true 자동 호출은 빌드가 끝나면 릴리스를 즉시
+# 게시한다. 그 외 수동 테스트 빌드는 실수로 공개되지 않도록 초안으로 남긴다.
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "생성할 릴리스 태그"
+        required: false
+        type: string
+      publish:
+        description: "완료 후 즉시 공개"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   release:
@@ -30,12 +30,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # 최신 runner로 빌드하면 GLIBC 최소 버전이 올라가 Ubuntu 22.04에서
+          # 실행되지 않을 수 있으므로, 지원 기준 환경에서 Linux 산출물을 만든다.
+          - os: ubuntu-22.04
             name: linux
-          - os: windows-latest
-            name: windows
-          - os: macos-14
-            name: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -58,23 +56,7 @@ jobs:
 
           {
             echo "notes<<RELEASE_NOTES_EOF"
-            echo "자동 생성된 릴리스입니다. 코드사이닝(macOS 공증/Windows Authenticode)이"
-            echo "아직 적용되지 않아 설치 시 운영체제 보안 경고가 뜹니다. 아래 실행 방법을"
-            echo "꼭 확인해주세요."
-            echo ""
-            echo "## 실행 방법"
-            echo ""
-            echo "**macOS**: 앱이 완전히 서명되지 않은 상태라 최신 macOS(Ventura 이후)에서는"
-            echo "우클릭 → 열기로 우회되지 않고 \"앱이 손상되었기 때문에 열 수 없습니다\" 라는"
-            echo "오해의 소지가 있는 메시지가 뜹니다. 실제로 파일이 손상된 게 아니라 다운로드"
-            echo "시 붙는 quarantine 속성 때문이니, 터미널에서 아래 명령으로 지운 뒤 다시"
-            echo "실행하세요."
-            echo '```bash'
-            echo "xattr -cr /Applications/EasyPaper.app"
-            echo '```'
-            echo ""
-            echo "**Windows**: \"Windows의 PC 보호\" 화면에서 **추가 정보 → 실행**을 선택하면"
-            echo "정상적으로 설치됩니다."
+            echo "개인 Fork에서 Ubuntu 22.04 호환성 검증을 거쳐 자동 생성한 릴리스입니다."
             echo ""
             echo "## 변경 사항"
             commits=$(git log "$range" --no-merges --pretty=format:'%s' | grep -E '^(feat|fix|perf)(\(.+\))?:' || true)
@@ -122,7 +104,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux Tauri build deps
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.name == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -137,10 +119,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.0.0-manual{0}', github.run_number) }}
-          releaseName: "EasyPaper Desktop ${{ github.ref_type == 'tag' && github.ref_name || 'manual build' }}"
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag || format('v0.0.0-manual{0}', github.run_number) }}
+          releaseName: "EasyPaper Ubuntu 22.04 ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag || 'manual build' }}"
           releaseBody: ${{ steps.relnotes.outputs.notes }}
-          # 태그 push만 즉시 게시하고, workflow_dispatch 수동 빌드는 검토 전
-          # 실수로 공개되지 않도록 초안으로 남긴다.
-          releaseDraft: ${{ github.ref_type != 'tag' }}
+          # 자동 동기화 호출은 공개하고 일반 수동 빌드는 초안으로 남긴다.
+          releaseDraft: ${{ github.ref_type != 'tag' && !inputs.publish }}
           prerelease: false
