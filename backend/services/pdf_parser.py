@@ -511,6 +511,7 @@ _FIGURE_TEXT_SIDE_PADDING = 25.0
 _FIGURE_TEXT_VERTICAL_PADDING = 8.0
 _RASTER_TILE_MIN_SIZE = 3.0
 _RASTER_TILE_MERGE_THRESHOLD = 12.0
+_FIGURE_CAPTION_LOOKBACK = 180.0
 
 
 def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
@@ -554,9 +555,65 @@ def _find_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
     ]
 
 
+def _find_caption_anchored_raster_figure_rects(page: "fitz.Page") -> List[List[float]]:
+    """Figure 캡션을 기준으로 서로 떨어진 래스터 그룹을 하나의 그림으로 묶습니다.
+
+    네 개의 독립된 파이프라인 도식을 한 Figure로 배치한 PDF처럼 이미지 조각 사이
+    간격이 큰 경우 거리 기반 병합만으로는 각 그룹을 별개로 보거나 일부를 놓친다.
+    전체 Figure 캡션의 가로 범위와 바로 위 세로 구간에 속한 이미지들을 함께 묶되,
+    반환 영역의 아래쪽은 캡션 시작 직전으로 제한해 캡션 본문은 보존한다.
+    """
+    try:
+        images = page.get_image_info(xrefs=True)
+    except Exception:
+        return []
+
+    captions = [
+        caption for caption in _find_page_captions(page)
+        if caption.get("label", "").startswith("Figure")
+    ]
+    result = []
+    for caption in captions:
+        cap_x0, cap_y0, cap_x1, _ = caption["bbox"]
+        candidates = []
+        for image in images:
+            bbox = image.get("bbox")
+            if not bbox:
+                continue
+            x0, y0, x1, y1 = bbox
+            width, height = x1 - x0, y1 - y0
+            if width < _RASTER_TILE_MIN_SIZE or height < _RASTER_TILE_MIN_SIZE:
+                continue
+            if y0 >= cap_y0 or y1 < cap_y0 - _FIGURE_CAPTION_LOOKBACK:
+                continue
+            center_x = (x0 + x1) / 2
+            if center_x < cap_x0 - _FIGURE_TEXT_SIDE_PADDING or center_x > cap_x1 + _FIGURE_TEXT_SIDE_PADDING:
+                continue
+            candidates.append([x0, y0, x1, y1])
+
+        if not candidates:
+            continue
+        rect = [
+            min(item[0] for item in candidates),
+            min(item[1] for item in candidates),
+            max(item[2] for item in candidates),
+            cap_y0 - 1.0,
+        ]
+        if (
+            rect[2] - rect[0] >= _VECTOR_FIGURE_MIN_SIZE
+            and rect[3] - rect[1] >= _VECTOR_FIGURE_MIN_SIZE
+        ):
+            result.append(rect)
+    return result
+
+
 def _find_figure_text_exclusion_rects(page: "fitz.Page") -> List[List[float]]:
     """본문 번역에서 제외할 벡터/래스터 Figure 영역을 반환합니다."""
-    rects = _find_vector_figure_rects(page) + _find_raster_figure_rects(page)
+    rects = (
+        _find_vector_figure_rects(page)
+        + _find_raster_figure_rects(page)
+        + _find_caption_anchored_raster_figure_rects(page)
+    )
     if not rects:
         return []
 
