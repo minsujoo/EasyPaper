@@ -3979,8 +3979,8 @@ body.light-theme .chat-quote-area {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--accent-mid) 65%, transparent);
   border-radius: 50%;
@@ -3994,6 +3994,21 @@ body.light-theme .chat-quote-area {
 .paper-explain-btn.explanation-anchor-hidden {
   visibility: hidden;
   pointer-events: none !important;
+}
+.paper-explain-btn.explain-hover-only {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
+  transform: scale(0.9);
+}
+.paper-explain-btn.explain-hover-only.explain-hover-active:not(.explanation-anchor-hidden) {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto !important;
+  transform: scale(1);
+}
+.pdf-figure-overlay.explain-hover-target {
+  pointer-events: auto !important;
 }
 .paper-explain-btn:hover:not(:disabled) {
   border-color: var(--accent);
@@ -4031,7 +4046,7 @@ body.light-theme .paper-explain-btn {
   transition: opacity 0.15s ease-in-out, transform 0.1s ease-in-out;
 }
 
-.pdf-figure-overlay:hover .pdf-figure-overlay-handle,
+#viewer-scroll-container.crop-mode .pdf-figure-overlay:hover .pdf-figure-overlay-handle,
 .pdf-figure-overlay.resizing .pdf-figure-overlay-handle {
   opacity: 1;
 }
