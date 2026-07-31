@@ -488,7 +488,7 @@ export function streamPullModelAPI(modelName, onStatus, onDone, onError) {
  *   provider가 캡처 영역을 직접 보고 답한다.
  * @returns {function} abort - 중단 함수
  */
-export function streamChatAPI(sessionId, messages, onToken, onDone, onError, imageBase64) {
+export function streamChatAPI(sessionId, messages, onToken, onDone, onError, imageBase64, options = {}) {
   const controller = new AbortController()
 
   fetch(`${API_BASE}/chat/stream`, {
@@ -497,7 +497,9 @@ export function streamChatAPI(sessionId, messages, onToken, onDone, onError, ima
     body: JSON.stringify({
       session_id: sessionId,
       messages: messages,
-      image_base64: imageBase64 || undefined
+      image_base64: imageBase64 || undefined,
+      chat_session_id: options.chatSessionId || undefined,
+      hidden_user_message: Boolean(options.hiddenUserMessage)
     }),
     signal: controller.signal
   })
@@ -777,7 +779,6 @@ export async function emptyTrashAPI() {
   if (!res.ok) throw new Error('휴지통 비우기 실패')
   return res.json()
 }
-
 
 
 
