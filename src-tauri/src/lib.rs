@@ -2,8 +2,9 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -27,6 +28,14 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 /// 스폰된 백엔드 sidecar의 자식 프로세스 핸들. 창 종료/앱 종료 시 확실히
 /// kill하기 위해 앱 상태로 보관한다(고아 프로세스 방지, 계획 Phase 3).
 struct SidecarState(Mutex<Option<Child>>);
+
+static DROP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(serde::Serialize)]
+struct StagedDroppedPdf {
+    token: String,
+    name: String,
+}
 
 /// 선호 포트(8000)를 우선 시도하고, 이미 사용 중이면(기존 웹 배포판이 로컬에
 /// 동시 실행 중인 경우 등) OS가 골라주는 임시 포트로 폴백한다(계획 Phase 2).
@@ -161,6 +170,54 @@ fn kill_backend_sidecar(state: tauri::State<SidecarState>) {
     kill_sidecar(&state);
 }
 
+/// OS 드롭 이벤트가 동적으로 허용한 파일만 앱 전용 임시 폴더로 복사한다.
+/// 프런트에서 asset:// URL을 직접 fetch하면 Ubuntu WebKit의 교차 프로토콜
+/// 제한에 막힐 수 있어, 로컬 백엔드가 같은 파일을 전달하도록 중간 준비한다.
+#[tauri::command]
+fn stage_dropped_pdf(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    path: String,
+) -> Result<StagedDroppedPdf, String> {
+    let source = PathBuf::from(&path);
+    if !webview.asset_protocol_scope().is_allowed(&source) {
+        return Err("드롭으로 허용된 파일이 아닙니다.".to_string());
+    }
+    if source.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("pdf")) != Some(true) {
+        return Err("PDF 파일만 업로드할 수 있습니다.".to_string());
+    }
+
+    let metadata = std::fs::metadata(&source).map_err(|e| format!("파일 정보를 읽을 수 없습니다: {e}"))?;
+    if !metadata.is_file() {
+        return Err("일반 PDF 파일만 업로드할 수 있습니다.".to_string());
+    }
+    const MAX_BYTES: u64 = 50 * 1024 * 1024;
+    if metadata.len() > MAX_BYTES {
+        return Err("파일 크기가 50MB를 초과합니다.".to_string());
+    }
+
+    let mut header = [0u8; 5];
+    let mut file = std::fs::File::open(&source).map_err(|e| format!("파일을 열 수 없습니다: {e}"))?;
+    file.read_exact(&mut header).map_err(|e| format!("PDF 헤더를 읽을 수 없습니다: {e}"))?;
+    if &header != b"%PDF-" {
+        return Err("올바른 PDF 파일이 아닙니다.".to_string());
+    }
+
+    let staging_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("앱 데이터 폴더를 찾을 수 없습니다: {e}"))?
+        .join("drop-staging");
+    std::fs::create_dir_all(&staging_dir).map_err(|e| format!("임시 폴더를 만들 수 없습니다: {e}"))?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let counter = DROP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let token = format!("{now:x}-{counter:x}.pdf");
+    let destination = staging_dir.join(&token);
+    std::fs::copy(&source, &destination).map_err(|e| format!("드롭 파일을 준비할 수 없습니다: {e}"))?;
+    let name = source.file_name().and_then(|value| value.to_str()).unwrap_or("paper.pdf").to_string();
+    Ok(StagedDroppedPdf { token, name })
+}
+
 /// 앱 시작에 필요한 필수 자원(리소스 디렉토리, sidecar 프로세스 등)을 얻지
 /// 못했을 때 쓴다. 이런 실패는 대부분 백신이 sidecar 바이너리를 격리했거나
 /// 디스크 권한 문제처럼 사용자가 직접 손댈 수 없는 환경 문제라 복구를
@@ -196,7 +253,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarState(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![kill_backend_sidecar])
+        .invoke_handler(tauri::generate_handler![kill_backend_sidecar, stage_dropped_pdf])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -224,7 +281,11 @@ pub fn run() {
             let cache_dir = app_data_dir.join("cache");
             let library_dir = app_data_dir.join("library");
             let logs_dir = app_data_dir.join("logs");
-            for dir in [&app_data_dir, &uploads_dir, &cache_dir, &library_dir, &logs_dir] {
+            let drop_staging_dir = app_data_dir.join("drop-staging");
+            // 드롭 파일은 업로드 직전의 임시 복사본이다. 비정상 종료로 남은
+            // 파일이 다음 실행까지 누적되지 않도록 시작할 때 비운다.
+            let _ = std::fs::remove_dir_all(&drop_staging_dir);
+            for dir in [&app_data_dir, &uploads_dir, &cache_dir, &library_dir, &logs_dir, &drop_staging_dir] {
                 if let Err(e) = std::fs::create_dir_all(dir) {
                     die(&format!("앱 데이터 하위 디렉토리를 만들 수 없습니다 ({dir:?})"), e);
                 }
@@ -251,6 +312,7 @@ pub fn run() {
                 .env("UPLOAD_DIR", &uploads_dir)
                 .env("CACHE_DIR", &cache_dir)
                 .env("LIBRARY_DIR", &library_dir)
+                .env("DROP_STAGING_DIR", &drop_staging_dir)
                 .env("EASYPAPER_LOG_DIR", &logs_dir)
                 .env("EASYPAPER_FRONTEND_DIST", &frontend_dist)
                 .stdout(Stdio::piped())

@@ -45,6 +45,7 @@ SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
 CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
 LIBRARY_DIR = os.getenv("LIBRARY_DIR", "./library")
+DROP_STAGING_DIR = os.getenv("DROP_STAGING_DIR", os.path.join(UPLOAD_DIR, ".drop-staging"))
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 PROJECT_ROOT = os.getenv("PROJECT_ROOT", "")
 # .env.example에 이 프로젝트를 개발한 서버 전용 절대경로가 예시로 박혀 있어서,
@@ -541,4 +542,3 @@ def update_translation_prompt_template(new_template: str):
         template_to_save = new_template.strip()
     with open(PROMPT_FILE, "w", encoding="utf-8") as f:
         f.write(template_to_save)
-

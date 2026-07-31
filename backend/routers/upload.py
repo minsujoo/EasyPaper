@@ -3,11 +3,11 @@ import os
 import shutil
 import asyncio
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import aiofiles
 from services.auth import get_current_user
 
-from config import UPLOAD_DIR, MAX_FILE_SIZE_MB
+from config import UPLOAD_DIR, DROP_STAGING_DIR, MAX_FILE_SIZE_MB
 from services.pdf_parser import extract_pages, get_pdf_metadata
 from services.library import save_document, get_document, get_pdf_path as lib_pdf_path, list_documents
 from services.translation_job import start_job, resume_incomplete_jobs, get_job_status
@@ -20,6 +20,38 @@ router = APIRouter()
 
 # 메모리 내 세션 저장소
 sessions: dict = {}
+
+
+def _dropped_file_path(token: str) -> str:
+    """Tauri가 준비한 임시 PDF 토큰을 안전한 절대 경로로 바꾼다."""
+    import re
+    if not re.fullmatch(r"[0-9a-f]+-[0-9a-f]+\.pdf", token or ""):
+        raise HTTPException(status_code=404, detail="드롭 파일을 찾을 수 없습니다.")
+    base = os.path.abspath(DROP_STAGING_DIR)
+    path = os.path.abspath(os.path.join(base, token))
+    if os.path.dirname(path) != base:
+        raise HTTPException(status_code=404, detail="드롭 파일을 찾을 수 없습니다.")
+    return path
+
+
+@router.get("/drop-staging/{token}")
+async def get_dropped_pdf(token: str, current_user: str = Depends(get_current_user)):
+    """데스크톱이 사용자가 드롭한 PDF만 임시로 프런트엔드에 전달한다."""
+    path = _dropped_file_path(token)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="드롭 파일을 찾을 수 없습니다.")
+    return FileResponse(path, media_type="application/pdf", filename="dropped.pdf")
+
+
+@router.delete("/drop-staging/{token}")
+async def delete_dropped_pdf(token: str, current_user: str = Depends(get_current_user)):
+    """업로드용 File 객체 생성 후 임시 복사본을 즉시 정리한다."""
+    path = _dropped_file_path(token)
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    return {"status": "deleted"}
 
 
 def ensure_session(session_id: str) -> bool:

@@ -492,20 +492,25 @@ if (libraryScreen) {
 
 // Tauri 데스크톱 WebView에서는 OS 파일 드롭을 네이티브 계층이 먼저 처리하므로
 // 위의 HTML5 drop 이벤트에 dataTransfer.files가 들어오지 않는다. Tauri가
-// 전달한 경로는 드롭 순간 해당 WebView의 asset scope에 자동 등록되므로,
-// asset protocol로 읽어서 기존 handleFiles()가 받는 표준 File 객체로 바꾼다.
+// 전달한 경로는 드롭 순간 해당 WebView의 asset scope에 자동 등록된다.
+// Tauri 명령이 이 권한을 확인하고 앱 전용 임시 폴더에 복사한 뒤 로컬 백엔드로
+// 전달해, Ubuntu WebKit에서 asset:// 요청이 차단되는 문제를 피한다.
 // 웹판에서는 __TAURI_INTERNALS__가 없으므로 이 리스너를 등록하지 않는다.
 async function filesFromTauriDropPaths(paths) {
   const pdfPaths = (paths || []).filter(isPdfFilename)
   if (pdfPaths.length === 0) return []
-  const { convertFileSrc } = await import('@tauri-apps/api/core')
+  const { invoke } = await import('@tauri-apps/api/core')
   const files = []
   for (const path of pdfPaths) {
-    const response = await fetch(convertFileSrc(path))
-    if (!response.ok) throw new Error(`파일을 읽을 수 없습니다 (${response.status})`)
-    const blob = await response.blob()
-    const filename = path.split(/[\\/]/).pop() || 'paper.pdf'
-    files.push(new File([blob], filename, { type: 'application/pdf', lastModified: Date.now() }))
+    const staged = await invoke('stage_dropped_pdf', { path })
+    try {
+      const response = await fetch(`/api/drop-staging/${encodeURIComponent(staged.token)}`)
+      if (!response.ok) throw new Error(`파일을 읽을 수 없습니다 (${response.status})`)
+      const blob = await response.blob()
+      files.push(new File([blob], staged.name || 'paper.pdf', { type: 'application/pdf', lastModified: Date.now() }))
+    } finally {
+      fetch(`/api/drop-staging/${encodeURIComponent(staged.token)}`, { method: 'DELETE' }).catch(() => {})
+    }
   }
   return files
 }
