@@ -8371,15 +8371,13 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
   for (const section of sections) {
     const rects = getSentenceRects(section, vtm, textLayerDiv)
     if (!rects.length) continue
-    const anchor = rects[rects.length - 1]
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'paper-explain-btn section-explain-btn'
     button.innerHTML = icon('lightbulb', 15)
     button.title = `${section.title} 설명`
     button.setAttribute('aria-label', `${section.title} 설명`)
-    button.style.left = `${textLayerDiv.clientWidth + 7}px`
-    button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 30) / 2))}px`
+    positionExplainButtonBesideRects(button, rects, textLayerDiv)
     button.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -8409,6 +8407,30 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
     })
     pageWrapper.appendChild(button)
   }
+}
+
+function positionExplainButtonBesideRects(button, rects, textLayerDiv) {
+  if (!button || !rects?.length || !textLayerDiv) return
+  const anchor = rects[rects.length - 1]
+  const buttonSize = 30
+  const preferredLeft = anchor.left + anchor.width + 5
+  button.style.left = `${Math.max(3, Math.min(textLayerDiv.clientWidth - buttonSize - 3, preferredLeft))}px`
+  button.style.top = `${Math.max(3, anchor.top + Math.max(0, (anchor.height - buttonSize) / 2))}px`
+}
+
+function findFigureLabelRects(textLayerDiv, pageNum, label) {
+  const vtm = state.virtualTextMaps?.[pageNum]
+  const cleanLabel = String(label || '').trim()
+  if (!vtm || !cleanLabel) return []
+  const haystack = vtm.fullText.toLocaleLowerCase()
+  const needle = cleanLabel.toLocaleLowerCase()
+  const charStart = haystack.indexOf(needle)
+  if (charStart < 0) return []
+  return getSentenceRects(
+    { charStart, charEnd: charStart + cleanLabel.length },
+    vtm,
+    textLayerDiv,
+  )
 }
 
 function renderImageOverlayLayer(textLayerDiv, pageNum) {
@@ -8453,8 +8475,16 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
     explainBtn.innerHTML = icon('lightbulb', 15)
     explainBtn.title = `${imgPercent.label || '그림/표'} 설명`
     explainBtn.setAttribute('aria-label', `${imgPercent.label || '그림/표'} 설명`)
-    explainBtn.style.left = 'calc(100% + 7px)'
-    explainBtn.style.top = `${imgPercent.top}%`
+    const labelRects = findFigureLabelRects(textLayerDiv, pageNum, imgPercent.label)
+    if (labelRects.length) {
+      positionExplainButtonBesideRects(explainBtn, labelRects, textLayerDiv)
+    } else {
+      const buttonSize = 30
+      const imageRight = textLayerDiv.clientWidth * (imgPercent.left + imgPercent.width) / 100 + 5
+      const imageTop = textLayerDiv.clientHeight * imgPercent.top / 100
+      explainBtn.style.left = `${Math.max(3, Math.min(textLayerDiv.clientWidth - buttonSize - 3, imageRight))}px`
+      explainBtn.style.top = `${Math.max(3, imageTop)}px`
+    }
     explainBtn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -9589,7 +9619,7 @@ async function resolveCitationTooltip({ automatic = false } = {}) {
   resolveBtn.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:4px"')}${automatic ? '정보 확인 중...' : '찾는 중...'}`
 
   try {
-    const result = await resolveLibraryReference(requestedDocId, requestedRefNum)
+    const result = await resolveLibraryReference(requestedDocId, requestedRefNum, { refresh: !automatic })
     citationResolveCache.set(cacheKey, result || null)
     if (citationTooltipDocId !== requestedDocId || citationTooltipRefNum !== requestedRefNum) return
     renderCitationResolvedResult(resultEl, result)
@@ -9725,6 +9755,11 @@ function closeExplanationPopup(popup) {
   svg?.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)?.remove()
   if (svg && !svg.querySelector('path')) svg.remove()
   state.explanationPopups.delete(popup.id)
+  if (popup.anchorButton?.isConnected) {
+    const stillUsed = [...state.explanationPopups.values()]
+      .some(other => other.anchorButton === popup.anchorButton)
+    if (!stillUsed) popup.anchorButton.classList.remove('explanation-anchor-hidden')
+  }
 }
 
 const EXPLANATION_POPUP_SIZE_KEY = 'easypaper_explanation_popup_size'
@@ -9854,6 +9889,7 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   const anchorY = anchorRect
     ? anchorRect.top - wrapperRect.top + anchorRect.height / 2
     : Math.max(80, pageWrapper.offsetHeight * 0.25)
+  const anchorButton = anchorElement?.closest?.('.paper-explain-btn') || null
   const popup = {
     id: `explanation-popup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     chatSessionId: makeExplanationSessionId(),
@@ -9863,6 +9899,7 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
     pageNum,
     imageBase64,
     pageWrapper,
+    anchorButton,
     anchorX,
     anchorY,
     history: [],
@@ -9922,6 +9959,7 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   popup.sendButton = element.querySelector('.explanation-popup-form button')
   pageWrapper.appendChild(element)
   state.explanationPopups.set(popup.id, popup)
+  anchorButton?.classList.add('explanation-anchor-hidden')
   popup.resizeObserver = new ResizeObserver(() => updateExplanationConnector(popup))
   popup.resizeObserver.observe(element)
 
@@ -11630,15 +11668,15 @@ function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
   const pageWrapper = overlayEl.closest('.pdf-page-wrapper')
   if (!pageWrapper) return
   pageWrapper.querySelectorAll('.equation-explain-btn').forEach(el => el.remove())
-  const anchor = rects[rects.length - 1]
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'paper-explain-btn equation-explain-btn'
   button.innerHTML = icon('lightbulb', 15)
   button.title = `수식 설명 · p.${pageNum}`
   button.setAttribute('aria-label', `수식 설명 · p.${pageNum}`)
-  button.style.left = 'calc(100% + 7px)'
-  button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 30) / 2))}px`
+  const textLayerDiv = pageWrapper.querySelector('.textLayer')
+  if (!textLayerDiv) return
+  positionExplainButtonBesideRects(button, rects, textLayerDiv)
   button.addEventListener('click', (e) => {
     e.preventDefault()
     e.stopPropagation()

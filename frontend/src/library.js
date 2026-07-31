@@ -90,8 +90,9 @@ export async function fetchLibraryReferences(docId) {
   return res.json()
 }
 
-export async function resolveLibraryReference(docId, refNum) {
-  const res = await fetch(`${API_BASE}/library/${docId}/references/${encodeURIComponent(refNum)}`)
+export async function resolveLibraryReference(docId, refNum, { refresh = false } = {}) {
+  const query = refresh ? '?refresh=true' : ''
+  const res = await fetch(`${API_BASE}/library/${docId}/references/${encodeURIComponent(refNum)}${query}`)
   if (!res.ok) {
     if (res.status === 404) return null
     throw new Error('참고문헌 링크 조회 실패')

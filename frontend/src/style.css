@@ -3975,7 +3975,7 @@ body.light-theme .chat-quote-area {
 }
 .paper-explain-btn {
   position: absolute;
-  z-index: 31;
+  z-index: 14;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3990,6 +3990,10 @@ body.light-theme .chat-quote-area {
   pointer-events: auto !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.paper-explain-btn.explanation-anchor-hidden {
+  visibility: hidden;
+  pointer-events: none !important;
 }
 .paper-explain-btn:hover:not(:disabled) {
   border-color: var(--accent);
@@ -5624,12 +5628,12 @@ body.light-theme .sentence-memo-box.color-red {
   border: 1px dashed rgba(59, 130, 246, 0.40);
 }
 .equation-explain-btn {
-  z-index: 31;
+  z-index: 14;
 }
 
-/* PDF 본문과 겹치지 않도록 원문/번역 패널 사이 여백에 배치하는 설명 진입점 */
+/* 섹션 제목·그림/표 라벨·수식 바로 옆, PDF 페이지 위에 배치하는 설명 진입점 */
 .section-explain-btn {
-  z-index: 31;
+  z-index: 14;
 }
 
 /* 설명 버튼을 누를 때마다 생성되는 독립 채팅 팝업. PDF 페이지를 기준으로

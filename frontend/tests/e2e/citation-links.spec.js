@@ -19,7 +19,7 @@ test('본문 인용 카드에 인용 이유·논문 개요와 PDF 다운로드 �
         },
       }),
     }))
-  await page.route('**/api/library/doc-C/references/1', route =>
+  await page.route(/\/api\/library\/doc-C\/references\/1(?:\?refresh=true)?$/, route =>
     route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -80,7 +80,7 @@ test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후�
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
     }))
-  await page.route('**/api/library/doc-C/references/1', route =>
+  await page.route(/\/api\/library\/doc-C\/references\/1(?:\?refresh=true)?$/, route =>
     route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -126,7 +126,7 @@ test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후�
   await expect(explanation.locator('.explanation-popup-message.user')).toContainText('이 방법과 현재 논문의 차이는 뭐야?')
 })
 
-test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점선으로 연결되며 이동할 수 있다', async ({ page }) => {
+test('PDF 본문의 설명 아이콘은 제목 옆에 있고 팝업 동안 숨겨지며 다시 열면 새 세션을 만든다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   const chatRequests = []
   await mockBaseRoutes(page, { documents: [docC] })
@@ -151,11 +151,13 @@ test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점�
   await expect(sectionButton).toHaveAttribute('aria-label', /References 설명/)
   const sectionButtonBox = await sectionButton.boundingBox()
   const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
-  expect(sectionButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x + pdfPageBox.width)
+  expect(sectionButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x)
+  expect(sectionButtonBox.x + sectionButtonBox.width).toBeLessThanOrEqual(pdfPageBox.x + pdfPageBox.width)
   await sectionButton.click()
 
   const firstPopup = page.locator('.explanation-popup').first()
   await expect(firstPopup).toBeVisible()
+  await expect(sectionButton).toBeHidden()
   await expect(firstPopup.locator('.explanation-popup-target')).toContainText('References')
   await expect(page.locator('.explanation-connector-svg path')).toHaveCount(1)
   await expect.poll(() => chatRequests.length).toBe(1)
@@ -186,8 +188,12 @@ test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점�
   const after = await firstPopup.boundingBox()
   expect(after.x).not.toBe(resized.x)
 
+  await firstPopup.locator('.explanation-popup-close').click()
+  await expect(firstPopup).toHaveCount(0)
+  await expect(sectionButton).toBeVisible()
   await sectionButton.click()
-  await expect(page.locator('.explanation-popup')).toHaveCount(2)
+  await expect(page.locator('.explanation-popup')).toHaveCount(1)
+  await expect(sectionButton).toBeHidden()
   await expect.poll(() => chatRequests.length).toBe(2)
   expect(chatRequests[1].chat_session_id).not.toBe(chatRequests[0].chat_session_id)
 })
@@ -225,11 +231,13 @@ test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 
   await expect(imageButtons.first()).toHaveAttribute('aria-label', 'Table 1 설명')
   const imageButtonBox = await imageButtons.first().boundingBox()
   const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
-  expect(imageButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x + pdfPageBox.width)
+  expect(imageButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x)
+  expect(imageButtonBox.x + imageButtonBox.width).toBeLessThanOrEqual(pdfPageBox.x + pdfPageBox.width)
   await imageButtons.first().click()
 
   const popup = page.locator('.explanation-popup').first()
   await expect(popup).toBeVisible()
+  await expect(imageButtons.first()).toBeHidden()
   await expect(popup.locator('.explanation-popup-target')).toContainText('Table 1')
   await expect(popup.locator('.explanation-popup-image')).toBeVisible()
   await expect.poll(() => chatRequests.length).toBe(1)
@@ -273,7 +281,7 @@ test('툴팁에서 원문 링크 찾기를 누르면 결과 링크가 표시되�
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
     }))
-  await page.route('**/api/library/doc-C/references/1', route =>
+  await page.route(/\/api\/library\/doc-C\/references\/1(?:\?refresh=true)?$/, route =>
     route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ title: 'Attention Is All You Need', url: 'https://arxiv.org/abs/1706.03762', year: 2017 }),
@@ -307,7 +315,7 @@ test('원문 링크를 찾지 못하면 안내 문구가 뜨고, Google Scholar 
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
     }))
-  await page.route('**/api/library/doc-C/references/1', route =>
+  await page.route(/\/api\/library\/doc-C\/references\/1(?:\?refresh=true)?$/, route =>
     route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: '외부에서 일치하는 논문을 찾지 못했습니다.' }) }))
   await context.route('https://scholar.google.com/**', route =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }))

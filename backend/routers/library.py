@@ -358,32 +358,30 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
     }
 
 
-async def _get_resolved_reference(doc_id: str, ref_num: str) -> dict:
-    """캐시를 우선 사용해 참고문헌 외부 메타데이터를 반환한다."""
+async def _get_resolved_reference(doc_id: str, ref_num: str, refresh: bool = False) -> dict:
+    """검증된 캐시를 우선 사용하고, 실패 캐시는 일정 시간 뒤 또는 수동 요청 시 재검색한다."""
+    from datetime import datetime, timedelta, timezone
+    from services.reference_linker import REFERENCE_RESOLVER_VERSION
     from services.library import get_page_insight, save_page_insight
 
     cached = get_page_insight(doc_id, 0, "reference_url", suffix=ref_num)
-    if cached is not None:
+    if cached is not None and not refresh:
         try:
             data = json.loads(cached)
         except Exception:
             data = {}
-        if not data:
-            raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
-        # v0.1.23 이전 캐시에는 pdf_url 필드가 없었다. arXiv 결과는 외부
-        # 재검색 없이도 기존 landing URL에서 공개 PDF 주소를 복원한다.
-        if "pdf_url" not in data:
-            import re
-            match = re.match(
-                r"^https?://(?:www\.)?arxiv\.org/abs/([^?#]+)",
-                data.get("url") or "",
-            )
-            data["pdf_url"] = f"https://arxiv.org/pdf/{match.group(1)}.pdf" if match else ""
-            save_page_insight(
-                doc_id, 0, "reference_url",
-                json.dumps(data, ensure_ascii=False), suffix=ref_num,
-            )
-        return data
+        # 이전 검색기는 첫 번째 OpenAlex 결과를 검증 없이 저장했으므로 버전이
+        # 없는 성공 캐시도 다시 검색한다. 새 실패 캐시는 10분 동안만 유지한다.
+        if data.get("_resolver_version") == REFERENCE_RESOLVER_VERSION:
+            if data.get("_not_found"):
+                try:
+                    retry_after = datetime.fromisoformat(data.get("_retry_after") or "")
+                except (TypeError, ValueError):
+                    retry_after = datetime.min.replace(tzinfo=timezone.utc)
+                if retry_after > datetime.now(timezone.utc):
+                    raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
+            elif data.get("url"):
+                return data
 
     ref_list_cached = get_page_insight(doc_id, 0, "reference_list")
     references = {}
@@ -399,10 +397,20 @@ async def _get_resolved_reference(doc_id: str, ref_num: str) -> dict:
 
     from services.reference_linker import resolve_reference
     result = await resolve_reference(ref_text)
-    save_page_insight(doc_id, 0, "reference_url", json.dumps(result or {}, ensure_ascii=False), suffix=ref_num)
-
     if not result:
+        retry_after = datetime.now(timezone.utc) + timedelta(minutes=10)
+        negative_cache = {
+            "_resolver_version": REFERENCE_RESOLVER_VERSION,
+            "_not_found": True,
+            "_retry_after": retry_after.isoformat(),
+        }
+        save_page_insight(
+            doc_id, 0, "reference_url",
+            json.dumps(negative_cache, ensure_ascii=False), suffix=ref_num,
+        )
         raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
+    result.setdefault("_resolver_version", REFERENCE_RESOLVER_VERSION)
+    save_page_insight(doc_id, 0, "reference_url", json.dumps(result, ensure_ascii=False), suffix=ref_num)
     return result
 
 
@@ -561,12 +569,15 @@ async def get_library_reference_insight(
 
 
 @router.get("/library/{doc_id}/references/{ref_num}")
-async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str = Depends(get_current_user)):
-    """특정 번호의 참고문헌을 외부(OpenAlex, 가능하면 arXiv)에서
-    검색해 링크를 반환합니다. 결과(성공/실패 모두)는 캐시해 같은 항목을
-    반복 조회하지 않습니다."""
+async def resolve_library_reference(
+    doc_id: str,
+    ref_num: str,
+    refresh: bool = False,
+    current_user: str = Depends(get_current_user),
+):
+    """특정 참고문헌을 여러 외부 소스에서 검색하고 검증한 링크를 반환한다."""
     _require_owned_document(doc_id, current_user)
-    return await _get_resolved_reference(doc_id, ref_num)
+    return await _get_resolved_reference(doc_id, ref_num, refresh=refresh)
 
 
 @router.put("/library/{doc_id}/metadata")
