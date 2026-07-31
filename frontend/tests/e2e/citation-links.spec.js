@@ -147,7 +147,11 @@ test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점�
 
   const sectionButton = page.locator('.section-explain-btn[title*="References"]').first()
   await expect(sectionButton).toBeVisible()
-  await expect(sectionButton).toHaveText('설명')
+  await expect(sectionButton).toHaveText('')
+  await expect(sectionButton).toHaveAttribute('aria-label', /References 설명/)
+  const sectionButtonBox = await sectionButton.boundingBox()
+  const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
+  expect(sectionButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x + pdfPageBox.width)
   await sectionButton.click()
 
   const firstPopup = page.locator('.explanation-popup').first()
@@ -217,7 +221,11 @@ test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 
   const imageButtons = page.locator('.pdf-figure-explain-btn')
   await expect(imageButtons).toHaveCount(2)
   await expect(imageButtons.first()).toBeVisible()
-  await expect(imageButtons.first()).toHaveText('설명')
+  await expect(imageButtons.first()).toHaveText('')
+  await expect(imageButtons.first()).toHaveAttribute('aria-label', 'Table 1 설명')
+  const imageButtonBox = await imageButtons.first().boundingBox()
+  const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
+  expect(imageButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x + pdfPageBox.width)
   await imageButtons.first().click()
 
   const popup = page.locator('.explanation-popup').first()

@@ -1,6 +1,40 @@
 import { test, expect } from '@playwright/test'
 import { mockBaseRoutes, gotoApp, SAMPLE_PDF_A } from './helpers.js'
 
+test('PDF 문장 hover로는 선택 메뉴가 뜨지 않고 텍스트를 선택한 뒤에만 뜬다', async ({ page }) => {
+  const docA = { id: 'doc-A', filename: 'DocA.pdf', total_pages: 1, metadata: { title: 'Document A' }, translated_pages: [] }
+  await mockBaseRoutes(page, { documents: [docA] })
+  await page.route('**/api/library/doc-A/pdf', route =>
+    route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_A }))
+
+  await gotoApp(page)
+  await page.evaluate(() => { location.hash = '#viewer?id=doc-A' })
+
+  const textSpan = page.locator('.pdf-page-wrapper[data-page="1"] .textLayer span').filter({ hasText: /Attention|Transformer|Sample/ }).first()
+  await expect(textSpan).toBeVisible()
+  await textSpan.hover()
+  await page.waitForTimeout(850)
+  await expect(page.locator('.selection-menu')).toBeHidden()
+
+  const selectedText = await page.evaluate(() => {
+    const span = [...document.querySelectorAll('.pdf-page-wrapper[data-page="1"] .textLayer span')]
+      .find(el => (el.textContent || '').trim().length >= 4)
+    if (!span?.firstChild) return ''
+    const textNode = span.firstChild
+    const end = Math.min(textNode.textContent.length, 8)
+    const range = document.createRange()
+    range.setStart(textNode, 0)
+    range.setEnd(textNode, end)
+    const selection = window.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+    span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    return selection.toString()
+  })
+  expect(selectedText.length).toBeGreaterThan(0)
+  await expect(page.locator('.selection-menu')).toBeVisible()
+})
+
 // AI 채팅 답변에서 텍스트를 선택하면 "Ask AI"로 후속 질문을 인용할 수 있어야 한다
 // (PDF/번역본 인용 기능을 채팅 답변에도 확장한 기능의 회귀 테스트)
 test('AI 채팅 답변 텍스트를 선택하면 Ask AI로 인용할 수 있다', async ({ page }) => {
