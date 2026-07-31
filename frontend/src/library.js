@@ -99,6 +99,45 @@ export async function resolveLibraryReference(docId, refNum) {
   return res.json()
 }
 
+export async function fetchLibraryReferenceInsight(docId, refNum, surroundingContext) {
+  const res = await fetch(`${API_BASE}/library/${docId}/references/${encodeURIComponent(refNum)}/insight`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ surrounding_context: surroundingContext || '' }),
+  })
+  if (!res.ok) {
+    try {
+      const error = await res.json()
+      throw new Error(error.detail || '인용 관계 분석 실패')
+    } catch (error) {
+      if (error instanceof Error && error.message !== '인용 관계 분석 실패') throw error
+      throw new Error('인용 관계 분석 실패')
+    }
+  }
+  return res.json()
+}
+
+export async function downloadLibraryReference(docId, refNum) {
+  const res = await fetch(`${API_BASE}/library/${docId}/references/${encodeURIComponent(refNum)}/download`)
+  if (!res.ok) {
+    try {
+      const error = await res.json()
+      throw new Error(error.detail || '인용 논문 다운로드 실패')
+    } catch (error) {
+      if (error instanceof Error && error.message !== '인용 논문 다운로드 실패') throw error
+      throw new Error('인용 논문 다운로드 실패')
+    }
+  }
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const utf8Match = disposition.match(/filename\\*=UTF-8''([^;]+)/i)
+  const plainMatch = disposition.match(/filename=\"?([^\";]+)\"?/i)
+  let filename = 'reference.pdf'
+  try {
+    filename = decodeURIComponent(utf8Match?.[1] || plainMatch?.[1] || filename)
+  } catch {}
+  return { blob: await res.blob(), filename }
+}
+
 export async function fetchLibraryTrash(options = {}) {
   const res = await fetch(`${API_BASE}/library/trash${buildQuery(options)}`)
   if (!res.ok) throw new Error('휴지통 조회 실패')

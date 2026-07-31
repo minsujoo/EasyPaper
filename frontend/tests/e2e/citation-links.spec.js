@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { mockBaseRoutes, gotoApp, SAMPLE_PDF_CITATION } from './helpers.js'
 
-test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation 카드와 원문 링크가 뜬다', async ({ page }) => {
+test('본문 인용 카드에 인용 이유·논문 개요와 PDF 다운로드 버튼이 뜬다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   await mockBaseRoutes(page, { documents: [docC] })
   await page.route('**/api/library/doc-C/pdf', route =>
@@ -25,12 +25,28 @@ test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation �
       body: JSON.stringify({
         title: 'Attention Is All You Need',
         url: 'https://arxiv.org/abs/1706.03762',
+        pdf_url: 'https://arxiv.org/pdf/1706.03762.pdf',
         year: 2017,
         authors: ['Ashish Vaswani', 'Noam Shazeer'],
         venue: 'NeurIPS',
         abstract: 'A sequence transduction model based entirely on attention.',
         citation_count: 120000,
       }),
+    }))
+  await page.route('**/api/library/doc-C/references/1/insight', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        content: '## 이 논문이 인용된 이유\nTransformer 구조의 배경 근거로 인용했습니다.\n\n## 인용 논문 개요\nSelf-attention 기반 모델을 제안한 논문입니다.',
+      }),
+    }))
+  await page.route('**/api/library/doc-C/references/1/download', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/pdf',
+      headers: { 'Content-Disposition': 'attachment; filename="attention.pdf"' },
+      body: Buffer.from('%PDF-1.7 citation paper'),
     }))
 
   await gotoApp(page)
@@ -42,7 +58,15 @@ test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation �
 
   await expect(page.locator('.citation-paper-title')).toContainText('Attention Is All You Need (2017)')
   await expect(page.locator('.citation-paper-authors')).toContainText('Ashish Vaswani')
-  await expect(page.locator('.citation-paper-abstract')).toContainText('entirely on attention')
+  await expect(page.locator('.citation-paper-insight')).toContainText('이 논문이 인용된 이유')
+  await expect(page.locator('.citation-paper-insight')).toContainText('배경 근거로 인용')
+  await expect(page.locator('.citation-paper-insight')).toContainText('인용 논문 개요')
+  await expect(page.locator('.citation-paper-insight')).toContainText('Self-attention 기반 모델')
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.locator('.citation-tooltip-download-btn').click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('attention.pdf')
 })
 
 test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후속 채팅을 이어간다', async ({ page }) => {

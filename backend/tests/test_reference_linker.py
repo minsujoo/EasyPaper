@@ -37,7 +37,12 @@ async def test_resolve_reference_prefers_arxiv_link_when_available():
             "doi": "https://doi.org/10.0000/xyz",
             "locations": [
                 {"source": {"display_name": "NeurIPS"}, "landing_page_url": "https://example.com/neurips"},
-                {"source": {"display_name": "arXiv (Cornell University)"}, "landing_page_url": "https://arxiv.org/abs/1706.03762"},
+                {
+                    "source": {"display_name": "arXiv (Cornell University)"},
+                    "landing_page_url": "https://arxiv.org/abs/1706.03762",
+                    "pdf_url": "https://arxiv.org/pdf/1706.03762.pdf",
+                    "is_oa": True,
+                },
             ],
         }]
     })
@@ -46,6 +51,7 @@ async def test_resolve_reference_prefers_arxiv_link_when_available():
 
     assert result is not None
     assert result["url"] == "https://arxiv.org/abs/1706.03762"
+    assert result["pdf_url"] == "https://arxiv.org/pdf/1706.03762.pdf"
     assert result["title"] == "Attention Is All You Need"
     assert result["year"] == 2017
 

@@ -64,6 +64,29 @@ def _pick_url(work: dict) -> Optional[str]:
     return work.get("doi") or work.get("id") or None
 
 
+def _pick_pdf_url(work: dict) -> Optional[str]:
+    """OpenAlex location 중 실제 PDF 파일 주소를 고른다. arXiv를 우선하고,
+    없으면 공개된 location의 pdf_url을 사용한다."""
+    locations = work.get("locations") or []
+    for location in locations:
+        source = location.get("source") or {}
+        if "arxiv" in (source.get("display_name") or "").lower() and location.get("pdf_url"):
+            return location["pdf_url"]
+    for location in locations:
+        if location.get("pdf_url") and (
+            location.get("is_oa") or (work.get("open_access") or {}).get("is_oa")
+        ):
+            return location["pdf_url"]
+
+    # 일부 OpenAlex 레코드는 arXiv landing page만 제공한다. 알려진 arXiv
+    # 주소에 한해서 abs URL을 PDF URL로 안전하게 변환한다.
+    url = _pick_url(work) or ""
+    match = re.match(r"^https?://(?:www\.)?arxiv\.org/abs/([^?#]+)", url)
+    if match:
+        return f"https://arxiv.org/pdf/{match.group(1)}.pdf"
+    return None
+
+
 def _restore_abstract(inverted_index: Optional[dict]) -> str:
     """Restore OpenAlex's inverted abstract index into readable text."""
     if not inverted_index:
@@ -121,6 +144,7 @@ async def resolve_reference(query_text: str) -> Optional[dict]:
             return {
                 "title": work.get("title") or work.get("display_name") or "",
                 "url": url,
+                "pdf_url": _pick_pdf_url(work) or "",
                 "year": work.get("publication_year"),
                 "authors": authors[:12],
                 "venue": source.get("display_name") or "",
