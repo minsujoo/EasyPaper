@@ -9611,11 +9611,43 @@ function updateExplanationConnector(popup) {
 
 function closeExplanationPopup(popup) {
   popup.abort?.()
+  popup.resizeObserver?.disconnect()
   popup.element?.remove()
   const svg = popup.pageWrapper?.querySelector('.explanation-connector-svg')
   svg?.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)?.remove()
   if (svg && !svg.querySelector('path')) svg.remove()
   state.explanationPopups.delete(popup.id)
+}
+
+const EXPLANATION_POPUP_SIZE_KEY = 'easypaper_explanation_popup_size'
+const EXPLANATION_POPUP_DEFAULT_WIDTH = 480
+const EXPLANATION_POPUP_DEFAULT_HEIGHT = 520
+const EXPLANATION_POPUP_MIN_WIDTH = 340
+const EXPLANATION_POPUP_MIN_HEIGHT = 300
+
+function loadExplanationPopupSize() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(EXPLANATION_POPUP_SIZE_KEY) || 'null')
+    if (Number.isFinite(saved?.width) && Number.isFinite(saved?.height)) {
+      return {
+        width: Math.max(EXPLANATION_POPUP_MIN_WIDTH, saved.width),
+        height: Math.max(EXPLANATION_POPUP_MIN_HEIGHT, saved.height),
+      }
+    }
+  } catch {}
+  return {
+    width: EXPLANATION_POPUP_DEFAULT_WIDTH,
+    height: EXPLANATION_POPUP_DEFAULT_HEIGHT,
+  }
+}
+
+function saveExplanationPopupSize(element) {
+  try {
+    localStorage.setItem(EXPLANATION_POPUP_SIZE_KEY, JSON.stringify({
+      width: Math.round(element.offsetWidth),
+      height: Math.round(element.offsetHeight),
+    }))
+  } catch {}
 }
 
 function appendExplanationMessage(popup, role, content = '') {
@@ -9729,10 +9761,32 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   }
 
   const element = document.createElement('section')
+  const preferredSize = loadExplanationPopupSize()
+  const popupWidth = Math.max(
+    EXPLANATION_POPUP_MIN_WIDTH,
+    Math.min(preferredSize.width, window.innerWidth - 24)
+  )
+  const popupHeight = Math.max(
+    EXPLANATION_POPUP_MIN_HEIGHT,
+    Math.min(preferredSize.height, window.innerHeight - 24)
+  )
+  const viewerRect = viewerScrollContainer.getBoundingClientRect()
+  const minVisibleLeft = viewerRect.left - wrapperRect.left + 12
+  const maxVisibleLeft = viewerRect.right - wrapperRect.left - popupWidth - 12
+  const minVisibleTop = viewerRect.top - wrapperRect.top + 12
+  const maxVisibleTop = viewerRect.bottom - wrapperRect.top - popupHeight - 12
+  const desiredLeft = anchorX + 38
+  const desiredTop = anchorY - 34
   element.className = 'explanation-popup'
   element.dataset.popupId = popup.id
-  element.style.left = `${Math.min(pageWrapper.offsetWidth - 120, anchorX + 38)}px`
-  element.style.top = `${Math.max(12, anchorY - 34)}px`
+  element.style.width = `${popupWidth}px`
+  element.style.height = `${popupHeight}px`
+  element.style.left = `${maxVisibleLeft >= minVisibleLeft
+    ? Math.min(maxVisibleLeft, Math.max(minVisibleLeft, desiredLeft))
+    : desiredLeft}px`
+  element.style.top = `${maxVisibleTop >= minVisibleTop
+    ? Math.min(maxVisibleTop, Math.max(minVisibleTop, desiredTop))
+    : desiredTop}px`
   element.innerHTML = `
     <header class="explanation-popup-header">
       <div class="explanation-popup-title">${icon('lightbulb', 14)}<span>설명</span></div>
@@ -9745,6 +9799,7 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
       <textarea rows="1" placeholder="이 설명에 대해 질문하세요"></textarea>
       <button type="submit" title="질문 보내기">${icon('send', 14)}</button>
     </form>
+    <div class="explanation-popup-resize-handle" title="드래그하여 창 크기 조절" aria-hidden="true"></div>
   `
   popup.element = element
   popup.messagesEl = element.querySelector('.explanation-popup-messages')
@@ -9752,6 +9807,8 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   popup.sendButton = element.querySelector('.explanation-popup-form button')
   pageWrapper.appendChild(element)
   state.explanationPopups.set(popup.id, popup)
+  popup.resizeObserver = new ResizeObserver(() => updateExplanationConnector(popup))
+  popup.resizeObserver.observe(element)
 
   element.querySelector('.explanation-popup-close').addEventListener('click', (e) => {
     e.stopPropagation()
@@ -9769,6 +9826,41 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
       e.preventDefault()
       element.querySelector('.explanation-popup-form').requestSubmit()
     }
+  })
+
+  const resizeHandle = element.querySelector('.explanation-popup-resize-handle')
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    const startWidth = element.offsetWidth
+    const startHeight = element.offsetHeight
+    element.classList.add('resizing')
+
+    const onMove = (moveEvent) => {
+      const maxWidth = Math.max(EXPLANATION_POPUP_MIN_WIDTH, window.innerWidth - 24)
+      const maxHeight = Math.max(EXPLANATION_POPUP_MIN_HEIGHT, window.innerHeight - 24)
+      const width = Math.min(maxWidth, Math.max(
+        EXPLANATION_POPUP_MIN_WIDTH,
+        startWidth + moveEvent.clientX - startX
+      ))
+      const height = Math.min(maxHeight, Math.max(
+        EXPLANATION_POPUP_MIN_HEIGHT,
+        startHeight + moveEvent.clientY - startY
+      ))
+      element.style.width = `${width}px`
+      element.style.height = `${height}px`
+      updateExplanationConnector(popup)
+    }
+    const onUp = () => {
+      element.classList.remove('resizing')
+      saveExplanationPopupSize(element)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   })
 
   const header = element.querySelector('.explanation-popup-header')
