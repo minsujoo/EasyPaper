@@ -8282,7 +8282,7 @@ function resolveOutlineSectionsOnPage(vtm, pageNum) {
 }
 
 const ACADEMIC_SECTION_HEADING_RE = /^(?:\d+(?:\.\d+)*[.)]?\s*)?(?:abstract|introduction|background|preliminar(?:y|ies)|related\s+work|literature\s+review|method(?:s|ology)?|approach|model|framework|implementation|experiment(?:s|al\s+setup)?|evaluation|results?|discussion|analysis|ablation(?:\s+study)?|limitations?|conclusion(?:s)?|future\s+work|acknowledg(?:e)?ments?|references|appendix)(?:\s|$)/i
-const NUMBERED_SECTION_HEADING_RE = /^(?:\d+(?:\.\d+)+|\d+[.)]|[IVXLCDM]+[.)])\s+\S/i
+const NUMBERED_SECTION_HEADING_RE = /^(?:\d+(?:\.\d+)+|\d+[.)]|[A-Z][.)]|[IVXLCDM]+[.)])\s+\S/
 
 function detectFallbackSectionsOnPage(vtm, pageNum) {
   const fontSizes = vtm.spans.map(span => span.fontSize).sort((a, b) => a - b)
@@ -8301,7 +8301,9 @@ function detectFallbackSectionsOnPage(vtm, pageNum) {
     const maxFont = Math.max(...spans.map(span => span.fontSize))
     const isNamedSection = ACADEMIC_SECTION_HEADING_RE.test(title)
     const isNumberedSection = NUMBERED_SECTION_HEADING_RE.test(title)
-    if ((!isNamedSection && !isNumberedSection) || maxFont < median * (isNamedSection ? 1.0 : 1.08)) continue
+    const isExplicitExplainMarker = EXPLAINABLE_SECTION_MARKER_RE.test(title)
+    const minFontRatio = isExplicitExplainMarker ? 0.95 : (isNamedSection ? 1.0 : 1.08)
+    if ((!isNamedSection && !isNumberedSection) || maxFont < median * minFontRatio) continue
     candidates.push({
       id: `detected-${pageNum}-${candidates.length}`,
       title,
@@ -8318,11 +8320,75 @@ function detectFallbackSectionsOnPage(vtm, pageNum) {
 
 function getSectionsOnRenderedPage(vtm, pageNum) {
   const outlineSections = resolveOutlineSectionsOnPage(vtm, pageNum)
-  const sections = outlineSections.length ? outlineSections : detectFallbackSectionsOnPage(vtm, pageNum)
-  return sections.map((section, idx) => ({
-    ...section,
-    nextOnPage: sections[idx + 1] || null,
-  }))
+  const detectedSections = detectFallbackSectionsOnPage(vtm, pageNum)
+  const sections = [...outlineSections]
+  for (const detected of detectedSections) {
+    const overlappingOutline = outlineSections.find(outline => (
+      detected.charStart < outline.charEnd && detected.charEnd > outline.charStart
+    ))
+    if (!overlappingOutline) {
+      sections.push(detected)
+      continue
+    }
+    if (
+      EXPLAINABLE_SECTION_MARKER_RE.test(detected.title)
+      && !EXPLAINABLE_SECTION_MARKER_RE.test(overlappingOutline.title)
+    ) {
+      const outlineIdx = sections.indexOf(overlappingOutline)
+      if (outlineIdx >= 0) sections.splice(outlineIdx, 1)
+      sections.push(detected)
+    }
+  }
+  sections.sort((a, b) => a.charStart - b.charStart)
+  return sections
+    .filter(section => isExplainableSectionHeading(section, vtm))
+    .map((section, idx, filteredSections) => ({
+      ...section,
+      nextOnPage: filteredSections[idx + 1] || null,
+    }))
+}
+
+const EXPLAINABLE_SECTION_MARKER_RE = /^(?:[A-Z]|[IVXLCDM]+)[.)]\s+\S/
+
+function isExplainableSectionHeading(section, vtm) {
+  const title = String(section?.title || '').trim()
+  if (EXPLAINABLE_SECTION_MARKER_RE.test(title)) return true
+  const prefix = vtm.fullText.slice(Math.max(0, section.charStart - 16), section.charStart)
+  return /(?:^|\n\n)(?:[A-Z]|[IVXLCDM]+)[.)]\s*$/m.test(prefix)
+}
+
+function bindExplainButtonHover(button, targets) {
+  const elements = [...new Set((targets || []).filter(Boolean))]
+  if (!button || !elements.length) return
+  let hideTimer = null
+  const show = () => {
+    clearTimeout(hideTimer)
+    button.classList.add('explain-hover-active')
+  }
+  const hide = () => {
+    clearTimeout(hideTimer)
+    hideTimer = setTimeout(() => button.classList.remove('explain-hover-active'), 140)
+  }
+  elements.forEach((element) => {
+    element.addEventListener('mouseenter', show)
+    element.addEventListener('mouseleave', hide)
+  })
+  button.addEventListener('mouseenter', show)
+  button.addEventListener('mouseleave', hide)
+  button.classList.add('explain-hover-only')
+  button._cleanupExplainHover = () => {
+    clearTimeout(hideTimer)
+    elements.forEach((element) => {
+      element.removeEventListener('mouseenter', show)
+      element.removeEventListener('mouseleave', hide)
+    })
+  }
+}
+
+function getRangeHoverTargets(vtm, range) {
+  return (vtm?.spans || [])
+    .filter(span => span.charStart < range.charEnd && span.charEnd > range.charStart)
+    .map(span => span.el)
 }
 
 async function buildInlineSectionContext(section) {
@@ -8365,7 +8431,10 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
   const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
   const vtm = state.virtualTextMaps?.[pageNum]
   if (!pageWrapper || !vtm) return
-  pageWrapper.querySelectorAll('.section-explain-btn').forEach(button => button.remove())
+  pageWrapper.querySelectorAll('.section-explain-btn').forEach((button) => {
+    button._cleanupExplainHover?.()
+    button.remove()
+  })
   const sections = getSectionsOnRenderedPage(vtm, pageNum)
 
   for (const section of sections) {
@@ -8374,16 +8443,17 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'paper-explain-btn section-explain-btn'
-    button.innerHTML = icon('lightbulb', 15)
+    button.innerHTML = icon('lightbulb', 11)
     button.title = `${section.title} 설명`
     button.setAttribute('aria-label', `${section.title} 설명`)
-    positionExplainButtonBesideRects(button, rects, textLayerDiv)
+    if (!positionExplainButtonBesideRects(button, rects, textLayerDiv)) continue
+    bindExplainButtonHover(button, getRangeHoverTargets(vtm, section))
     button.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       if (button.disabled) return
       button.disabled = true
-      button.innerHTML = icon('refreshCw', 15)
+      button.innerHTML = icon('refreshCw', 11)
       button.title = '설명 준비 중'
       try {
         const context = await buildInlineSectionContext(section)
@@ -8400,7 +8470,7 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
       } finally {
         if (button.isConnected) {
           button.disabled = false
-          button.innerHTML = icon('lightbulb', 15)
+          button.innerHTML = icon('lightbulb', 11)
           button.title = `${section.title} 설명`
         }
       }
@@ -8409,28 +8479,115 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
   }
 }
 
-function positionExplainButtonBesideRects(button, rects, textLayerDiv) {
-  if (!button || !rects?.length || !textLayerDiv) return
-  const anchor = rects[rects.length - 1]
-  const buttonSize = 30
-  const preferredLeft = anchor.left + anchor.width + 5
-  button.style.left = `${Math.max(3, Math.min(textLayerDiv.clientWidth - buttonSize - 3, preferredLeft))}px`
-  button.style.top = `${Math.max(3, anchor.top + Math.max(0, (anchor.height - buttonSize) / 2))}px`
+const PDF_EXPLAIN_BUTTON_SIZE = 18
+
+function rectsOverlap(a, b, padding = 1) {
+  return (
+    a.left < b.left + b.width + padding
+    && a.left + a.width > b.left - padding
+    && a.top < b.top + b.height + padding
+    && a.top + a.height > b.top - padding
+  )
 }
 
-function findFigureLabelRects(textLayerDiv, pageNum, label) {
+function getTextObstacleRects(textLayerDiv) {
+  const containerRect = textLayerDiv.getBoundingClientRect()
+  return Array.from(textLayerDiv.querySelectorAll('span'))
+    .map((span) => {
+      const rect = span.getBoundingClientRect()
+      return {
+        left: rect.left - containerRect.left,
+        top: rect.top - containerRect.top,
+        width: rect.width,
+        height: rect.height,
+      }
+    })
+    .filter(rect => rect.width > 0 && rect.height > 0)
+}
+
+function positionExplainButtonBesideRects(button, rects, textLayerDiv) {
+  if (!button || !rects?.length || !textLayerDiv) return false
+  const first = rects[0]
+  const last = rects[rects.length - 1]
+  const minTop = Math.min(...rects.map(rect => rect.top))
+  const maxBottom = Math.max(...rects.map(rect => rect.top + rect.height))
+  const size = PDF_EXPLAIN_BUTTON_SIZE
+  const gap = 3
+  const candidates = [
+    {
+      left: last.left + last.width + gap,
+      top: last.top + (last.height - size) / 2,
+    },
+    {
+      left: first.left - size - gap,
+      top: first.top + (first.height - size) / 2,
+    },
+    {
+      left: last.left + last.width - size,
+      top: minTop - size - gap,
+    },
+    {
+      left: last.left + last.width - size,
+      top: maxBottom + gap,
+    },
+  ]
+  const obstacles = getTextObstacleRects(textLayerDiv)
+  const withinPage = candidate => (
+    candidate.left >= 3
+    && candidate.top >= 3
+    && candidate.left + size <= textLayerDiv.clientWidth - 3
+    && candidate.top + size <= textLayerDiv.clientHeight - 3
+  )
+  const position = candidates.find(candidate => (
+    withinPage(candidate)
+    && !obstacles.some(obstacle => rectsOverlap(
+      { ...candidate, width: size, height: size },
+      obstacle,
+    ))
+  )) || candidates.find(withinPage)
+  if (!position) {
+    button.remove()
+    return false
+  }
+  button.style.left = `${position.left}px`
+  button.style.top = `${position.top}px`
+  return true
+}
+
+function findFigureLabelTarget(textLayerDiv, pageNum, label) {
   const vtm = state.virtualTextMaps?.[pageNum]
   const cleanLabel = String(label || '').trim()
-  if (!vtm || !cleanLabel) return []
+  if (!vtm || !cleanLabel) return null
   const haystack = vtm.fullText.toLocaleLowerCase()
-  const needle = cleanLabel.toLocaleLowerCase()
-  const charStart = haystack.indexOf(needle)
-  if (charStart < 0) return []
-  return getSentenceRects(
-    { charStart, charEnd: charStart + cleanLabel.length },
-    vtm,
-    textLayerDiv,
-  )
+  const labels = [cleanLabel]
+  const figureMatch = cleanLabel.match(/^(?:fig(?:ure)?)[.\s]*(\d+[a-z]?)/i)
+  if (figureMatch) {
+    labels.push(`Fig. ${figureMatch[1]}`, `Fig ${figureMatch[1]}`, `Figure ${figureMatch[1]}`)
+  }
+  let matchedLabel = ''
+  let charStart = -1
+  for (const candidate of labels) {
+    charStart = haystack.indexOf(candidate.toLocaleLowerCase())
+    if (charStart >= 0) {
+      matchedLabel = candidate
+      break
+    }
+  }
+  if (charStart < 0) return null
+  const range = { charStart, charEnd: charStart + matchedLabel.length }
+  return {
+    range,
+    rects: getSentenceRects(range, vtm, textLayerDiv),
+    hoverTargets: getRangeHoverTargets(vtm, range),
+  }
+}
+
+function canonicalFigureLabel(label) {
+  const value = String(label || '').trim().toLocaleLowerCase()
+  const match = value.match(/^(fig(?:ure)?|table)[.\s]*(\d+[a-z]?)/i)
+  if (!match) return value
+  const kind = match[1].startsWith('fig') ? 'figure' : 'table'
+  return `${kind}:${match[2].toLocaleLowerCase()}`
 }
 
 function renderImageOverlayLayer(textLayerDiv, pageNum) {
@@ -8442,7 +8599,10 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   // Remove existing layer if any
   const oldLayer = inner.querySelector('.pdf-image-overlay-layer')
   if (oldLayer) oldLayer.remove()
-  pageWrapper.querySelectorAll('.pdf-figure-explain-btn').forEach(button => button.remove())
+  pageWrapper.querySelectorAll('.pdf-figure-explain-btn').forEach((button) => {
+    button._cleanupExplainHover?.()
+    button.remove()
+  })
 
   if (pageImages.length === 0) return
 
@@ -8455,6 +8615,21 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
   layer.style.height = '100%'
   layer.style.pointerEvents = 'none'
   layer.style.zIndex = '3'
+
+  const explainSourceByLabel = new Map()
+  pageImages.forEach((image, idx) => {
+    const canonicalLabel = canonicalFigureLabel(image.label)
+    if (!canonicalLabel) return
+    const previousIdx = explainSourceByLabel.get(canonicalLabel)
+    if (previousIdx === undefined) {
+      explainSourceByLabel.set(canonicalLabel, idx)
+      return
+    }
+    const previous = pageImages[previousIdx]
+    if ((image.width * image.height) > (previous.width * previous.height)) {
+      explainSourceByLabel.set(canonicalLabel, idx)
+    }
+  })
 
   pageImages.forEach((imgPercent, idx) => {
     const overlay = document.createElement('div')
@@ -8469,45 +8644,63 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
     overlay.style.pointerEvents = 'auto'
     overlay.style.cursor = 'pointer'
 
-    const explainBtn = document.createElement('button')
-    explainBtn.type = 'button'
-    explainBtn.className = 'paper-explain-btn pdf-figure-explain-btn'
-    explainBtn.innerHTML = icon('lightbulb', 15)
-    explainBtn.title = `${imgPercent.label || '그림/표'} 설명`
-    explainBtn.setAttribute('aria-label', `${imgPercent.label || '그림/표'} 설명`)
-    const labelRects = findFigureLabelRects(textLayerDiv, pageNum, imgPercent.label)
-    if (labelRects.length) {
-      positionExplainButtonBesideRects(explainBtn, labelRects, textLayerDiv)
-    } else {
-      const buttonSize = 30
-      const imageRight = textLayerDiv.clientWidth * (imgPercent.left + imgPercent.width) / 100 + 5
-      const imageTop = textLayerDiv.clientHeight * imgPercent.top / 100
-      explainBtn.style.left = `${Math.max(3, Math.min(textLayerDiv.clientWidth - buttonSize - 3, imageRight))}px`
-      explainBtn.style.top = `${Math.max(3, imageTop)}px`
-    }
-    explainBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const canvas = inner.querySelector('canvas')
-      if (!canvas) return
-      try {
-        const base64Img = cropFigureFromCanvas(canvas, imgPercent)
-        const kind = /^table/i.test(imgPercent.label || '') ? 'table' : 'figure'
-        toggleCropMode(false)
-        explainContext({
-          kind,
-          label: `${imgPercent.label || (kind === 'table' ? 'Table' : 'Figure')} · p.${pageNum}`,
-          text: imgPercent.caption || imgPercent.label || '',
-          pageNum,
-          imageBase64: base64Img,
-          anchorElement: explainBtn,
-        })
-      } catch (err) {
-        console.error('그림 설명용 크롭 실패:', err)
-        showToast('설명할 영역을 캡처하지 못했습니다.', 'error')
+    const canonicalLabel = canonicalFigureLabel(imgPercent.label)
+    const shouldRenderExplainButton = !canonicalLabel || explainSourceByLabel.get(canonicalLabel) === idx
+    if (shouldRenderExplainButton) {
+      overlay.classList.add('explain-hover-target')
+      const explainBtn = document.createElement('button')
+      explainBtn.type = 'button'
+      explainBtn.className = 'paper-explain-btn pdf-figure-explain-btn'
+      explainBtn.innerHTML = icon('lightbulb', 11)
+      explainBtn.title = `${imgPercent.label || '그림/표'} 설명`
+      explainBtn.setAttribute('aria-label', `${imgPercent.label || '그림/표'} 설명`)
+      const labelTarget = findFigureLabelTarget(textLayerDiv, pageNum, imgPercent.label)
+      let positioned = false
+      if (labelTarget?.rects.length) {
+        positioned = positionExplainButtonBesideRects(explainBtn, labelTarget.rects, textLayerDiv)
+      } else {
+        const imageRight = textLayerDiv.clientWidth * (imgPercent.left + imgPercent.width) / 100
+        const imageTop = textLayerDiv.clientHeight * imgPercent.top / 100
+        explainBtn.style.left = `${Math.max(3, Math.min(
+          textLayerDiv.clientWidth - PDF_EXPLAIN_BUTTON_SIZE - 3,
+          imageRight - PDF_EXPLAIN_BUTTON_SIZE - 3,
+        ))}px`
+        explainBtn.style.top = `${Math.max(3, Math.min(
+          textLayerDiv.clientHeight - PDF_EXPLAIN_BUTTON_SIZE - 3,
+          imageTop + 3,
+        ))}px`
+        positioned = true
       }
-    })
-    pageWrapper.appendChild(explainBtn)
+      if (positioned) {
+        bindExplainButtonHover(
+          explainBtn,
+          labelTarget?.hoverTargets?.length ? [...labelTarget.hoverTargets, overlay] : [overlay],
+        )
+        explainBtn.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          const canvas = inner.querySelector('canvas')
+          if (!canvas) return
+          try {
+            const base64Img = cropFigureFromCanvas(canvas, imgPercent)
+            const kind = /^table/i.test(imgPercent.label || '') ? 'table' : 'figure'
+            toggleCropMode(false)
+            explainContext({
+              kind,
+              label: `${imgPercent.label || (kind === 'table' ? 'Table' : 'Figure')} · p.${pageNum}`,
+              text: imgPercent.caption || imgPercent.label || '',
+              pageNum,
+              imageBase64: base64Img,
+              anchorElement: explainBtn,
+            })
+          } catch (err) {
+            console.error('그림 설명용 크롭 실패:', err)
+            showToast('설명할 영역을 캡처하지 못했습니다.', 'error')
+          }
+        })
+        pageWrapper.appendChild(explainBtn)
+      }
+    }
 
     overlay.addEventListener('click', (e) => {
       e.preventDefault()
@@ -9064,8 +9257,17 @@ function renderFigureRefOverlayLayer(textLayerDiv, pageNum) {
       .map(n => images.find(img => img.label === `${kind} ${n}`))
       .filter(Boolean)
     if (targets.length === 0) continue
+    const matchRange = { charStart: match.index, charEnd: match.index + match[0].length }
+    const isOwnCaptionLabel = targets.some((target) => {
+      if (target.page !== pageNum) return false
+      const labelTarget = findFigureLabelTarget(textLayerDiv, pageNum, target.label)
+      return labelTarget
+        && matchRange.charStart < labelTarget.range.charEnd
+        && matchRange.charEnd > labelTarget.range.charStart
+    })
+    if (isOwnCaptionLabel) continue
 
-    const rects = getSentenceRects({ charStart: match.index, charEnd: match.index + match[0].length }, vtm, textLayerDiv)
+    const rects = getSentenceRects(matchRange, vtm, textLayerDiv)
     rects.forEach(r => {
       const box = document.createElement('div')
       box.className = 'figure-ref-marker-box'
@@ -11671,12 +11873,12 @@ function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'paper-explain-btn equation-explain-btn'
-  button.innerHTML = icon('lightbulb', 15)
+  button.innerHTML = icon('lightbulb', 11)
   button.title = `수식 설명 · p.${pageNum}`
   button.setAttribute('aria-label', `수식 설명 · p.${pageNum}`)
   const textLayerDiv = pageWrapper.querySelector('.textLayer')
   if (!textLayerDiv) return
-  positionExplainButtonBesideRects(button, rects, textLayerDiv)
+  if (!positionExplainButtonBesideRects(button, rects, textLayerDiv)) return
   button.addEventListener('click', (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -12379,7 +12581,8 @@ function applyActiveHighlight(pageNum, sentenceRange) {
   const rects = getSentenceRects(sentenceRange, vtm, textLayer);
   renderSentenceOverlay(overlay, rects, 'sentence-active-box');
   if (sentenceRange.isEquation) {
-    renderEquationExplainButton(overlay, rects, pageNum, sentenceRange)
+    // 수식은 별도 설명 아이콘을 만들지 않는다. 설명 진입점은 Figure/Table과
+    // 문자·로마숫자로 번호가 붙은 장/절 제목에만 제한한다.
   }
 
   const sentenceIdx = sentenceRange.sentenceIdx >= 10000 ? (sentenceRange.originalSentenceIdx ?? sentenceRange.sentenceIdx) : sentenceRange.sentenceIdx;

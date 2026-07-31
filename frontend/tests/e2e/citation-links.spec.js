@@ -126,9 +126,8 @@ test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후�
   await expect(explanation.locator('.explanation-popup-message.user')).toContainText('이 방법과 현재 논문의 차이는 뭐야?')
 })
 
-test('PDF 본문의 설명 아이콘은 제목 옆에 있고 팝업 동안 숨겨지며 다시 열면 새 세션을 만든다', async ({ page }) => {
+test('번호 없는 일반 제목과 수식에는 설명 아이콘을 만들지 않는다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
-  const chatRequests = []
   await mockBaseRoutes(page, { documents: [docC] })
   await page.route('**/api/library/doc-C/pdf', route =>
     route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_CITATION }))
@@ -137,65 +136,13 @@ test('PDF 본문의 설명 아이콘은 제목 옆에 있고 팝업 동안 숨�
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
     }))
-  await page.route('**/api/chat/stream', async route => {
-    chatRequests.push(route.request().postDataJSON())
-    await route.fulfill({ status: 200, contentType: 'text/plain', body: '이 섹션은 참고문헌 목록을 정리합니다.' })
-  })
 
   await gotoApp(page)
   await page.evaluate(() => { location.hash = '#viewer?id=doc-C' })
 
-  const sectionButton = page.locator('.section-explain-btn[title*="References"]').first()
-  await expect(sectionButton).toBeVisible()
-  await expect(sectionButton).toHaveText('')
-  await expect(sectionButton).toHaveAttribute('aria-label', /References 설명/)
-  const sectionButtonBox = await sectionButton.boundingBox()
-  const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
-  expect(sectionButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x)
-  expect(sectionButtonBox.x + sectionButtonBox.width).toBeLessThanOrEqual(pdfPageBox.x + pdfPageBox.width)
-  await sectionButton.click()
-
-  const firstPopup = page.locator('.explanation-popup').first()
-  await expect(firstPopup).toBeVisible()
-  await expect(sectionButton).toBeHidden()
-  await expect(firstPopup.locator('.explanation-popup-target')).toContainText('References')
-  await expect(page.locator('.explanation-connector-svg path')).toHaveCount(1)
-  await expect.poll(() => chatRequests.length).toBe(1)
-  expect(chatRequests[0].hidden_user_message).toBe(true)
-  expect(chatRequests[0].messages.at(-1).content).toContain('[섹션 제목]')
-  expect(chatRequests[0].messages.at(-1).content).toContain('References')
-  expect(chatRequests[0].messages.at(-1).content).toContain('논리 전개')
-
-  const before = await firstPopup.boundingBox()
-  expect(before.width).toBeGreaterThanOrEqual(470)
-  expect(before.height).toBeGreaterThanOrEqual(500)
-
-  const resizeBox = await firstPopup.locator('.explanation-popup-resize-handle').boundingBox()
-  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(resizeBox.x + 90, resizeBox.y + 65, { steps: 6 })
-  await page.mouse.up()
-  const resized = await firstPopup.boundingBox()
-  expect(resized.width).toBeGreaterThan(before.width)
-  expect(resized.height).toBeGreaterThan(before.height)
-  await expect(page.locator('.explanation-connector-svg path')).toHaveCount(1)
-
-  const headerBox = await firstPopup.locator('.explanation-popup-header').boundingBox()
-  await page.mouse.move(headerBox.x + 30, headerBox.y + 18)
-  await page.mouse.down()
-  await page.mouse.move(headerBox.x + 110, headerBox.y + 68, { steps: 6 })
-  await page.mouse.up()
-  const after = await firstPopup.boundingBox()
-  expect(after.x).not.toBe(resized.x)
-
-  await firstPopup.locator('.explanation-popup-close').click()
-  await expect(firstPopup).toHaveCount(0)
-  await expect(sectionButton).toBeVisible()
-  await sectionButton.click()
-  await expect(page.locator('.explanation-popup')).toHaveCount(1)
-  await expect(sectionButton).toBeHidden()
-  await expect.poll(() => chatRequests.length).toBe(2)
-  expect(chatRequests[1].chat_session_id).not.toBe(chatRequests[0].chat_session_id)
+  await expect(page.locator('.textLayer')).toContainText('References')
+  await expect(page.locator('.section-explain-btn')).toHaveCount(0)
+  await expect(page.locator('.equation-explain-btn')).toHaveCount(0)
 })
 
 test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 이미지 설명 팝업을 연다', async ({ page }) => {
@@ -211,6 +158,7 @@ test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 
       body: JSON.stringify({
         images: [
           { page: 1, left: 8, top: 12, width: 38, height: 20, label: 'Table 1', caption: 'Accuracy comparison' },
+          { page: 1, left: 10, top: 13, width: 20, height: 10, label: 'Table 1', caption: 'Accuracy comparison panel' },
           { page: 1, left: 53, top: 48, width: 35, height: 24, label: 'Figure 2', caption: 'Model overview' },
         ],
       }),
@@ -226,11 +174,15 @@ test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 
   await expect(page.locator('#viewer-scroll-container')).not.toHaveClass(/crop-mode/)
   const imageButtons = page.locator('.pdf-figure-explain-btn')
   await expect(imageButtons).toHaveCount(2)
+  await expect(imageButtons.first()).toBeHidden()
+  await page.locator('.pdf-figure-overlay[data-index="0"]').hover()
   await expect(imageButtons.first()).toBeVisible()
   await expect(imageButtons.first()).toHaveText('')
   await expect(imageButtons.first()).toHaveAttribute('aria-label', 'Table 1 설명')
   const imageButtonBox = await imageButtons.first().boundingBox()
   const pdfPageBox = await page.locator('.pdf-page-wrapper[data-page="1"]').boundingBox()
+  expect(imageButtonBox.width).toBeLessThanOrEqual(20)
+  expect(imageButtonBox.height).toBeLessThanOrEqual(20)
   expect(imageButtonBox.x).toBeGreaterThanOrEqual(pdfPageBox.x)
   expect(imageButtonBox.x + imageButtonBox.width).toBeLessThanOrEqual(pdfPageBox.x + pdfPageBox.width)
   await imageButtons.first().click()
