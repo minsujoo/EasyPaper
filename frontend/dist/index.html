@@ -23,8 +23,8 @@
     onload="document.dispatchEvent(new Event('katex-ready'))"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.css" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" crossorigin="anonymous"></script>
-  <script type="module" crossorigin src="/assets/index-DQsITm6P.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BI4fhKwJ.css">
+  <script type="module" crossorigin src="/assets/index-BcBx8Mqu.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BSWpcwEr.css">
 </head>
 <body>
 
@@ -108,6 +108,15 @@
         </button>
       </div>
       <div id="library-search-status" class="hidden" style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 14px;"></div>
+
+      <!-- 사용자 폴더: 빈 폴더도 유지되며 논문을 폴더별로 분류할 수 있다 -->
+      <div id="library-folder-bar" class="library-folder-bar">
+        <div id="library-folder-filters" class="library-folder-filters"></div>
+        <button id="library-folder-create-btn" class="library-folder-create-btn" type="button" title="새 폴더 만들기">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          새 폴더
+        </button>
+      </div>
 
       <!-- 카테고리 필터 + 보기 방식 전환 영역 -->
       <div id="library-filter-row" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px;">

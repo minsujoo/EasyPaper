@@ -95,6 +95,22 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        # 라이브러리 폴더. 기존 documents 행은 folder_id=NULL인 "미분류"로
+        # 자연스럽게 마이그레이션되어 사용자의 기존 보관함 구성이 유지된다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS library_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(username, name)
+        )
+        """)
+        try:
+            cursor.execute("ALTER TABLE documents ADD COLUMN folder_id INTEGER DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
+
         # 6. app_meta 테이블 (자동 업데이트 확인 주기/마지막 확인 시각/마지막으로
         #    "업데이트 완료" 알림을 보여준 버전 등, 자주 바뀌는 앱 내부 상태를
         #    저장하는 범용 key-value 테이블)
@@ -146,6 +162,8 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_username_deleted ON documents(username, is_deleted, created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_doc ON chats(doc_id, id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_notes_status ON paper_notes(status, updated_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_library_folders_username ON library_folders(username, name)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(username, folder_id, is_deleted)")
 
         conn.commit()
 
@@ -251,7 +269,7 @@ def db_get_document(doc_id: str) -> Optional[dict]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE id = ?",
+            "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, folder_id, created_at FROM documents WHERE id = ?",
             (doc_id,)
         )
         row = cursor.fetchone()
@@ -267,12 +285,12 @@ def db_list_documents(username: Optional[str] = None, only_trash: bool = False) 
         cursor = conn.cursor()
         if username:
             cursor.execute(
-                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE username = ? AND is_deleted = ? ORDER BY created_at DESC",
+                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, folder_id, created_at FROM documents WHERE username = ? AND is_deleted = ? ORDER BY created_at DESC",
                 (username, is_deleted_val)
             )
         else:
             cursor.execute(
-                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, created_at FROM documents WHERE is_deleted = ? ORDER BY created_at DESC",
+                "SELECT id, username, filename, pdf_path, total_pages, metadata, is_deleted, folder_id, created_at FROM documents WHERE is_deleted = ? ORDER BY created_at DESC",
                 (is_deleted_val,)
             )
         rows = cursor.fetchall()
@@ -305,7 +323,7 @@ def db_search_documents(username: str, query: str, only_trash: bool = False) -> 
         cursor.execute(
             """
             SELECT DISTINCT d.id, d.username, d.filename, d.pdf_path, d.total_pages,
-                   d.metadata, d.is_deleted, d.created_at
+                   d.metadata, d.is_deleted, d.folder_id, d.created_at
             FROM documents d
             LEFT JOIN translations t ON t.doc_id = d.id
             WHERE d.username = ? AND d.is_deleted = ?
@@ -359,6 +377,100 @@ def db_restore_document(doc_id: str) -> bool:
         cursor.execute("UPDATE documents SET is_deleted = 0 WHERE id = ?", (doc_id,))
         conn.commit()
         return True
+
+
+# ── 라이브러리 폴더 (Library folders) ────────────────────────────────────────
+
+def db_list_folders(username: str) -> List[Dict[str, Any]]:
+    """사용자 폴더와 현재 보관함(휴지통 제외)의 논문 수를 반환한다."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT f.id, f.name, f.created_at, COUNT(d.id) AS document_count
+            FROM library_folders f
+            LEFT JOIN documents d
+              ON d.folder_id = f.id AND d.username = f.username AND d.is_deleted = 0
+            WHERE f.username = ?
+            GROUP BY f.id, f.name, f.created_at
+            ORDER BY f.name COLLATE NOCASE, f.id
+            """,
+            (username,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def db_create_folder(username: str, name: str) -> Optional[Dict[str, Any]]:
+    created_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with get_db() as conn:
+            cursor = conn.execute(
+                "INSERT INTO library_folders (username, name, created_at) VALUES (?, ?, ?)",
+                (username, name, created_at),
+            )
+            conn.commit()
+            return {"id": cursor.lastrowid, "name": name, "created_at": created_at, "document_count": 0}
+    except sqlite3.IntegrityError:
+        return None
+
+
+def db_get_folder(folder_id: int) -> Optional[Dict[str, Any]]:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, name, created_at FROM library_folders WHERE id = ?",
+            (folder_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def db_rename_folder(folder_id: int, username: str, name: str) -> bool:
+    try:
+        with get_db() as conn:
+            cursor = conn.execute(
+                "UPDATE library_folders SET name = ? WHERE id = ? AND username = ?",
+                (name, folder_id, username),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.IntegrityError:
+        return False
+
+
+def db_delete_folder(folder_id: int, username: str) -> bool:
+    """폴더만 삭제하고 안의 논문은 미분류로 되돌린다."""
+    with get_db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM library_folders WHERE id = ? AND username = ?",
+            (folder_id, username),
+        ).fetchone()
+        if not exists:
+            return False
+        conn.execute(
+            "UPDATE documents SET folder_id = NULL WHERE folder_id = ? AND username = ?",
+            (folder_id, username),
+        )
+        conn.execute(
+            "DELETE FROM library_folders WHERE id = ? AND username = ?",
+            (folder_id, username),
+        )
+        conn.commit()
+        return True
+
+
+def db_move_document_to_folder(doc_id: str, username: str, folder_id: Optional[int]) -> bool:
+    with get_db() as conn:
+        if folder_id is not None:
+            folder = conn.execute(
+                "SELECT 1 FROM library_folders WHERE id = ? AND username = ?",
+                (folder_id, username),
+            ).fetchone()
+            if not folder:
+                return False
+        cursor = conn.execute(
+            "UPDATE documents SET folder_id = ? WHERE id = ? AND username = ?",
+            (folder_id, doc_id, username),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 # ── 번역 (Translations) ────────────────────────────────────────────────────────

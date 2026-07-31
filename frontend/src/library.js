@@ -84,6 +84,57 @@ export async function searchLibrary(query) {
   return res.json()
 }
 
+async function readApiError(res, fallback) {
+  try {
+    const data = await res.json()
+    return data.detail || fallback
+  } catch {
+    return fallback
+  }
+}
+
+export async function fetchLibraryFolders() {
+  const res = await fetch(`${API_BASE}/library/folders`)
+  if (!res.ok) throw new Error(await readApiError(res, '폴더 조회 실패'))
+  return res.json()
+}
+
+export async function createLibraryFolder(name) {
+  const res = await fetch(`${API_BASE}/library/folders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '폴더 생성 실패'))
+  return res.json()
+}
+
+export async function renameLibraryFolder(folderId, name) {
+  const res = await fetch(`${API_BASE}/library/folders/${folderId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '폴더 이름 변경 실패'))
+  return res.json()
+}
+
+export async function deleteLibraryFolder(folderId) {
+  const res = await fetch(`${API_BASE}/library/folders/${folderId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readApiError(res, '폴더 삭제 실패'))
+  return res.json()
+}
+
+export async function moveLibraryDocToFolder(docId, folderId) {
+  const res = await fetch(`${API_BASE}/library/${docId}/folder`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder_id: folderId }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '논문 이동 실패'))
+  return res.json()
+}
+
 export async function fetchLibraryReferences(docId) {
   const res = await fetch(`${API_BASE}/library/${docId}/references`)
   if (!res.ok) throw new Error('참고문헌 목록 조회 실패')
