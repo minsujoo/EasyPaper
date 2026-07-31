@@ -45,6 +45,7 @@ const state = {
   chatActiveStream: null,      // 현재 활성화된 채팅 스트림 abort 함수
   chatCurrentText: '',         // 현재 스트리밍 답변 텍스트 임시 저장
   explanationContext: null,    // 영역별 설명 후속 채팅에서 계속 유지할 문맥
+  explanationPopups: new Map(), // 클릭할 때마다 독립적으로 생성되는 설명 채팅
   availableOllamaModels: [],   // Ollama에서 설치된 모델 목록
   quotedText: null,            // AI 질문 시 인용구 보관용
   documentImages: [],          // 문서 내 이미지 좌표 목록
@@ -447,11 +448,13 @@ function resetState() {
   // 폴링 중단
   if (state.pollingTimer) { clearInterval(state.pollingTimer); state.pollingTimer = null }
   if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
+  for (const popup of state.explanationPopups.values()) popup.abort?.()
   
   Object.assign(state, {
     sessionId: null, filename: null, title: null, totalPages: 0, currentPage: 1,
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
-    chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null,
+    chatHistory: [], chatActiveStream: null, explanationContext: null, explanationPopups: new Map(),
+    quotedText: null, quotedImage: null, quotedImagePage: null,
     activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {}, referenceMentions: {},
     citationStyle: null, referencesHeaderPageNum: null, pdfOutline: [], paperSections: []
   })
@@ -5627,6 +5630,7 @@ async function openFromLibrary(doc, shouldPushState = true) {
     // 응답이 뒤늦게 도착해 방금 초기화한 새 문서의 state.chatHistory/DOM에
     // 섞여 들어가는 경쟁 조건이 있었다.
     if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
+    for (const popup of state.explanationPopups.values()) closeExplanationPopup(popup)
 
     if (shouldPushState) {
       history.pushState({ screen: 'viewer', docId: doc.id }, '', `#viewer?id=${doc.id}`)
@@ -7307,13 +7311,20 @@ function createSelectionMenu() {
     const selection = window.getSelection()
     const text = extractSelectionText(selection).trim()
     if (text) {
+      const selectionRect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null
       let pageNum = state.hoverSelectedPageNum || null
       if (!pageNum && selection?.rangeCount) {
         const node = selection.getRangeAt(0).startContainer
         const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node
         pageNum = parseInt(el?.closest?.('.pdf-page-wrapper, .trans-page-block')?.dataset.page || '0', 10) || null
       }
-      explainContext({ kind: 'sentence', label: pageNum ? `선택 영역 · p.${pageNum}` : '선택 영역', text, pageNum })
+      explainContext({
+        kind: 'sentence',
+        label: pageNum ? `선택 영역 · p.${pageNum}` : '선택 영역',
+        text,
+        pageNum,
+        anchorRect: selectionRect,
+      })
     }
     selection.removeAllRanges()
     hideSelectionMenu()
@@ -7565,6 +7576,7 @@ function createAnnHoverTooltip() {
         label: activeHoveredPageNum ? `표시한 영역 · p.${activeHoveredPageNum}` : '표시한 영역',
         text,
         pageNum: activeHoveredPageNum,
+        anchorElement: activeHoveredSpan,
       })
     }
     hideAnnHoverTooltip()
@@ -8364,10 +8376,10 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'section-explain-btn'
-    button.innerHTML = `${icon('lightbulb', 12)}<span>섹션 설명</span>`
+    button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
     button.title = `${section.title} 설명`
     const preferredLeft = anchor.left + anchor.width + 8
-    button.style.left = `${Math.max(6, Math.min(textLayerDiv.clientWidth - 92, preferredLeft))}px`
+    button.style.left = `${Math.max(6, Math.min(textLayerDiv.clientWidth - 68, preferredLeft))}px`
     button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 25) / 2))}px`
     button.addEventListener('click', async (e) => {
       e.preventDefault()
@@ -8382,6 +8394,7 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
           label: `${section.title} · p.${pageNum}`,
           text: context,
           pageNum,
+          anchorElement: button,
         })
       } catch (err) {
         console.warn('섹션 설명 문맥 준비 실패:', err)
@@ -8389,7 +8402,7 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
       } finally {
         if (button.isConnected) {
           button.disabled = false
-          button.innerHTML = `${icon('lightbulb', 12)}<span>섹션 설명</span>`
+          button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
         }
       }
     })
@@ -8451,6 +8464,7 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
           text: imgPercent.caption || imgPercent.label || '',
           pageNum,
           imageBase64: base64Img,
+          anchorElement: explainBtn,
         })
       } catch (err) {
         console.error('그림 설명용 크롭 실패:', err)
@@ -9211,7 +9225,7 @@ async function showFigurePreviewTooltip(targets, boxEl) {
       <div class="figure-preview-tooltip-loading">${icon('refreshCw', 14, 'style="vertical-align:-2px;margin-right:4px"')}불러오는 중...</div>
       <img class="figure-preview-tooltip-img hidden" alt="" />
       ${t.caption ? `<div class="figure-preview-tooltip-caption">${renderBoldText(t.caption)}</div>` : ''}
-      <button type="button" class="figure-preview-explain-btn">${icon('lightbulb', 12)} 설명하고 질문하기</button>
+      <button type="button" class="figure-preview-explain-btn">${icon('lightbulb', 12)} 설명</button>
     </div>
   `).join('')
 
@@ -9295,7 +9309,7 @@ function getOrCreateCitationTooltip() {
     <div class="citation-tooltip-text"></div>
     <div class="citation-tooltip-result hidden"></div>
     <div class="citation-tooltip-actions">
-      <button type="button" class="citation-tooltip-action-btn citation-tooltip-explain-btn">${icon('lightbulb', 12, 'style="vertical-align:-2px;margin-right:4px"')}이 인용의 역할 설명</button>
+      <button type="button" class="citation-tooltip-action-btn citation-tooltip-explain-btn">${icon('lightbulb', 12, 'style="vertical-align:-2px;margin-right:4px"')}설명</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-resolve-btn">${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-scholar-btn">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px"')}Google Scholar 검색</button>
     </div>
@@ -9332,6 +9346,7 @@ function getOrCreateCitationTooltip() {
         referenceText && `[참고문헌 정보]\n${referenceText}`,
         resolvedText && `[확인된 논문 정보]\n${resolvedText}`,
       ].filter(Boolean).join('\n\n'),
+      anchorElement: box,
     })
   })
   el.querySelector('.citation-tooltip-resolve-btn').addEventListener('click', (e) => {
@@ -9504,7 +9519,7 @@ document.addEventListener('click', (e) => {
 // ── AI Chat Sidebar ──────────────────────────────
 const EXPLANATION_KIND_LABELS = {
   sentence: '문장·문단',
-  section: '섹션',
+  section: '내용',
   equation: '수식',
   figure: 'Figure',
   table: 'Table',
@@ -9513,7 +9528,7 @@ const EXPLANATION_KIND_LABELS = {
 
 const EXPLANATION_PROMPTS = {
   sentence: '선택한 문장이나 문단을 논문의 전체 흐름에 맞춰 설명해줘. 단순 번역이 아니라 핵심 의미, 이 문맥에서의 역할, 이해에 필요한 전제 개념을 구분해서 알려줘.',
-  section: '이 섹션을 처음 읽는 사람도 따라갈 수 있게 설명해줘. 먼저 핵심 요약, 이어서 논리 전개, 마지막으로 꼭 기억할 용어와 결론을 정리해줘.',
+  section: '이 부분을 처음 읽는 사람도 따라갈 수 있게 설명해줘. 먼저 핵심 요약, 이어서 논리 전개, 마지막으로 꼭 기억할 용어와 결론을 정리해줘.',
   equation: '이 수식을 단계적으로 설명해줘. 각 기호의 의미, 연산이 하는 일, 직관적인 해석, 논문 방법론에서 이 수식이 맡는 역할을 구분해줘. 보이지 않거나 확실하지 않은 기호는 추측하지 말고 밝혀줘.',
   figure: '이 Figure를 설명해줘. 구성 요소와 축/범례, 저자가 보여주려는 핵심 비교나 결과, 본문 주장과의 연결을 순서대로 알려줘. 이미지에서 확인되지 않는 내용은 추측하지 말아줘.',
   table: '이 Table을 설명해줘. 행과 열 및 지표의 의미, 중요한 비교와 수치, 가장 강한 결과와 예외, 논문 결론에 주는 의미를 정리해줘. 이미지에서 확인되지 않는 값은 만들지 말아줘.',
@@ -9550,34 +9565,266 @@ function clearExplanationContext() {
   renderExplanationContext()
 }
 
-function explainContext({ kind = 'sentence', label = '', text = '', pageNum = null, imageBase64 = null }) {
+function makeExplanationSessionId() {
+  const unique = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `explain:${state.sessionId}:${unique}`
+}
+
+function updateExplanationConnector(popup) {
+  const { pageWrapper, element } = popup
+  if (!pageWrapper?.isConnected || !element?.isConnected) return
+  let svg = pageWrapper.querySelector('.explanation-connector-svg')
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.classList.add('explanation-connector-svg')
+    pageWrapper.appendChild(svg)
+  }
+  let path = svg.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)
+  if (!path) {
+    path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.dataset.popupId = popup.id
+    path.setAttribute('fill', 'none')
+    path.setAttribute('stroke', '#d99e2f')
+    path.setAttribute('stroke-width', '1.6')
+    path.setAttribute('stroke-dasharray', '5 5')
+    path.setAttribute('opacity', '0.82')
+    svg.appendChild(path)
+  }
+
+  const left = element.offsetLeft
+  const top = element.offsetTop
+  const width = element.offsetWidth
+  const height = element.offsetHeight
+  const targetX = popup.anchorX < left ? left
+    : popup.anchorX > left + width ? left + width
+      : Math.max(left, Math.min(left + width, popup.anchorX))
+  const targetY = popup.anchorY < top ? top
+    : popup.anchorY > top + height ? top + height
+      : Math.max(top, Math.min(top + height, popup.anchorY))
+  const bendX = popup.anchorX + (targetX - popup.anchorX) * 0.5
+  path.setAttribute(
+    'd',
+    `M ${popup.anchorX} ${popup.anchorY} C ${bendX} ${popup.anchorY}, ${bendX} ${targetY}, ${targetX} ${targetY}`
+  )
+}
+
+function closeExplanationPopup(popup) {
+  popup.abort?.()
+  popup.element?.remove()
+  const svg = popup.pageWrapper?.querySelector('.explanation-connector-svg')
+  svg?.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)?.remove()
+  if (svg && !svg.querySelector('path')) svg.remove()
+  state.explanationPopups.delete(popup.id)
+}
+
+function appendExplanationMessage(popup, role, content = '') {
+  const message = document.createElement('div')
+  message.className = `explanation-popup-message ${role}`
+  const bubble = document.createElement('div')
+  bubble.className = 'explanation-popup-bubble'
+  bubble.innerHTML = role === 'assistant' ? formatChatHtml(content) : escapeHtml(content)
+  message.appendChild(bubble)
+  popup.messagesEl.appendChild(message)
+  popup.messagesEl.scrollTop = popup.messagesEl.scrollHeight
+  return bubble
+}
+
+function buildExplanationPayload(popup, question) {
+  const contextLabel = EXPLANATION_KIND_LABELS[popup.kind] || '영역'
+  return `[설명 대상: ${contextLabel}${popup.label ? ` / ${popup.label}` : ''}${popup.pageNum ? ` / Page ${popup.pageNum}` : ''}]
+${popup.text || '(첨부된 이미지 영역을 확인하세요.)'}
+
+[요청]
+${question}`
+}
+
+function streamExplanationTurn(popup, question, { hidden = false } = {}) {
+  if (popup.streaming) return
+  const cleanQuestion = String(question || '').trim()
+  if (!cleanQuestion) return
+
+  const payload = buildExplanationPayload(popup, cleanQuestion)
+  popup.history.push({ role: 'user', content: payload })
+  if (!hidden) appendExplanationMessage(popup, 'user', cleanQuestion)
+
+  popup.streaming = true
+  popup.input.disabled = true
+  popup.sendButton.disabled = true
+  const bubble = appendExplanationMessage(popup, 'assistant', '')
+  bubble.innerHTML = `<span class="explanation-popup-loading">${icon('refreshCw', 14)} 설명하는 중...</span>`
+  let accumulated = ''
+  let received = false
+
+  popup.abort = streamChatAPI(
+    state.sessionId,
+    popup.history,
+    (token) => {
+      if (!token.trim() && !received) return
+      received = true
+      accumulated += token
+      bubble.innerHTML = formatChatHtml(accumulated)
+      popup.messagesEl.scrollTop = popup.messagesEl.scrollHeight
+      updateExplanationConnector(popup)
+    },
+    () => {
+      popup.streaming = false
+      popup.abort = null
+      popup.history.push({ role: 'assistant', content: accumulated })
+      bubble.innerHTML = formatChatHtml(accumulated || '설명을 생성하지 못했습니다.')
+      applyKatexToElement(bubble)
+      popup.input.disabled = false
+      popup.sendButton.disabled = false
+      updateExplanationConnector(popup)
+    },
+    (err) => {
+      popup.streaming = false
+      popup.abort = null
+      bubble.innerHTML = `<span class="chat-error-text">설명 중 오류가 발생했습니다: ${escapeHtml(err.message)}</span>`
+      popup.input.disabled = false
+      popup.sendButton.disabled = false
+      updateExplanationConnector(popup)
+    },
+    popup.imageBase64?.replace(/^data:image\/\w+;base64,/, ''),
+    {
+      chatSessionId: popup.chatSessionId,
+      hiddenUserMessage: hidden,
+    }
+  )
+}
+
+function createExplanationPopup({ kind, label, text, pageNum, imageBase64, anchorElement, anchorRect: suppliedAnchorRect }) {
+  const anchoredPageWrapper = anchorElement?.closest?.('.pdf-page-wrapper')
+  const pageWrapper = anchoredPageWrapper
+    || viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
+    || viewerScrollContainer.querySelector('.pdf-page-wrapper')
+  if (!pageWrapper) {
+    showToast('설명 위치를 찾지 못했습니다.', 'error')
+    return null
+  }
+
+  const wrapperRect = pageWrapper.getBoundingClientRect()
+  const anchorRect = anchoredPageWrapper === pageWrapper
+    ? anchorElement?.getBoundingClientRect?.()
+    : suppliedAnchorRect
+  const anchorX = anchorRect
+    ? anchorRect.left - wrapperRect.left + anchorRect.width / 2
+    : pageWrapper.offsetWidth * 0.72
+  const anchorY = anchorRect
+    ? anchorRect.top - wrapperRect.top + anchorRect.height / 2
+    : Math.max(80, pageWrapper.offsetHeight * 0.25)
+  const popup = {
+    id: `explanation-popup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    chatSessionId: makeExplanationSessionId(),
+    kind,
+    label,
+    text,
+    pageNum,
+    imageBase64,
+    pageWrapper,
+    anchorX,
+    anchorY,
+    history: [],
+    streaming: false,
+  }
+
+  const element = document.createElement('section')
+  element.className = 'explanation-popup'
+  element.dataset.popupId = popup.id
+  element.style.left = `${Math.min(pageWrapper.offsetWidth - 120, anchorX + 38)}px`
+  element.style.top = `${Math.max(12, anchorY - 34)}px`
+  element.innerHTML = `
+    <header class="explanation-popup-header">
+      <div class="explanation-popup-title">${icon('lightbulb', 14)}<span>설명</span></div>
+      <button type="button" class="explanation-popup-close" title="닫기">${icon('x', 15)}</button>
+    </header>
+    ${imageBase64 ? `<img class="explanation-popup-image" src="${imageBase64}" alt="설명할 그림 또는 표">` : ''}
+    <div class="explanation-popup-target">${escapeHtml(label || (pageNum ? `p.${pageNum}` : '선택 영역'))}</div>
+    <div class="explanation-popup-messages"></div>
+    <form class="explanation-popup-form">
+      <textarea rows="1" placeholder="이 설명에 대해 질문하세요"></textarea>
+      <button type="submit" title="질문 보내기">${icon('send', 14)}</button>
+    </form>
+  `
+  popup.element = element
+  popup.messagesEl = element.querySelector('.explanation-popup-messages')
+  popup.input = element.querySelector('textarea')
+  popup.sendButton = element.querySelector('.explanation-popup-form button')
+  pageWrapper.appendChild(element)
+  state.explanationPopups.set(popup.id, popup)
+
+  element.querySelector('.explanation-popup-close').addEventListener('click', (e) => {
+    e.stopPropagation()
+    closeExplanationPopup(popup)
+  })
+  element.querySelector('.explanation-popup-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const question = popup.input.value.trim()
+    if (!question) return
+    popup.input.value = ''
+    streamExplanationTurn(popup, question)
+  })
+  popup.input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      element.querySelector('.explanation-popup-form').requestSubmit()
+    }
+  })
+
+  const header = element.querySelector('.explanation-popup-header')
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    const initialLeft = element.offsetLeft
+    const initialTop = element.offsetTop
+    const onMove = (moveEvent) => {
+      element.style.left = `${initialLeft + moveEvent.clientX - startX}px`
+      element.style.top = `${initialTop + moveEvent.clientY - startY}px`
+      updateExplanationConnector(popup)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  })
+
+  requestAnimationFrame(() => updateExplanationConnector(popup))
+  return popup
+}
+
+function explainContext({
+  kind = 'sentence',
+  label = '',
+  text = '',
+  pageNum = null,
+  imageBase64 = null,
+  anchorElement = null,
+  anchorRect = null,
+}) {
   if (!state.sessionId) {
     showToast('논문을 먼저 업로드하거나 선택해주세요.', 'error')
     return
   }
-  if (state.chatActiveStream) {
-    showToast('현재 답변이 끝난 뒤 새 영역을 설명할 수 있습니다.', 'info')
-    return
-  }
 
   const cleanText = String(text || '').trim()
-  state.explanationContext = {
+  const popup = createExplanationPopup({
     kind,
     label: label || `${EXPLANATION_KIND_LABELS[kind] || '영역'}${pageNum ? ` · p.${pageNum}` : ''}`,
     text: cleanText,
     pageNum,
     imageBase64,
-  }
-  renderExplanationContext()
-
-  if (imageBase64) askAIAssistantImage(imageBase64, pageNum)
-  else askAIAssistant(cleanText)
+    anchorElement,
+    anchorRect,
+  })
+  if (!popup) return
 
   const prompt = EXPLANATION_PROMPTS[kind] || EXPLANATION_PROMPTS.sentence
-  chatInput.value = prompt
-  chatInput.style.height = 'auto'
-  openChatSidebar()
-  window.requestAnimationFrame(() => sendChatMessage())
+  streamExplanationTurn(popup, prompt, { hidden: true })
 }
 
 if (explanationContextClose) {
@@ -11178,7 +11425,7 @@ function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'equation-explain-btn'
-  button.innerHTML = `${icon('lightbulb', 12)}<span>수식 설명</span>`
+  button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
   button.style.left = `${Math.max(4, anchor.left + anchor.width - 82)}px`
   button.style.top = `${anchor.top + anchor.height + 4}px`
   button.addEventListener('click', (e) => {
@@ -11191,6 +11438,7 @@ function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
       label: `수식 · p.${pageNum}`,
       text: formulaText,
       pageNum,
+      anchorElement: button,
     })
   })
   overlayEl.appendChild(button)
@@ -12552,7 +12800,7 @@ function appendOutlineExplainButton(container, title, pageNum) {
   button.type = 'button'
   button.className = 'outline-explain-btn'
   button.innerHTML = icon('lightbulb', 12)
-  button.title = `${title} 섹션 설명`
+  button.title = `${title} 설명`
   button.addEventListener('click', (e) => {
     e.preventDefault()
     e.stopPropagation()

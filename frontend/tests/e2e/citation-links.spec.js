@@ -45,7 +45,7 @@ test('본문에서 참고 논문 제목을 직접 언급해도 Smart Citation �
   await expect(page.locator('.citation-paper-abstract')).toContainText('entirely on attention')
 })
 
-test('인용 역할 설명을 누르면 영역 문맥이 고정되고 같은 문맥으로 후속 채팅을 이어간다', async ({ page }) => {
+test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후속 채팅을 이어간다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   const chatRequests = []
   await mockBaseRoutes(page, { documents: [docC] })
@@ -79,23 +79,30 @@ test('인용 역할 설명을 누르면 영역 문맥이 고정되고 같은 문
   await expect(page.locator('.citation-tooltip-explain-btn')).toBeVisible()
   await page.locator('.citation-tooltip-explain-btn').click()
 
-  await expect(page.locator('#chat-sidebar')).not.toHaveClass(/hidden/)
-  await expect(page.locator('#explanation-context-card')).not.toHaveClass(/hidden/)
-  await expect(page.locator('#explanation-context-kind')).toHaveText('인용')
-  await expect(page.locator('#explanation-context-label')).toContainText('참고문헌 1')
+  const explanation = page.locator('.explanation-popup').first()
+  await expect(explanation).toBeVisible()
+  await expect(explanation.locator('.explanation-popup-title')).toHaveText('설명')
+  await expect(explanation.locator('.explanation-popup-target')).toContainText('참고문헌 1')
+  await expect(explanation.locator('.explanation-popup-message.user')).toHaveCount(0)
+  await expect(explanation.locator('.explanation-popup-message.assistant')).toContainText('이 인용은 선행 방법의 배경 근거')
+  await expect(page.locator('#chat-sidebar')).toHaveClass(/hidden/)
   await expect.poll(() => chatRequests.length).toBe(1)
+  expect(chatRequests[0].hidden_user_message).toBe(true)
+  expect(chatRequests[0].chat_session_id).toMatch(/^explain:doc-C:/)
   expect(chatRequests[0].messages.at(-1).content).toContain('Vaswani et al. Attention Is All You Need')
   expect(chatRequests[0].messages.at(-1).content).toContain('왜 언급되었는지 설명해줘')
 
-  await page.fill('#chat-input', '이 방법과 현재 논문의 차이는 뭐야?')
-  await page.click('#chat-send-btn')
+  await explanation.locator('textarea').fill('이 방법과 현재 논문의 차이는 뭐야?')
+  await explanation.locator('.explanation-popup-form button').click()
   await expect.poll(() => chatRequests.length).toBe(2)
-  expect(chatRequests[1].messages.at(-1).content).toContain('[현재 설명 영역: 인용')
+  expect(chatRequests[1].hidden_user_message).toBe(false)
+  expect(chatRequests[1].chat_session_id).toBe(chatRequests[0].chat_session_id)
+  expect(chatRequests[1].messages.at(-1).content).toContain('[설명 대상: 인용')
   expect(chatRequests[1].messages.at(-1).content).toContain('이 방법과 현재 논문의 차이는 뭐야?')
-  await expect(page.locator('#explanation-context-card')).not.toHaveClass(/hidden/)
+  await expect(explanation.locator('.explanation-popup-message.user')).toContainText('이 방법과 현재 논문의 차이는 뭐야?')
 })
 
-test('PDF 본문의 섹션 제목 옆 설명 버튼에서 해당 섹션 설명을 바로 시작한다', async ({ page }) => {
+test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점선으로 연결되며 이동할 수 있다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   const chatRequests = []
   await mockBaseRoutes(page, { documents: [docC] })
@@ -116,14 +123,74 @@ test('PDF 본문의 섹션 제목 옆 설명 버튼에서 해당 섹션 설명�
 
   const sectionButton = page.locator('.section-explain-btn[title*="References"]').first()
   await expect(sectionButton).toBeVisible()
+  await expect(sectionButton).toHaveText('설명')
   await sectionButton.click()
 
-  await expect(page.locator('#explanation-context-kind')).toHaveText('섹션')
-  await expect(page.locator('#explanation-context-label')).toContainText('References')
+  const firstPopup = page.locator('.explanation-popup').first()
+  await expect(firstPopup).toBeVisible()
+  await expect(firstPopup.locator('.explanation-popup-target')).toContainText('References')
+  await expect(page.locator('.explanation-connector-svg path')).toHaveCount(1)
   await expect.poll(() => chatRequests.length).toBe(1)
+  expect(chatRequests[0].hidden_user_message).toBe(true)
   expect(chatRequests[0].messages.at(-1).content).toContain('[섹션 제목]')
   expect(chatRequests[0].messages.at(-1).content).toContain('References')
   expect(chatRequests[0].messages.at(-1).content).toContain('논리 전개')
+
+  const before = await firstPopup.boundingBox()
+  const headerBox = await firstPopup.locator('.explanation-popup-header').boundingBox()
+  await page.mouse.move(headerBox.x + 30, headerBox.y + 18)
+  await page.mouse.down()
+  await page.mouse.move(headerBox.x + 110, headerBox.y + 68, { steps: 6 })
+  await page.mouse.up()
+  const after = await firstPopup.boundingBox()
+  expect(after.x).not.toBe(before.x)
+
+  await sectionButton.click()
+  await expect(page.locator('.explanation-popup')).toHaveCount(2)
+  await expect.poll(() => chatRequests.length).toBe(2)
+  expect(chatRequests[1].chat_session_id).not.toBe(chatRequests[0].chat_session_id)
+})
+
+test('그림과 표의 설명 버튼은 캡처 모드가 아니어도 보이고 이미지 설명 팝업을 연다', async ({ page }) => {
+  const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
+  const chatRequests = []
+  await mockBaseRoutes(page, { documents: [docC] })
+  await page.route('**/api/library/doc-C/pdf', route =>
+    route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_CITATION }))
+  await page.route('**/api/library/doc-C/images', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        images: [
+          { page: 1, left: 8, top: 12, width: 38, height: 20, label: 'Table 1', caption: 'Accuracy comparison' },
+          { page: 1, left: 53, top: 48, width: 35, height: 24, label: 'Figure 2', caption: 'Model overview' },
+        ],
+      }),
+    }))
+  await page.route('**/api/chat/stream', async route => {
+    chatRequests.push(route.request().postDataJSON())
+    await route.fulfill({ status: 200, contentType: 'text/plain', body: '표의 주요 결과를 설명합니다.' })
+  })
+
+  await gotoApp(page)
+  await page.evaluate(() => { location.hash = '#viewer?id=doc-C' })
+
+  await expect(page.locator('#viewer-scroll-container')).not.toHaveClass(/crop-mode/)
+  const imageButtons = page.locator('.pdf-figure-explain-btn')
+  await expect(imageButtons).toHaveCount(2)
+  await expect(imageButtons.first()).toBeVisible()
+  await expect(imageButtons.first()).toHaveText('설명')
+  await imageButtons.first().click()
+
+  const popup = page.locator('.explanation-popup').first()
+  await expect(popup).toBeVisible()
+  await expect(popup.locator('.explanation-popup-target')).toContainText('Table 1')
+  await expect(popup.locator('.explanation-popup-image')).toBeVisible()
+  await expect.poll(() => chatRequests.length).toBe(1)
+  expect(chatRequests[0].hidden_user_message).toBe(true)
+  expect(chatRequests[0].image_base64).toBeTruthy()
+  expect(chatRequests[0].messages.at(-1).content).toContain('행과 열 및 지표')
 })
 
 test('참고문헌 목록에 있는 번호의 본문 인용 표기만 클릭 가능한 오버레이가 생기고, 클릭하면 원문 텍스트와 함께 툴팁이 뜬다', async ({ page }) => {

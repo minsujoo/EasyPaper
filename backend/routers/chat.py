@@ -25,6 +25,14 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     messages: List[ChatMessage]
+    # 영역 설명 팝업은 원본 문서 세션과 별개의 대화 문맥을 사용한다. 문서
+    # 소유권/본문 조회에는 session_id를, 대화 저장 및 CLI 연속성에는 이 값을
+    # 사용한다. 클라이언트가 임의 문서의 대화를 가리키지 못하도록 아래
+    # chat_stream에서 현재 문서 ID가 포함된 prefix를 검증한다.
+    chat_session_id: Optional[str] = None
+    # 자동으로 만든 최초 "설명해줘" 프롬프트는 모델에는 보내되 채팅 기록과
+    # 사용자 UI에는 노출하지 않기 위한 플래그다.
+    hidden_user_message: bool = False
     # 캡처 모드로 첨부한 이미지의 raw base64(PNG, data URL 접두사 없음). 있으면
     # 이번 질문(messages의 마지막 user 메시지)에 실제로 첨부해 vision 지원
     # provider(openai/gemini/claude)가 캡처 영역을 직접 보고 답할 수 있게 한다.
@@ -71,6 +79,9 @@ async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current
     """
     session_id = data.session_id
     session = require_session_owner(session_id, current_user)
+    chat_session_id = data.chat_session_id or session_id
+    if data.chat_session_id and not data.chat_session_id.startswith(f"explain:{session_id}:"):
+        raise HTTPException(status_code=400, detail="올바르지 않은 설명 채팅 세션입니다.")
 
     # 세션 내의 모든 페이지에서 텍스트 수집
     pages = session.get("pages", [])
@@ -106,16 +117,16 @@ async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current
     history_messages = [{"role": msg.role, "content": msg.content} for msg in data.messages]
 
     # Save user message to database
-    if data.messages:
+    if data.messages and not data.hidden_user_message:
         latest_msg = data.messages[-1]
-        db_save_chat_message(session_id, latest_msg.role, latest_msg.content)
+        db_save_chat_message(chat_session_id, latest_msg.role, latest_msg.content)
 
     async def event_generator():
         yield " "
         full_response = []
         try:
             async for token in stream_chat(
-                system_prompt, history_messages, session_id=session_id,
+                system_prompt, history_messages, session_id=chat_session_id,
                 page_image_b64=data.image_base64
             ):
                 full_response.append(token)
@@ -124,7 +135,7 @@ async def chat_stream(data: ChatRequest, current_user: str = Depends(get_current
             # Save assistant response to database
             assistant_content = "".join(full_response).strip()
             if assistant_content:
-                db_save_chat_message(session_id, "assistant", assistant_content)
+                db_save_chat_message(chat_session_id, "assistant", assistant_content)
         except Exception as e:
             yield f"\n[오류 발생: {str(e)}]"
 
