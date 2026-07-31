@@ -83,6 +83,36 @@ def test_resolve_reference_returns_404_when_no_match_found(test_client, isolated
     assert res.status_code == 404
 
 
+def test_manual_refresh_retries_negative_reference_cache(test_client, isolated_dirs):
+    _create_doc(isolated_dirs)
+    isolated_dirs["db"].db_save_page_insight(
+        "doc-1", 0, "reference_list", json.dumps({"1": "PowerBEV. 2023."})
+    )
+    isolated_dirs["db"].db_save_page_insight(
+        "doc-1", 0, "reference_url",
+        json.dumps({
+            "_resolver_version": 2,
+            "_not_found": True,
+            "_retry_after": "2999-01-01T00:00:00+00:00",
+        }),
+        suffix="1",
+    )
+    matched = {
+        "title": "PowerBEV",
+        "url": "https://arxiv.org/abs/2306.10761",
+        "_resolver_version": 2,
+    }
+    resolver = AsyncMock(return_value=matched)
+    with patch("services.reference_linker.resolve_reference", new=resolver):
+        cached = test_client.get("/api/library/doc-1/references/1")
+        refreshed = test_client.get("/api/library/doc-1/references/1?refresh=true")
+
+    assert cached.status_code == 404
+    assert refreshed.status_code == 200
+    assert refreshed.json()["title"] == "PowerBEV"
+    resolver.assert_awaited_once()
+
+
 def test_resolve_reference_returns_404_when_ref_num_unknown(test_client, isolated_dirs):
     _create_doc(isolated_dirs)
     isolated_dirs["db"].db_save_page_insight(
