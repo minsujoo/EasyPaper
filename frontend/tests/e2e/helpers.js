@@ -45,6 +45,9 @@ export async function mockBaseRoutes(page, { documents = [] } = {}) {
     if (url.includes('/api/library/trash')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ documents: [], total: 0 }) })
     }
+    if (url.includes('/api/library/folders')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ folders: [], total: 0 }) })
+    }
     if (url.includes('/api/library') && !url.includes('/pdf') && !url.includes('/images') && !url.includes('/history')) {
       const idMatch = url.match(/\/api\/library\/([^/?]+)$/)
       if (idMatch) {

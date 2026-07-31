@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, getPDFPageText, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchLibraryReferenceInsight, downloadLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchLibraryReferenceInsight, downloadLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote, fetchLibraryFolders, createLibraryFolder, renameLibraryFolder, deleteLibraryFolder, moveLibraryDocToFolder } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -211,6 +211,9 @@ const fileInput         = $('file-input')
 const libUploadBtn      = $('lib-upload-btn')
 const libraryGrid       = $('library-grid')
 const libraryCategoryFilters = $('library-category-filters')
+const libraryFolderBar     = $('library-folder-bar')
+const libraryFolderFilters = $('library-folder-filters')
+const libraryFolderCreateBtn = $('library-folder-create-btn')
 const librarySearchInput = $('library-search-input')
 const librarySearchClearBtn = $('library-search-clear-btn')
 const librarySearchStatus = $('library-search-status')
@@ -3617,6 +3620,7 @@ async function loadLibraryCount() {
 function updateTabUI(activeTab) {
   state.currentLibraryTab = activeTab
   activeCategoryFilter = 'ALL'
+  activeFolderFilter = 'ALL'
 
   if (libTabArchive) libTabArchive.classList.toggle('active', activeTab === 'archive')
   if (libTabHistory) libTabHistory.classList.toggle('active', activeTab === 'history')
@@ -3660,6 +3664,7 @@ function updateTabUI(activeTab) {
   if (librarySearchBox) librarySearchBox.classList.toggle('hidden', hidesGrid)
   if (librarySearchStatus && hidesGrid) librarySearchStatus.classList.add('hidden')
   if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', hidesGrid)
+  if (libraryFolderBar) libraryFolderBar.classList.toggle('hidden', hidesGrid || activeTab === 'trash')
   if (libraryStatsContainer && hidesGrid) libraryStatsContainer.classList.add('hidden')
 
   renderLibrary()
@@ -3746,6 +3751,8 @@ async function showLibraryScreen(shouldPushState = true) {
 
 
 let activeCategoryFilter = 'ALL'
+let activeFolderFilter = 'ALL'
+let currentLibraryFolders = []
 
 // ── 여러 논문 비교 채팅: 라이브러리 선택 모드 ──────────────
 let compareSelectMode = false
@@ -4062,6 +4069,148 @@ if (compareBackBtn) {
   })
 }
 
+function folderMatches(doc, filter = activeFolderFilter) {
+  if (filter === 'ALL') return true
+  if (filter === 'NONE') return doc.folder_id == null
+  return String(doc.folder_id) === String(filter)
+}
+
+function renderLibraryFolderFilters(docs) {
+  if (!libraryFolderFilters || !libraryFolderBar) return
+  const visible = state.currentLibraryTab !== 'trash'
+  libraryFolderBar.classList.toggle('hidden', !visible)
+  libraryFolderFilters.innerHTML = ''
+  if (!visible) return
+
+  const addFilter = (key, label, count, iconName = 'folder') => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = `library-folder-chip ${String(activeFolderFilter) === String(key) ? 'active' : ''}`
+    btn.dataset.folderId = key
+    btn.innerHTML = `${icon(iconName, 14)}<span>${escapeHtml(label)}</span><span class="library-folder-count">${count}</span>`
+    btn.addEventListener('click', () => {
+      activeFolderFilter = key
+      filterLibraryCards(docs)
+      renderLibraryFolderFilters(docs)
+    })
+    libraryFolderFilters.appendChild(btn)
+  }
+
+  addFilter('ALL', '모든 논문', docs.length, 'archive')
+  addFilter('NONE', '미분류', docs.filter(doc => doc.folder_id == null).length, 'folder')
+
+  currentLibraryFolders.forEach(folder => {
+    const wrap = document.createElement('div')
+    wrap.className = `library-folder-chip-wrap ${String(activeFolderFilter) === String(folder.id) ? 'active' : ''}`
+    const count = docs.filter(doc => String(doc.folder_id) === String(folder.id)).length
+    wrap.innerHTML = `
+      <button type="button" class="library-folder-chip" data-folder-id="${folder.id}">
+        ${icon('folder', 14)}<span>${escapeHtml(folder.name)}</span><span class="library-folder-count">${count}</span>
+      </button>
+      <button type="button" class="library-folder-more-btn" title="폴더 관리">${icon('moreHorizontal', 14)}</button>`
+    wrap.querySelector('.library-folder-chip').addEventListener('click', () => {
+      activeFolderFilter = String(folder.id)
+      filterLibraryCards(docs)
+      renderLibraryFolderFilters(docs)
+    })
+    wrap.querySelector('.library-folder-more-btn').addEventListener('click', (event) => {
+      event.stopPropagation()
+      showFolderManageMenu(event.currentTarget, folder)
+    })
+    libraryFolderFilters.appendChild(wrap)
+  })
+}
+
+function closeFolderPopup() {
+  document.querySelectorAll('.library-folder-popup').forEach(el => el.remove())
+}
+
+function positionFolderPopup(popup, anchor) {
+  document.body.appendChild(popup)
+  const rect = anchor.getBoundingClientRect()
+  const width = popup.offsetWidth
+  const left = Math.min(rect.left, window.innerWidth - width - 12)
+  popup.style.left = `${Math.max(12, left)}px`
+  popup.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - popup.offsetHeight - 12)}px`
+  setTimeout(() => document.addEventListener('click', closeFolderPopup, { once: true }), 0)
+}
+
+function showFolderManageMenu(anchor, folder) {
+  closeFolderPopup()
+  const popup = document.createElement('div')
+  popup.className = 'library-folder-popup'
+  popup.innerHTML = `
+    <button type="button" data-action="rename">${icon('edit3', 14)}이름 변경</button>
+    <button type="button" data-action="delete" class="danger">${icon('trash2', 14)}폴더 삭제</button>`
+  popup.addEventListener('click', async (event) => {
+    event.stopPropagation()
+    const action = event.target.closest('button')?.dataset.action
+    closeFolderPopup()
+    if (action === 'rename') {
+      const name = await showTextInputPrompt('폴더 이름 변경', '새 폴더 이름을 입력하세요.', folder.name)
+      if (!name || name.trim() === folder.name) return
+      try {
+        await renameLibraryFolder(folder.id, name.trim())
+        showToast('폴더 이름을 변경했습니다.', 'success')
+        await renderLibrary()
+      } catch (err) { showToast(err.message, 'error') }
+    } else if (action === 'delete') {
+      const ok = await showCustomConfirm(`"${escapeHtml(folder.name)}" 폴더를 삭제할까요?\n폴더 안의 논문은 삭제되지 않고 미분류로 이동합니다.`, { title: '폴더 삭제', confirmText: '삭제', danger: true })
+      if (!ok) return
+      try {
+        await deleteLibraryFolder(folder.id)
+        if (String(activeFolderFilter) === String(folder.id)) activeFolderFilter = 'ALL'
+        showToast('폴더를 삭제했습니다. 논문은 미분류로 이동했습니다.', 'success')
+        await renderLibrary()
+      } catch (err) { showToast(err.message, 'error') }
+    }
+  })
+  positionFolderPopup(popup, anchor)
+}
+
+function showMoveToFolderMenu(anchor, doc) {
+  closeFolderPopup()
+  const popup = document.createElement('div')
+  popup.className = 'library-folder-popup library-folder-move-popup'
+  const options = [
+    { id: null, name: '미분류' },
+    ...currentLibraryFolders.map(folder => ({ id: folder.id, name: folder.name })),
+  ]
+  popup.innerHTML = `<div class="library-folder-popup-title">폴더로 이동</div>` + options.map(folder => {
+    const selected = (doc.folder_id == null && folder.id == null) || String(doc.folder_id) === String(folder.id)
+    return `<button type="button" data-folder-id="${folder.id == null ? '' : folder.id}" class="${selected ? 'selected' : ''}">
+      ${icon('folder', 14)}<span>${escapeHtml(folder.name)}</span>${selected ? icon('checkCircle', 13) : ''}
+    </button>`
+  }).join('')
+  popup.addEventListener('click', async (event) => {
+    event.stopPropagation()
+    const btn = event.target.closest('button[data-folder-id]')
+    if (!btn) return
+    const folderId = btn.dataset.folderId === '' ? null : Number(btn.dataset.folderId)
+    closeFolderPopup()
+    if ((doc.folder_id == null && folderId == null) || String(doc.folder_id) === String(folderId)) return
+    try {
+      await moveLibraryDocToFolder(doc.id, folderId)
+      showToast('논문을 폴더로 이동했습니다.', 'success')
+      await renderLibrary()
+    } catch (err) { showToast(err.message, 'error') }
+  })
+  positionFolderPopup(popup, anchor)
+}
+
+if (libraryFolderCreateBtn) {
+  libraryFolderCreateBtn.addEventListener('click', async () => {
+    const name = await showTextInputPrompt('새 폴더', '분류할 폴더 이름을 입력하세요.')
+    if (!name) return
+    try {
+      const folder = await createLibraryFolder(name.trim())
+      activeFolderFilter = String(folder.id)
+      showToast('새 폴더를 만들었습니다.', 'success')
+      await renderLibrary()
+    } catch (err) { showToast(err.message, 'error') }
+  })
+}
+
 async function renderLibrary() {
   if (state.currentLibraryTab === 'chat') {
     await renderChatSessions()
@@ -4090,12 +4239,19 @@ async function renderLibrary() {
 
   libraryGrid.innerHTML = ''
   libraryCategoryFilters.innerHTML = ''
+  if (libraryFolderFilters) libraryFolderFilters.innerHTML = ''
   try {
     let data
     if (state.currentLibraryTab === 'trash') {
       data = await fetchLibraryTrash(getTranslationOptions())
+      currentLibraryFolders = []
     } else {
-      data = await fetchLibrary(getTranslationOptions())
+      const [libraryData, folderData] = await Promise.all([
+        fetchLibrary(getTranslationOptions()),
+        fetchLibraryFolders(),
+      ])
+      data = libraryData
+      currentLibraryFolders = folderData.folders || []
     }
     const allDocs = data.documents || []
 
@@ -4119,6 +4275,8 @@ async function renderLibrary() {
       const isRead = doc.metadata?.read === true
       return state.currentLibraryTab === 'history' ? isRead : !isRead
     })
+
+    renderLibraryFolderFilters(docs)
 
     // 히스토리 탭인 경우 상단에 독서 현황 통계 요약 카드 렌더링
     if (state.currentLibraryTab === 'history') {
@@ -4152,7 +4310,7 @@ async function renderLibrary() {
       libraryStatsContainer.innerHTML = ''
     }
 
-    if (docs.length === 0) {
+    if (docs.length === 0 && currentLibraryFolders.length === 0) {
       libraryGrid.appendChild(createEmptyState(state.currentLibraryTab === 'history')); return
     }
 
@@ -4748,9 +4906,10 @@ function filterLibraryCards(docs) {
   })
 
   // Filter docs
-  const filteredDocs = activeCategoryFilter === 'ALL'
+  const categoryFilteredDocs = activeCategoryFilter === 'ALL'
     ? docs
     : docs.filter(doc => (doc.metadata?.categories || []).includes(activeCategoryFilter))
+  const filteredDocs = categoryFilteredDocs.filter(doc => folderMatches(doc))
 
   if (filteredDocs.length === 0) {
     libraryGrid.appendChild(createEmptyState(state.currentLibraryTab === 'history')); return
@@ -4805,6 +4964,7 @@ function exitLibrarySearch() {
   isLibrarySearchActive = false
   if (librarySearchStatus) librarySearchStatus.classList.add('hidden')
   if (libraryFilterRow) libraryFilterRow.style.display = 'flex'
+  if (libraryFolderBar && state.currentLibraryTab !== 'trash') libraryFolderBar.classList.remove('hidden')
   filterLibraryCards(currentLibraryDocs)
 }
 
@@ -4821,6 +4981,7 @@ if (librarySearchInput) {
     librarySearchDebounceTimer = setTimeout(() => {
       isLibrarySearchActive = true
       if (libraryFilterRow) libraryFilterRow.style.display = 'none'
+      if (libraryFolderBar) libraryFolderBar.classList.add('hidden')
       runLibrarySearch(query)
     }, 300)
   })
@@ -4869,6 +5030,10 @@ function prepareDocItemHtml(doc) {
 
   const displayTitle = (doc.metadata && doc.metadata.title) ? doc.metadata.title : doc.filename
   const isRead = doc.metadata?.read === true
+  const assignedFolder = currentLibraryFolders.find(folder => String(folder.id) === String(doc.folder_id))
+  const folderHtml = assignedFolder
+    ? `<span class="doc-folder-label">${icon('folder', 11)}${escapeHtml(assignedFolder.name)}</span>`
+    : ''
 
   let dateHtml = `<span class="doc-meta-chip">${date}</span>`
   if (isRead && doc.metadata?.read_at) {
@@ -4922,6 +5087,9 @@ function prepareDocItemHtml(doc) {
     ctaBtnFullHtml = `<button class="doc-restore-btn" data-id="${doc.id}"><span>복원</span>${icon('refreshCw', 15)}</button>`
   } else {
     iconActionsHtml = `
+      <button class="doc-folder-btn" data-id="${doc.id}" title="폴더로 이동">
+        ${icon('folder', 14)}
+      </button>
       <button class="doc-edit-btn" data-id="${doc.id}" title="제목 수정">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
       </button>
@@ -4936,12 +5104,20 @@ function prepareDocItemHtml(doc) {
     ctaBtnFullHtml = `<button class="doc-open-btn" data-id="${doc.id}"><span>열기</span>${openIcon}</button>`
   }
 
-  return { translated, total, pct, isDone, categories, tagsHtml, displayTitle, isRead, dateHtml, checkBtnHtml, compareCheckHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, ctaBtnFullHtml }
+  return { translated, total, pct, isDone, categories, tagsHtml, folderHtml, displayTitle, isRead, dateHtml, checkBtnHtml, compareCheckHtml, expandBtnHtml, progressHtml, iconActionsHtml, ctaBtnHtml, ctaBtnFullHtml }
 }
 
 // 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
 // 클래스명(.doc-card-check-btn, .doc-open-btn 등)만 맞으면 어떤 레이아웃이든 동작한다.
 function wireDocItemEvents(container, doc, displayTitle) {
+  const folderBtn = container.querySelector('.doc-folder-btn')
+  if (folderBtn) {
+    folderBtn.addEventListener('click', (event) => {
+      event.stopPropagation()
+      showMoveToFolderMenu(folderBtn, doc)
+    })
+  }
+
   const compareCheck = container.querySelector('.doc-card-compare-check')
   if (compareCheck) {
     setCompareCheckboxVisual(container, compareSelectedDocs.has(doc.id))
@@ -5129,6 +5305,7 @@ function createDocCard(doc) {
         ${d.checkBtnHtml}
       </div>
       <div class="doc-card-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
+      ${d.folderHtml}
       ${d.tagsHtml}
       <div class="doc-card-meta">
         ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
@@ -5172,6 +5349,7 @@ function createDocListRow(doc) {
     ${d.compareCheckHtml}
     ${d.checkBtnHtml}
     <div class="doc-list-title" title="${escapeHtml(doc.filename)}">${escapeHtml(d.displayTitle)}</div>
+    ${d.folderHtml}
     ${listTagsHtml}
     <div class="doc-card-meta">
       ${d.dateHtml}<span class="meta-dot"></span><span class="doc-meta-chip">${d.total}p</span>
@@ -6335,6 +6513,54 @@ function showCustomConfirm(message, { title = '확인', confirmText = '확인', 
         cleanup(false)
       }
     })
+  })
+}
+
+function showTextInputPrompt(title, message, initialValue = '') {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div')
+    modal.className = 'custom-confirm-modal-wrapper'
+    modal.innerHTML = `
+      <div class="custom-confirm-modal">
+        <div class="custom-confirm-modal-header">
+          ${icon('folder', 20)}
+          <span class="custom-confirm-modal-title">${escapeHtml(title)}</span>
+        </div>
+        <div class="custom-confirm-modal-body">
+          ${escapeHtml(message)}
+          <input class="custom-prompt-input" type="text" maxlength="60" value="${escapeHtml(initialValue)}" autocomplete="off">
+        </div>
+        <div class="custom-confirm-modal-footer">
+          <button class="custom-confirm-btn cancel-btn">취소</button>
+          <button class="custom-confirm-btn confirm-btn primary-btn">확인</button>
+        </div>
+      </div>`
+    document.body.appendChild(modal)
+    const input = modal.querySelector('.custom-prompt-input')
+    let settled = false
+    const cleanup = (value) => {
+      if (settled) return
+      settled = true
+      modal.classList.remove('active')
+      setTimeout(() => { modal.remove(); resolve(value) }, 200)
+    }
+    const submit = () => {
+      const value = input.value.trim()
+      if (!value) { input.focus(); return }
+      cleanup(value)
+    }
+    modal.querySelector('.cancel-btn').addEventListener('click', () => cleanup(null))
+    modal.querySelector('.confirm-btn').addEventListener('click', submit)
+    modal.addEventListener('click', event => { if (event.target === modal) cleanup(null) })
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); submit() }
+      if (event.key === 'Escape') { event.preventDefault(); cleanup(null) }
+    })
+    setTimeout(() => {
+      modal.classList.add('active')
+      input.focus()
+      input.select()
+    }, 10)
   })
 }
 

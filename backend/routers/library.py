@@ -8,6 +8,10 @@ from services.library import (
 )
 from pydantic import BaseModel
 import json
+from services.db import (
+    db_list_folders, db_create_folder, db_get_folder, db_rename_folder,
+    db_delete_folder, db_move_document_to_folder,
+)
 
 router = APIRouter()
 
@@ -17,6 +21,23 @@ from typing import Optional
 
 class CitationInsightRequest(BaseModel):
     surrounding_context: str = ""
+
+
+class FolderPayload(BaseModel):
+    name: str
+
+
+class MoveToFolderPayload(BaseModel):
+    folder_id: Optional[int] = None
+
+
+def _clean_folder_name(name: str) -> str:
+    cleaned = " ".join((name or "").strip().split())
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="폴더 이름을 입력하세요.")
+    if len(cleaned) > 60:
+        raise HTTPException(status_code=422, detail="폴더 이름은 60자 이하여야 합니다.")
+    return cleaned
 
 
 def _require_owned_document(doc_id: str, current_user: str, doc: Optional[dict] = None) -> dict:
@@ -77,6 +98,69 @@ async def search_library(q: str = "", current_user: str = Depends(get_current_us
     """
     docs = search_documents(current_user, q)
     return {"documents": docs, "total": len(docs)}
+
+
+# 이 경로들은 /library/{doc_id}보다 먼저 선언해야 "folders"가 문서 id로
+# 해석되지 않는다.
+@router.get("/library/folders")
+async def list_library_folders(current_user: str = Depends(get_current_user)):
+    folders = db_list_folders(current_user)
+    return {"folders": folders, "total": len(folders)}
+
+
+@router.post("/library/folders", status_code=201)
+async def create_library_folder(
+    payload: FolderPayload,
+    current_user: str = Depends(get_current_user),
+):
+    name = _clean_folder_name(payload.name)
+    folder = db_create_folder(current_user, name)
+    if not folder:
+        raise HTTPException(status_code=409, detail="같은 이름의 폴더가 이미 있습니다.")
+    return folder
+
+
+@router.put("/library/folders/{folder_id}")
+async def rename_library_folder(
+    folder_id: int,
+    payload: FolderPayload,
+    current_user: str = Depends(get_current_user),
+):
+    folder = db_get_folder(folder_id)
+    if not folder or folder.get("username") != current_user:
+        raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
+    name = _clean_folder_name(payload.name)
+    if not db_rename_folder(folder_id, current_user, name):
+        raise HTTPException(status_code=409, detail="같은 이름의 폴더가 이미 있습니다.")
+    return {"id": folder_id, "name": name}
+
+
+@router.delete("/library/folders/{folder_id}")
+async def delete_library_folder(
+    folder_id: int,
+    current_user: str = Depends(get_current_user),
+):
+    folder = db_get_folder(folder_id)
+    if not folder or folder.get("username") != current_user:
+        raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
+    db_delete_folder(folder_id, current_user)
+    return {"message": "폴더가 삭제되었으며 논문은 미분류로 이동했습니다."}
+
+
+@router.put("/library/{doc_id}/folder")
+async def move_library_document_to_folder(
+    doc_id: str,
+    payload: MoveToFolderPayload,
+    current_user: str = Depends(get_current_user),
+):
+    _require_owned_document(doc_id, current_user)
+    if payload.folder_id is not None:
+        folder = db_get_folder(payload.folder_id)
+        if not folder or folder.get("username") != current_user:
+            raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
+    if not db_move_document_to_folder(doc_id, current_user, payload.folder_id):
+        raise HTTPException(status_code=404, detail="문서 또는 폴더를 찾을 수 없습니다.")
+    return {"status": "success", "folder_id": payload.folder_id}
 
 
 @router.get("/library/{doc_id}")
