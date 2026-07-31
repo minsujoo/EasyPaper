@@ -3826,6 +3826,22 @@ body.light-theme .provider-picker-panel {
   outline: 2px dashed var(--accent-mid);
   outline-offset: -12px;
 }
+#library-screen.drag-over::after {
+  content: 'PDF를 놓아 업로드';
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  z-index: 15000;
+  padding: 18px 28px;
+  border: 1px solid var(--accent-mid);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  font-size: 15px;
+  font-weight: 750;
+  pointer-events: none;
+}
 
 /* ── Light Theme UI Overrides ── */
 

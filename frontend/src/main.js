@@ -474,6 +474,10 @@ function resetState() {
 }
 
 // ── 드래그 앤 드롭 ────────────────────────────────
+function isPdfFilename(name) {
+  return typeof name === 'string' && name.toLowerCase().endsWith('.pdf')
+}
+
 // libraryScreen에 직접 드래그 앤 드롭 이벤트 바인딩
 if (libraryScreen) {
   libraryScreen.addEventListener('dragover', (e) => { e.preventDefault(); libraryScreen.classList.add('drag-over') })
@@ -485,6 +489,64 @@ if (libraryScreen) {
     }
   })
 }
+
+// Tauri 데스크톱 WebView에서는 OS 파일 드롭을 네이티브 계층이 먼저 처리하므로
+// 위의 HTML5 drop 이벤트에 dataTransfer.files가 들어오지 않는다. Tauri가
+// 전달한 경로는 드롭 순간 해당 WebView의 asset scope에 자동 등록되므로,
+// asset protocol로 읽어서 기존 handleFiles()가 받는 표준 File 객체로 바꾼다.
+// 웹판에서는 __TAURI_INTERNALS__가 없으므로 이 리스너를 등록하지 않는다.
+async function filesFromTauriDropPaths(paths) {
+  const pdfPaths = (paths || []).filter(isPdfFilename)
+  if (pdfPaths.length === 0) return []
+  const { convertFileSrc } = await import('@tauri-apps/api/core')
+  const files = []
+  for (const path of pdfPaths) {
+    const response = await fetch(convertFileSrc(path))
+    if (!response.ok) throw new Error(`파일을 읽을 수 없습니다 (${response.status})`)
+    const blob = await response.blob()
+    const filename = path.split(/[\\/]/).pop() || 'paper.pdf'
+    files.push(new File([blob], filename, { type: 'application/pdf', lastModified: Date.now() }))
+  }
+  return files
+}
+
+async function setupTauriFileDrop() {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return
+  try {
+    const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+    await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
+      if (!libraryScreen?.classList.contains('active')) return
+      if (payload.type === 'enter') {
+        if ((payload.paths || []).some(isPdfFilename)) libraryScreen.classList.add('drag-over')
+        return
+      }
+      if (payload.type === 'over') return
+      if (payload.type === 'leave') {
+        libraryScreen.classList.remove('drag-over')
+        return
+      }
+      if (payload.type === 'drop') {
+        libraryScreen.classList.remove('drag-over')
+        try {
+          const files = await filesFromTauriDropPaths(payload.paths)
+          if (files.length === 0) {
+            showToast('PDF 파일만 업로드 가능합니다', 'error')
+            return
+          }
+          await handleFiles(files)
+        } catch (err) {
+          console.error('데스크톱 파일 드롭 처리 실패:', err)
+          showToast(`드롭한 파일을 읽지 못했습니다: ${err.message}`, 'error')
+        }
+      }
+    })
+  } catch (err) {
+    console.warn('데스크톱 파일 드롭 리스너 등록 실패:', err)
+  }
+}
+
+setupTauriFileDrop()
+
 fileInput.addEventListener('change', (e) => {
   if (e.target.files && e.target.files.length > 0) {
     handleFiles(e.target.files)
@@ -493,7 +555,7 @@ fileInput.addEventListener('change', (e) => {
 
 // ── 파일 처리 ─────────────────────────────────────
 async function handleFiles(files) {
-  const pdfFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.pdf'))
+  const pdfFiles = Array.from(files).filter(file => isPdfFilename(file.name))
   
   if (pdfFiles.length === 0) {
     showToast('PDF 파일만 업로드 가능합니다', 'error')
