@@ -8365,8 +8365,7 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
   const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
   const vtm = state.virtualTextMaps?.[pageNum]
   if (!pageWrapper || !vtm) return
-  const overlay = getOrCreateOverlay(pageWrapper)
-  overlay.querySelectorAll('.section-explain-btn').forEach(button => button.remove())
+  pageWrapper.querySelectorAll('.section-explain-btn').forEach(button => button.remove())
   const sections = getSectionsOnRenderedPage(vtm, pageNum)
 
   for (const section of sections) {
@@ -8375,18 +8374,19 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
     const anchor = rects[rects.length - 1]
     const button = document.createElement('button')
     button.type = 'button'
-    button.className = 'section-explain-btn'
-    button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
+    button.className = 'paper-explain-btn section-explain-btn'
+    button.innerHTML = icon('lightbulb', 15)
     button.title = `${section.title} 설명`
-    const preferredLeft = anchor.left + anchor.width + 8
-    button.style.left = `${Math.max(6, Math.min(textLayerDiv.clientWidth - 68, preferredLeft))}px`
-    button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 25) / 2))}px`
+    button.setAttribute('aria-label', `${section.title} 설명`)
+    button.style.left = `${textLayerDiv.clientWidth + 7}px`
+    button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 30) / 2))}px`
     button.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       if (button.disabled) return
       button.disabled = true
-      button.innerHTML = `${icon('refreshCw', 12)}<span>준비 중</span>`
+      button.innerHTML = icon('refreshCw', 15)
+      button.title = '설명 준비 중'
       try {
         const context = await buildInlineSectionContext(section)
         explainContext({
@@ -8402,22 +8402,25 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
       } finally {
         if (button.isConnected) {
           button.disabled = false
-          button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
+          button.innerHTML = icon('lightbulb', 15)
+          button.title = `${section.title} 설명`
         }
       }
     })
-    overlay.appendChild(button)
+    pageWrapper.appendChild(button)
   }
 }
 
 function renderImageOverlayLayer(textLayerDiv, pageNum) {
   const pageImages = (state.documentImages || []).filter(img => img.page === pageNum)
   const inner = textLayerDiv.parentElement
-  if (!inner) return
+  const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
+  if (!inner || !pageWrapper) return
 
   // Remove existing layer if any
   const oldLayer = inner.querySelector('.pdf-image-overlay-layer')
   if (oldLayer) oldLayer.remove()
+  pageWrapper.querySelectorAll('.pdf-figure-explain-btn').forEach(button => button.remove())
 
   if (pageImages.length === 0) return
 
@@ -8446,9 +8449,12 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
 
     const explainBtn = document.createElement('button')
     explainBtn.type = 'button'
-    explainBtn.className = 'pdf-figure-explain-btn'
-    explainBtn.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
+    explainBtn.className = 'paper-explain-btn pdf-figure-explain-btn'
+    explainBtn.innerHTML = icon('lightbulb', 15)
     explainBtn.title = `${imgPercent.label || '그림/표'} 설명`
+    explainBtn.setAttribute('aria-label', `${imgPercent.label || '그림/표'} 설명`)
+    explainBtn.style.left = 'calc(100% + 7px)'
+    explainBtn.style.top = `${imgPercent.top}%`
     explainBtn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -8471,7 +8477,7 @@ function renderImageOverlayLayer(textLayerDiv, pageNum) {
         showToast('설명할 영역을 캡처하지 못했습니다.', 'error')
       }
     })
-    overlay.appendChild(explainBtn)
+    pageWrapper.appendChild(explainBtn)
 
     overlay.addEventListener('click', (e) => {
       e.preventDefault()
@@ -9726,6 +9732,7 @@ const EXPLANATION_POPUP_DEFAULT_WIDTH = 480
 const EXPLANATION_POPUP_DEFAULT_HEIGHT = 520
 const EXPLANATION_POPUP_MIN_WIDTH = 340
 const EXPLANATION_POPUP_MIN_HEIGHT = 300
+const EXPLANATION_POPUP_RESIZE_HEADROOM = 120
 
 function loadExplanationPopupSize() {
   try {
@@ -9875,6 +9882,9 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   const viewerRect = viewerScrollContainer.getBoundingClientRect()
   const minVisibleLeft = viewerRect.left - wrapperRect.left + 12
   const maxVisibleLeft = viewerRect.right - wrapperRect.left - popupWidth - 12
+  // 우하단 손잡이를 바로 드래그해도 창을 키울 수 있도록 오른쪽에 여유 공간을
+  // 남긴다. 설명 아이콘이 페이지 오른쪽 레일에 있어도 팝업이 화면 끝에 붙지 않는다.
+  const maxResizableLeft = maxVisibleLeft - EXPLANATION_POPUP_RESIZE_HEADROOM
   const minVisibleTop = viewerRect.top - wrapperRect.top + 12
   const maxVisibleTop = viewerRect.bottom - wrapperRect.top - popupHeight - 12
   const desiredLeft = anchorX + 38
@@ -9884,7 +9894,10 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
   element.style.width = `${popupWidth}px`
   element.style.height = `${popupHeight}px`
   element.style.left = `${maxVisibleLeft >= minVisibleLeft
-    ? Math.min(maxVisibleLeft, Math.max(minVisibleLeft, desiredLeft))
+    ? Math.min(
+        maxVisibleLeft,
+        Math.max(minVisibleLeft, maxResizableLeft >= minVisibleLeft ? Math.min(maxResizableLeft, desiredLeft) : desiredLeft)
+      )
     : desiredLeft}px`
   element.style.top = `${maxVisibleTop >= minVisibleTop
     ? Math.min(maxVisibleTop, Math.max(minVisibleTop, desiredTop))
@@ -11614,14 +11627,18 @@ function renderSentenceOverlay(overlayEl, rects, boxClass) {
 
 function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
   if (!rects.length) return
-  overlayEl.querySelectorAll('.equation-explain-btn').forEach(el => el.remove())
+  const pageWrapper = overlayEl.closest('.pdf-page-wrapper')
+  if (!pageWrapper) return
+  pageWrapper.querySelectorAll('.equation-explain-btn').forEach(el => el.remove())
   const anchor = rects[rects.length - 1]
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = 'equation-explain-btn'
-  button.innerHTML = `${icon('lightbulb', 12)}<span>설명</span>`
-  button.style.left = `${Math.max(4, anchor.left + anchor.width - 82)}px`
-  button.style.top = `${anchor.top + anchor.height + 4}px`
+  button.className = 'paper-explain-btn equation-explain-btn'
+  button.innerHTML = icon('lightbulb', 15)
+  button.title = `수식 설명 · p.${pageNum}`
+  button.setAttribute('aria-label', `수식 설명 · p.${pageNum}`)
+  button.style.left = 'calc(100% + 7px)'
+  button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 30) / 2))}px`
   button.addEventListener('click', (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -11635,7 +11652,7 @@ function renderEquationExplainButton(overlayEl, rects, pageNum, sentenceRange) {
       anchorElement: button,
     })
   })
-  overlayEl.appendChild(button)
+  pageWrapper.appendChild(button)
 }
 
 // 오버레이 레이어에서 특정 클래스 상자들만 제거
@@ -11645,7 +11662,7 @@ function clearOverlayBoxes(overlayEl, ...classes) {
     overlayEl.querySelectorAll(`.${cls}`).forEach(b => b.remove());
   });
   if (classes.includes('sentence-active-box')) {
-    overlayEl.querySelectorAll('.equation-explain-btn').forEach(b => b.remove())
+    overlayEl.closest('.pdf-page-wrapper')?.querySelectorAll('.equation-explain-btn').forEach(b => b.remove())
   }
 }
 
@@ -12356,61 +12373,9 @@ function detectSentenceAtMouse(e) {
   return sRange ? { pageNum, sentenceRange: sRange } : null;
 }
 
-// 700ms 드웰 후 문장 전체를 자동 선택하고 선택 메뉴 표시하는 헬퍼
-function startDwellSelection(pageNum, sentenceRange) {
-  if (sentenceHoverTimer) { clearTimeout(sentenceHoverTimer); sentenceHoverTimer = null; }
-
-  sentenceHoverTimer = setTimeout(() => {
-    if (state.isSelectionDragging) return;
-    const curSel = window.getSelection();
-    if (curSel && !curSel.isCollapsed) return;
-
-    const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum];
-    if (!vtm) return;
-
-    const { nodeRanges } = vtm;
-    const srStart = sentenceRange.charStart;
-    const srEnd   = sentenceRange.charEnd;
-
-    // 시작 노드 찾기
-    let startNode = null, startOff = 0;
-    let endNode = null, endOff = 0;
-    for (const nr of nodeRanges) {
-      if (startNode === null && nr.end > srStart) {
-        startNode = nr.node;
-        startOff  = Math.max(0, srStart - nr.start);
-      }
-      if (nr.start < srEnd) {
-        endNode = nr.node;
-        endOff  = Math.min(nr.node.length, srEnd - nr.start);
-      }
-    }
-
-    if (startNode && endNode) {
-      try {
-        const range = document.createRange();
-        range.setStart(startNode, startOff);
-        range.setEnd(endNode, endOff);
-        curSel.removeAllRanges();
-        curSel.addRange(range);
-
-        state.hoverSelectedPageNum = pageNum;
-        state.hoverSelectedSentenceIdx = sentenceRange.sentenceIdx;
-
-        const selRect = range.getBoundingClientRect();
-        const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`);
-        const textLayerDiv = pw && pw.querySelector('.textLayer');
-        const hasExistingAnnotation = textLayerDiv
-          ? selectionOverlapsExistingAnnotation(range, textLayerDiv, pageNum)
-          : true;
-        showSelectionMenu(selRect, true, hasExistingAnnotation);
-      } catch(e) { /* no-op */ }
-    }
-  }, 700);
-}
-
 if (viewerScrollContainer) {
-  // mousemove: 드래그 상태 추적 + PDF textLayer 위에서 hover 감지
+  // mousemove: 드래그 상태 추적 + PDF/번역 문장 간 위치 대응용 hover 감지.
+  // 선택 메뉴는 hover로 만들지 않고 실제 텍스트 선택이 끝난 mouseup에서만 표시한다.
   viewerScrollContainer.addEventListener('mousemove', (e) => {
     // 드래그 상태 추적
     if (e.buttons === 0) {
@@ -12479,12 +12444,6 @@ if (viewerScrollContainer) {
 
     applyHoverHighlight(pageNum, sentenceRange);
 
-    // 700ms 드웰 선택 (수식 제외, 뷰어 설정에서 꺼져있지 않은 경우에만)
-    if (!annSpan && !state.hoverSelectionDisabled && !state.disableHoverTooltip) {
-      if (!sentenceRange.isEquation) {
-        startDwellSelection(pageNum, sentenceRange);
-      }
-    }
   });
 
   // mouseover: trans-sentence 호버 처리 (기존 방식 유지)

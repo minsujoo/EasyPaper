@@ -3973,27 +3973,37 @@ body.light-theme .chat-quote-area {
   border-color: rgba(126, 196, 232, 1.0);
   box-shadow: 0 0 3px rgba(126, 196, 232, 0.3);
 }
-.pdf-figure-explain-btn {
+.paper-explain-btn {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 6;
+  z-index: 31;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 999px;
-  background: rgba(23, 20, 38, 0.9);
-  color: #f0b94c;
-  font: 700 11px var(--font-sans);
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 65%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  color: var(--accent-mid);
   cursor: pointer;
   pointer-events: auto !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.pdf-figure-explain-btn:hover {
-  background: rgba(45, 39, 66, 0.98);
+.paper-explain-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-mid) 16%, var(--bg-panel));
+  color: var(--accent);
   transform: translateY(-1px);
+}
+.paper-explain-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+body.light-theme .paper-explain-btn {
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 4px 12px rgba(39, 66, 82, 0.16);
 }
 
 /* 드래그 중에는 transition을 꺼서 마우스 움직임에 박스가 지연 없이 붙어오게 함 */
@@ -5614,59 +5624,12 @@ body.light-theme .sentence-memo-box.color-red {
   border: 1px dashed rgba(59, 130, 246, 0.40);
 }
 .equation-explain-btn {
-  position: absolute;
-  z-index: 12;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 78px;
-  padding: 4px 7px;
-  border: 1px solid rgba(59, 130, 246, 0.55);
-  border-radius: 999px;
-  background: rgba(23, 20, 38, 0.94);
-  color: #93c5fd;
-  font: 700 10px var(--font-sans);
-  cursor: pointer;
-  pointer-events: auto !important;
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.25);
-}
-.equation-explain-btn:hover {
-  background: rgba(35, 52, 82, 0.98);
+  z-index: 31;
 }
 
-/* PDF 본문의 실제 섹션 제목 옆에 붙는 Moonlight 스타일 설명 진입점 */
+/* PDF 본문과 겹치지 않도록 원문/번역 패널 사이 여백에 배치하는 설명 진입점 */
 .section-explain-btn {
-  position: absolute;
-  z-index: 14;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 58px;
-  height: 25px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, #d99e2f 58%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  color: #d99e2f;
-  font: 700 10.5px var(--font-sans);
-  white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto !important;
-  box-shadow: 0 4px 13px rgba(0, 0, 0, 0.22);
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-.section-explain-btn:hover:not(:disabled) {
-  border-color: #f0b94c;
-  background: color-mix(in srgb, #d99e2f 16%, var(--bg-panel));
-  transform: translateY(-1px);
-}
-.section-explain-btn:disabled {
-  cursor: wait;
-  opacity: 0.7;
-}
-body.light-theme .section-explain-btn {
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 12px rgba(49, 41, 20, 0.14);
+  z-index: 31;
 }
 
 /* 설명 버튼을 누를 때마다 생성되는 독립 채팅 팝업. PDF 페이지를 기준으로
