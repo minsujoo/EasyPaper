@@ -5624,6 +5624,41 @@ body.light-theme .sentence-memo-box.color-red {
   background: rgba(35, 52, 82, 0.98);
 }
 
+/* PDF 본문의 실제 섹션 제목 옆에 붙는 Moonlight 스타일 설명 진입점 */
+.section-explain-btn {
+  position: absolute;
+  z-index: 14;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 86px;
+  height: 25px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, #d99e2f 58%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  color: #d99e2f;
+  font: 700 10.5px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto !important;
+  box-shadow: 0 4px 13px rgba(0, 0, 0, 0.22);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.section-explain-btn:hover:not(:disabled) {
+  border-color: #f0b94c;
+  background: color-mix(in srgb, #d99e2f 16%, var(--bg-panel));
+  transform: translateY(-1px);
+}
+.section-explain-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+body.light-theme .section-explain-btn {
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 12px rgba(49, 41, 20, 0.14);
+}
+
 /* 클릭 펄스 애니메이션 (오버레이 상자용) */
 @keyframes overlayPulse {
   0% { background-color: rgba(74, 135, 181, 0.50); }
