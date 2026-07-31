@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, getPDFPageText, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchLibraryReferenceInsight, downloadLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote } from './library.js'
 import { icon } from './icons.js'
 
 
@@ -9277,6 +9277,7 @@ let citationTooltipDocId = null
 let citationTooltipRefNum = null
 let citationTooltipBoxEl = null
 const citationResolveCache = new Map()
+const citationInsightCache = new Map()
 
 function buildScholarSearchUrl(refText) {
   return `https://scholar.google.com/scholar?q=${encodeURIComponent((refText || '').slice(0, 300))}`
@@ -9310,6 +9311,7 @@ function getOrCreateCitationTooltip() {
     <div class="citation-tooltip-result hidden"></div>
     <div class="citation-tooltip-actions">
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-explain-btn">${icon('lightbulb', 12, 'style="vertical-align:-2px;margin-right:4px"')}설명</button>
+      <button type="button" class="citation-tooltip-action-btn citation-tooltip-download-btn" disabled>${icon('download', 12, 'style="vertical-align:-2px;margin-right:4px"')}PDF 확인 중...</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-resolve-btn">${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기</button>
       <button type="button" class="citation-tooltip-action-btn citation-tooltip-scholar-btn">${icon('externalLink', 12, 'style="vertical-align:-2px;margin-right:4px"')}Google Scholar 검색</button>
     </div>
@@ -9355,6 +9357,35 @@ function getOrCreateCitationTooltip() {
       citationResolveCache.delete(`${citationTooltipDocId}:${citationTooltipRefNum}`)
     }
     resolveCitationTooltip()
+  })
+  el.querySelector('.citation-tooltip-download-btn').addEventListener('click', async (e) => {
+    e.stopPropagation()
+    if (!citationTooltipDocId || !citationTooltipRefNum) return
+    const button = e.currentTarget
+    const requestedDocId = citationTooltipDocId
+    const requestedRefNum = citationTooltipRefNum
+    button.disabled = true
+    button.innerHTML = `${icon('refreshCw', 12, 'style="vertical-align:-2px;margin-right:4px"')}다운로드 중...`
+    try {
+      const { blob, filename } = await downloadLibraryReference(requestedDocId, requestedRefNum)
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = filename
+      anchor.style.display = 'none'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000)
+      showToast(`인용 논문 다운로드를 시작했습니다: ${filename}`, 'success')
+    } catch (error) {
+      showToast(error.message || '인용 논문을 다운로드하지 못했습니다.', 'error')
+    } finally {
+      if (citationTooltipDocId === requestedDocId && citationTooltipRefNum === requestedRefNum) {
+        const result = citationResolveCache.get(`${requestedDocId}:${requestedRefNum}`)
+        updateCitationDownloadButton(result)
+      }
+    }
   })
   el.querySelector('.citation-tooltip-scholar-btn').addEventListener('click', (e) => {
     e.stopPropagation()
@@ -9418,6 +9449,9 @@ function showCitationTooltip(docId, refKeys, refMap, boxEl) {
   const resolveBtn = tooltip.querySelector('.citation-tooltip-resolve-btn')
   resolveBtn.disabled = false
   resolveBtn.innerHTML = `${icon('search', 12, 'style="vertical-align:-2px;margin-right:4px"')}원문 링크 찾기`
+  const downloadBtn = tooltip.querySelector('.citation-tooltip-download-btn')
+  downloadBtn.disabled = true
+  downloadBtn.innerHTML = `${icon('download', 12, 'style="vertical-align:-2px;margin-right:4px"')}PDF 확인 중...`
 
   tooltip.classList.remove('hidden')
   positionCitationTooltip()
@@ -9439,6 +9473,7 @@ function renderCitationResolvedResult(resultEl, result) {
   if (!result || !result.url) {
     resultEl.className = 'citation-tooltip-result citation-tooltip-result-empty'
     resultEl.textContent = '원문 링크를 찾지 못했습니다. Google Scholar 검색을 이용해보세요.'
+    updateCitationDownloadButton(null)
     return
   }
 
@@ -9457,10 +9492,73 @@ function renderCitationResolvedResult(resultEl, result) {
       <span class="citation-paper-title">${escapeHtml(titleLabel)}</span>
       ${authorsText ? `<span class="citation-paper-authors">${escapeHtml(authorsText)}</span>` : ''}
       ${meta ? `<span class="citation-paper-meta">${escapeHtml(meta)}</span>` : ''}
-      ${result.abstract ? `<span class="citation-paper-abstract">${escapeHtml(result.abstract)}</span>` : ''}
       <span class="citation-paper-open">${icon('externalLink', 12)} 원문 열기</span>
     </a>
+    <div class="citation-paper-insight">
+      <div class="citation-paper-insight-loading">
+        <span class="spinner" style="width:12px;height:12px;border-width:2px"></span>
+        <span>인용 이유와 논문 개요를 분석하는 중...</span>
+      </div>
+    </div>
   `
+  updateCitationDownloadButton(result)
+}
+
+function updateCitationDownloadButton(result) {
+  const button = citationTooltipEl?.querySelector('.citation-tooltip-download-btn')
+  if (!button) return
+  const downloadable = Boolean(result?.pdf_url)
+  button.disabled = !downloadable
+  button.innerHTML = downloadable
+    ? `${icon('download', 12, 'style="vertical-align:-2px;margin-right:4px"')}인용 논문 PDF 다운로드`
+    : `${icon('download', 12, 'style="vertical-align:-2px;margin-right:4px"')}공개 PDF 없음`
+  button.title = downloadable
+    ? '인용 논문 PDF를 내려받습니다'
+    : '무료로 다운로드 가능한 PDF 주소를 찾지 못했습니다'
+}
+
+function getCitationSurroundingContext(box) {
+  if (!box) return ''
+  const pageNum = parseInt(box.dataset.page || '0', 10)
+  const charStart = parseInt(box.dataset.charStart || '0', 10)
+  const charEnd = parseInt(box.dataset.charEnd || '0', 10)
+  const pageText = pageNum ? state.virtualTextMaps?.[pageNum]?.fullText || '' : ''
+  return pageText
+    ? pageText.slice(Math.max(0, charStart - 700), Math.min(pageText.length, charEnd + 700)).trim()
+    : ''
+}
+
+async function loadCitationInsight(docId, refNum, box) {
+  const insightEl = citationTooltipEl?.querySelector('.citation-paper-insight')
+  if (!insightEl) return
+  const surroundingContext = getCitationSurroundingContext(box)
+  const positionKey = `${box?.dataset.page || 0}:${box?.dataset.charStart || 0}:${box?.dataset.charEnd || 0}`
+  const cacheKey = `${docId}:${refNum}:${positionKey}`
+
+  if (citationInsightCache.has(cacheKey)) {
+    insightEl.innerHTML = formatChatHtml(citationInsightCache.get(cacheKey))
+    return
+  }
+  try {
+    const response = await fetchLibraryReferenceInsight(docId, refNum, surroundingContext)
+    const content = response?.content || ''
+    citationInsightCache.set(cacheKey, content)
+    if (citationTooltipDocId === docId && citationTooltipRefNum === refNum) {
+      const currentInsightEl = citationTooltipEl?.querySelector('.citation-paper-insight')
+      if (currentInsightEl) {
+        currentInsightEl.innerHTML = formatChatHtml(content)
+        positionCitationTooltip()
+      }
+    }
+  } catch (error) {
+    if (citationTooltipDocId === docId && citationTooltipRefNum === refNum) {
+      const currentInsightEl = citationTooltipEl?.querySelector('.citation-paper-insight')
+      if (currentInsightEl) {
+        currentInsightEl.innerHTML = `<span class="citation-paper-insight-error">${escapeHtml(error.message || '인용 관계를 분석하지 못했습니다.')}</span>`
+        positionCitationTooltip()
+      }
+    }
+  }
 }
 
 async function resolveCitationTooltip({ automatic = false } = {}) {
@@ -9470,9 +9568,12 @@ async function resolveCitationTooltip({ automatic = false } = {}) {
   const requestedDocId = citationTooltipDocId
   const requestedRefNum = citationTooltipRefNum
   const cacheKey = `${requestedDocId}:${requestedRefNum}`
+  const requestedBox = citationTooltipBoxEl
 
   if (citationResolveCache.has(cacheKey)) {
-    renderCitationResolvedResult(resultEl, citationResolveCache.get(cacheKey))
+    const cachedResult = citationResolveCache.get(cacheKey)
+    renderCitationResolvedResult(resultEl, cachedResult)
+    if (cachedResult) loadCitationInsight(requestedDocId, requestedRefNum, requestedBox)
     positionCitationTooltip()
     return
   }
@@ -9486,6 +9587,7 @@ async function resolveCitationTooltip({ automatic = false } = {}) {
     citationResolveCache.set(cacheKey, result || null)
     if (citationTooltipDocId !== requestedDocId || citationTooltipRefNum !== requestedRefNum) return
     renderCitationResolvedResult(resultEl, result)
+    if (result) loadCitationInsight(requestedDocId, requestedRefNum, requestedBox)
   } catch (e) {
     console.warn('참고문헌 조회 실패:', e)
     citationResolveCache.set(cacheKey, null)

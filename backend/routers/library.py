@@ -15,6 +15,10 @@ router = APIRouter()
 from typing import Optional
 
 
+class CitationInsightRequest(BaseModel):
+    surrounding_context: str = ""
+
+
 def _require_owned_document(doc_id: str, current_user: str, doc: Optional[dict] = None) -> dict:
     """문서가 존재하고 현재 로그인한 사용자 소유인지 확인한다.
 
@@ -354,13 +358,8 @@ async def get_library_references(doc_id: str, current_user: str = Depends(get_cu
     }
 
 
-@router.get("/library/{doc_id}/references/{ref_num}")
-async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str = Depends(get_current_user)):
-    """특정 번호의 참고문헌을 외부(OpenAlex, 가능하면 arXiv)에서
-    검색해 링크를 반환합니다. 결과(성공/실패 모두)는 캐시해 같은 항목을
-    반복 조회하지 않습니다."""
-    _require_owned_document(doc_id, current_user)
-
+async def _get_resolved_reference(doc_id: str, ref_num: str) -> dict:
+    """캐시를 우선 사용해 참고문헌 외부 메타데이터를 반환한다."""
     from services.library import get_page_insight, save_page_insight
 
     cached = get_page_insight(doc_id, 0, "reference_url", suffix=ref_num)
@@ -371,6 +370,19 @@ async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str
             data = {}
         if not data:
             raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
+        # v0.1.23 이전 캐시에는 pdf_url 필드가 없었다. arXiv 결과는 외부
+        # 재검색 없이도 기존 landing URL에서 공개 PDF 주소를 복원한다.
+        if "pdf_url" not in data:
+            import re
+            match = re.match(
+                r"^https?://(?:www\.)?arxiv\.org/abs/([^?#]+)",
+                data.get("url") or "",
+            )
+            data["pdf_url"] = f"https://arxiv.org/pdf/{match.group(1)}.pdf" if match else ""
+            save_page_insight(
+                doc_id, 0, "reference_url",
+                json.dumps(data, ensure_ascii=False), suffix=ref_num,
+            )
         return data
 
     ref_list_cached = get_page_insight(doc_id, 0, "reference_list")
@@ -392,6 +404,169 @@ async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str
     if not result:
         raise HTTPException(status_code=404, detail="외부에서 일치하는 논문을 찾지 못했습니다.")
     return result
+
+
+@router.get("/library/{doc_id}/references/{ref_num}/download")
+async def download_library_reference(
+    doc_id: str,
+    ref_num: str,
+    current_user: str = Depends(get_current_user),
+):
+    """오픈 액세스로 확인된 인용 논문 PDF를 내려받는다.
+
+    외부 URL은 OpenAlex 검색 결과에서만 얻고, 리다이렉트 단계마다 공인 HTTPS
+    주소인지 확인해 로컬 네트워크로의 SSRF를 막는다.
+    """
+    _require_owned_document(doc_id, current_user)
+    result = await _get_resolved_reference(doc_id, ref_num)
+    pdf_url = (result.get("pdf_url") or "").strip()
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="다운로드 가능한 공개 PDF를 찾지 못했습니다.")
+
+    import asyncio
+    import ipaddress
+    import re
+    import socket
+    from urllib.parse import quote, urljoin, urlparse
+    import httpx
+    from fastapi.responses import Response
+
+    async def ensure_public_https(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise HTTPException(status_code=400, detail="안전하지 않은 PDF 주소입니다.")
+
+        def resolve_addresses():
+            return socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+
+        try:
+            infos = await asyncio.to_thread(resolve_addresses)
+        except OSError:
+            raise HTTPException(status_code=502, detail="PDF 서버 주소를 확인할 수 없습니다.")
+        for info in infos:
+            address = ipaddress.ip_address(info[4][0])
+            if not address.is_global:
+                raise HTTPException(status_code=400, detail="안전하지 않은 PDF 주소입니다.")
+
+    max_bytes = 80 * 1024 * 1024
+    current_url = pdf_url
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            for _ in range(6):
+                await ensure_public_https(current_url)
+                response = await client.get(
+                    current_url,
+                    headers={"User-Agent": "EasyPaper/0.1 (research paper downloader)"},
+                )
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise HTTPException(status_code=502, detail="PDF 다운로드 주소가 올바르지 않습니다.")
+                    current_url = urljoin(current_url, location)
+                    continue
+                if response.status_code != 200:
+                    raise HTTPException(status_code=502, detail="인용 논문 PDF를 내려받지 못했습니다.")
+                content = response.content
+                if len(content) > max_bytes:
+                    raise HTTPException(status_code=413, detail="PDF 파일이 80MB를 초과합니다.")
+                if not content.startswith(b"%PDF"):
+                    raise HTTPException(status_code=502, detail="다운로드 결과가 PDF 파일이 아닙니다.")
+                break
+            else:
+                raise HTTPException(status_code=502, detail="PDF 다운로드 리다이렉트가 너무 많습니다.")
+    except HTTPException:
+        raise
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="인용 논문 PDF 서버에 연결하지 못했습니다.")
+
+    title = result.get("title") or f"reference-{ref_num}"
+    safe_ascii = re.sub(r"[^A-Za-z0-9._-]+", "_", title).strip("._")[:80] or f"reference-{ref_num}"
+    encoded = quote(f"{title[:120]}.pdf")
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{safe_ascii}.pdf\"; filename*=UTF-8''{encoded}"
+        },
+    )
+
+
+@router.post("/library/{doc_id}/references/{ref_num}/insight")
+async def get_library_reference_insight(
+    doc_id: str,
+    ref_num: str,
+    payload: CitationInsightRequest,
+    current_user: str = Depends(get_current_user),
+):
+    """현재 본문의 인용 주변 문맥과 인용 논문 초록을 함께 분석해, 인용 이유와
+    인용 논문 개요를 한국어로 생성한다."""
+    doc = _require_owned_document(doc_id, current_user)
+    from services.library import get_page_insight, save_page_insight
+    import hashlib
+
+    context = (payload.surrounding_context or "").strip()[:5000]
+    context_hash = hashlib.sha256(context.encode("utf-8")).hexdigest()[:12]
+    cache_suffix = f"{ref_num}:{context_hash}"
+    cached = get_page_insight(doc_id, 0, "reference_insight", suffix=cache_suffix)
+    if cached:
+        return {"content": cached}
+
+    result = await _get_resolved_reference(doc_id, ref_num)
+    ref_list_cached = get_page_insight(doc_id, 0, "reference_list") or "{}"
+    try:
+        reference_text = json.loads(ref_list_cached).get(ref_num, "")
+    except Exception:
+        reference_text = ""
+
+    system_prompt = """당신은 학술 논문의 인용 관계를 분석하는 연구 도우미입니다.
+제공된 현재 논문의 인용 주변 문맥과 인용 논문의 서지정보·초록만 근거로 답하세요.
+한국어로 간결하고 구체적으로 작성하며, 근거가 부족한 부분은 추측하지 말고
+'문맥만으로 단정하기 어렵습니다'라고 밝히세요."""
+    user_prompt = f"""[현재 읽는 논문]
+{(doc.get("metadata") or {}).get("title") or doc.get("filename", "")}
+
+[인용 주변 문맥]
+{context or "(주변 문맥 없음)"}
+
+[참고문헌 원문]
+{reference_text}
+
+[인용 논문 정보]
+제목: {result.get("title", "")}
+저자: {", ".join(result.get("authors") or [])}
+연도/학회: {result.get("year") or ""} / {result.get("venue") or ""}
+초록: {result.get("abstract") or "(초록 정보 없음)"}
+
+아래 두 제목을 정확히 사용해 각각 2~4문장으로 작성하세요.
+## 이 논문이 인용된 이유
+## 인용 논문 개요"""
+
+    from services.llm_client import stream_chat
+    chunks = []
+    try:
+        async for token in stream_chat(
+            system_prompt,
+            [{"role": "user", "content": user_prompt}],
+            session_id=f"citation-insight:{doc_id}:{ref_num}:{context_hash}",
+        ):
+            chunks.append(token)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"인용 관계 분석 실패: {str(exc)}")
+
+    content = "".join(chunks).strip()
+    if not content:
+        raise HTTPException(status_code=500, detail="인용 관계 분석 결과가 비어 있습니다.")
+    save_page_insight(doc_id, 0, "reference_insight", content, suffix=cache_suffix)
+    return {"content": content}
+
+
+@router.get("/library/{doc_id}/references/{ref_num}")
+async def resolve_library_reference(doc_id: str, ref_num: str, current_user: str = Depends(get_current_user)):
+    """특정 번호의 참고문헌을 외부(OpenAlex, 가능하면 arXiv)에서
+    검색해 링크를 반환합니다. 결과(성공/실패 모두)는 캐시해 같은 항목을
+    반복 조회하지 않습니다."""
+    _require_owned_document(doc_id, current_user)
+    return await _get_resolved_reference(doc_id, ref_num)
 
 
 @router.put("/library/{doc_id}/metadata")

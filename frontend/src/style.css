@@ -5924,6 +5924,8 @@ body.light-theme .citation-marker-box:hover {
   z-index: 200;
   width: 390px;
   max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: rgba(23, 20, 38, 0.97);
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
@@ -6013,16 +6015,6 @@ body.light-theme .citation-tooltip {
   font-size: 11.5px;
   line-height: 1.4;
 }
-.citation-paper-abstract {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  font-weight: 400;
-  line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
 .citation-paper-open {
   display: inline-flex;
   align-items: center;
@@ -6031,6 +6023,38 @@ body.light-theme .citation-tooltip {
   color: var(--control-accent);
   font-size: 11.5px;
   font-weight: 700;
+}
+.citation-paper-insight {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.citation-paper-insight h2 {
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.citation-paper-insight h2:first-child {
+  margin-top: 0;
+}
+.citation-paper-insight p {
+  margin: 0 0 6px;
+}
+.citation-paper-insight p:last-child {
+  margin-bottom: 0;
+}
+.citation-paper-insight-loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+}
+.citation-paper-insight-error {
+  color: var(--error);
 }
 .citation-tooltip-actions {
   display: flex;
