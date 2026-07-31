@@ -137,13 +137,26 @@ test('PDF 본문의 설명 버튼은 매번 새 팝업 세션을 만들고 점�
   expect(chatRequests[0].messages.at(-1).content).toContain('논리 전개')
 
   const before = await firstPopup.boundingBox()
+  expect(before.width).toBeGreaterThanOrEqual(470)
+  expect(before.height).toBeGreaterThanOrEqual(500)
+
+  const resizeBox = await firstPopup.locator('.explanation-popup-resize-handle').boundingBox()
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(resizeBox.x + 90, resizeBox.y + 65, { steps: 6 })
+  await page.mouse.up()
+  const resized = await firstPopup.boundingBox()
+  expect(resized.width).toBeGreaterThan(before.width)
+  expect(resized.height).toBeGreaterThan(before.height)
+  await expect(page.locator('.explanation-connector-svg path')).toHaveCount(1)
+
   const headerBox = await firstPopup.locator('.explanation-popup-header').boundingBox()
   await page.mouse.move(headerBox.x + 30, headerBox.y + 18)
   await page.mouse.down()
   await page.mouse.move(headerBox.x + 110, headerBox.y + 68, { steps: 6 })
   await page.mouse.up()
   const after = await firstPopup.boundingBox()
-  expect(after.x).not.toBe(before.x)
+  expect(after.x).not.toBe(resized.x)
 
   await sectionButton.click()
   await expect(page.locator('.explanation-popup')).toHaveCount(2)
