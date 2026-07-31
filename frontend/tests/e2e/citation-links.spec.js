@@ -95,6 +95,37 @@ test('인용 역할 설명을 누르면 영역 문맥이 고정되고 같은 문
   await expect(page.locator('#explanation-context-card')).not.toHaveClass(/hidden/)
 })
 
+test('PDF 본문의 섹션 제목 옆 설명 버튼에서 해당 섹션 설명을 바로 시작한다', async ({ page }) => {
+  const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
+  const chatRequests = []
+  await mockBaseRoutes(page, { documents: [docC] })
+  await page.route('**/api/library/doc-C/pdf', route =>
+    route.fulfill({ status: 200, contentType: 'application/pdf', body: SAMPLE_PDF_CITATION }))
+  await page.route('**/api/library/doc-C/references', route =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ references: { '1': 'Vaswani et al. Attention Is All You Need. 2017.' } }),
+    }))
+  await page.route('**/api/chat/stream', async route => {
+    chatRequests.push(route.request().postDataJSON())
+    await route.fulfill({ status: 200, contentType: 'text/plain', body: '이 섹션은 참고문헌 목록을 정리합니다.' })
+  })
+
+  await gotoApp(page)
+  await page.evaluate(() => { location.hash = '#viewer?id=doc-C' })
+
+  const sectionButton = page.locator('.section-explain-btn[title*="References"]').first()
+  await expect(sectionButton).toBeVisible()
+  await sectionButton.click()
+
+  await expect(page.locator('#explanation-context-kind')).toHaveText('섹션')
+  await expect(page.locator('#explanation-context-label')).toContainText('References')
+  await expect.poll(() => chatRequests.length).toBe(1)
+  expect(chatRequests[0].messages.at(-1).content).toContain('[섹션 제목]')
+  expect(chatRequests[0].messages.at(-1).content).toContain('References')
+  expect(chatRequests[0].messages.at(-1).content).toContain('논리 전개')
+})
+
 test('참고문헌 목록에 있는 번호의 본문 인용 표기만 클릭 가능한 오버레이가 생기고, 클릭하면 원문 텍스트와 함께 툴팁이 뜬다', async ({ page }) => {
   const docC = { id: 'doc-C', filename: 'Citation.pdf', total_pages: 1, metadata: { title: 'Citation Sample Paper' }, translated_pages: [] }
   await mockBaseRoutes(page, { documents: [docC] })

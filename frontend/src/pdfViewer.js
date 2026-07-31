@@ -308,6 +308,21 @@ export function setScale(s) { currentScale = s }
 export function getScale()  { return currentScale }
 export function getTotalPages() { return pdfDoc ? pdfDoc.numPages : 0 }
 
+/** 섹션 설명처럼 특정 페이지 범위의 원문이 필요할 때 사용하는 경량 텍스트 추출 */
+export async function getPDFPageText(pageNum) {
+  if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages) return ''
+  const page = await pdfDoc.getPage(pageNum)
+  const content = await page.getTextContent()
+  let text = ''
+  for (const item of content.items || []) {
+    if (!item?.str) continue
+    if (text && !/[\s-]$/.test(text) && !/^[,.;:!?)]/.test(item.str)) text += ' '
+    text += item.str
+    if (item.hasEOL) text += '\n'
+  }
+  return text.trim()
+}
+
 /** PDF.js 목차(Outline) 비동기 추출 함수 */
 export async function getPDFOutline() {
   if (!pdfDoc) return null

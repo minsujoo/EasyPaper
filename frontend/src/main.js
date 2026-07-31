@@ -2,7 +2,7 @@ import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
-import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, renderFigureCrop } from './pdfViewer.js'
+import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, getPDFPageText, renderFigureCrop } from './pdfViewer.js'
 import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote } from './library.js'
 import { icon } from './icons.js'
 
@@ -52,6 +52,8 @@ const state = {
   referenceMentions: {},       // 참고문헌 번호 -> 본문 제목/저자 언급 후보
   citationStyle: null,         // 'number' | 'author-year' | 'mixed' | null(미감지) - detectCitationStyle 결과
   referencesHeaderPageNum: null, // References/참고문헌 섹션이 시작되는 페이지 번호(감지 전엔 null)
+  pdfOutline: [],               // PDF 목차 원본
+  paperSections: [],            // 본문 인라인 설명 버튼용 평탄화 섹션 목록
   quotedImage: null,           // AI 질문 시 인용 이미지 보관용 (Base64)
   quotedImagePage: null,       // AI 질문 시 인용 이미지의 페이지 번호
   activeHighlightColor: '#eab308', // 기본 하이라이트 노란색
@@ -451,7 +453,7 @@ function resetState() {
     zoom: 1.5, translationCache: {}, translationSentences: {}, translatingPages: new Set(), translatedPages: new Set(), pollingTimer: null,
     chatHistory: [], chatActiveStream: null, quotedText: null, quotedImage: null, quotedImagePage: null,
     activeHighlightColor: '#eab308', activeUnderlineColor: '#ef4444', isCropMode: false, documentImages: [], referenceMap: {}, referenceMentions: {},
-    citationStyle: null, referencesHeaderPageNum: null
+    citationStyle: null, referencesHeaderPageNum: null, pdfOutline: [], paperSections: []
   })
   if (typeof toggleCropMode === 'function') toggleCropMode(false)
   viewerScrollContainer.innerHTML = ''
@@ -8187,6 +8189,214 @@ function _attachFigureOverlayResizeHandles(overlay, imgPercent, inner) {
   })
 }
 
+// ── 본문 섹션 제목 옆 설명 버튼 ──────────────────────
+// PDF에 목차가 있으면 목차 제목을 본문 텍스트와 대조해 정확한 시작점을 찾고,
+// 목차가 없는 논문은 번호/대표 학술 섹션명 + 상대 폰트 크기로 일반화해 감지한다.
+function stripSectionNumber(title) {
+  return String(title || '').replace(
+    /^\s*(?:(?:section|chapter)\s+)?(?:\d+(?:\.\d+)*|[IVXLCDM]+|[A-Z])(?:[.)]|\s+-)?\s+/i,
+    ''
+  ).trim()
+}
+
+function normalizedHeadingMap(text) {
+  const raw = String(text || '')
+  const normalized = []
+  const rawIndexes = []
+  for (let i = 0; i < raw.length; i++) {
+    const folded = raw[i].normalize('NFKC').toLocaleLowerCase()
+    for (const ch of folded) {
+      if (/[\p{L}\p{N}]/u.test(ch)) {
+        normalized.push(ch)
+        rawIndexes.push(i)
+      }
+    }
+  }
+  return { text: normalized.join(''), rawIndexes }
+}
+
+function normalizedHeading(title) {
+  return normalizedHeadingMap(title).text
+}
+
+function findHeadingRange(text, title, fromRaw = 0) {
+  const mapped = normalizedHeadingMap(text)
+  const candidates = [title, stripSectionNumber(title)]
+    .map(normalizedHeading)
+    .filter((value, idx, all) => value.length >= 3 && all.indexOf(value) === idx)
+    .sort((a, b) => b.length - a.length)
+  const fromIdx = mapped.rawIndexes.findIndex(idx => idx >= fromRaw)
+  const normalizedFrom = fromIdx === -1 ? mapped.text.length : fromIdx
+  for (const candidate of candidates) {
+    const idx = mapped.text.indexOf(candidate, Math.max(0, normalizedFrom))
+    if (idx === -1) continue
+    return {
+      charStart: mapped.rawIndexes[idx],
+      charEnd: mapped.rawIndexes[idx + candidate.length - 1] + 1,
+      normalizedEnd: idx + candidate.length,
+    }
+  }
+  return null
+}
+
+function flattenPaperOutline(items, depth = 0, target = []) {
+  for (const item of items || []) {
+    if (item.pageNum && item.title?.trim()) {
+      target.push({
+        id: `outline-${target.length}`,
+        outlineIndex: target.length,
+        title: item.title.trim(),
+        pageNum: item.pageNum,
+        depth,
+      })
+    }
+    flattenPaperOutline(item.items, depth + 1, target)
+  }
+  return target
+}
+
+function resolveOutlineSectionsOnPage(vtm, pageNum) {
+  const pageSections = (state.paperSections || []).filter(section => section.pageNum === pageNum)
+  if (!pageSections.length) return []
+  const resolved = []
+  let cursor = 0
+  for (const section of pageSections) {
+    const range = findHeadingRange(vtm.fullText, section.title, cursor)
+    if (!range) continue
+    resolved.push({ ...section, ...range, source: 'outline' })
+    cursor = range.charEnd
+  }
+  return resolved
+}
+
+const ACADEMIC_SECTION_HEADING_RE = /^(?:\d+(?:\.\d+)*[.)]?\s*)?(?:abstract|introduction|background|preliminar(?:y|ies)|related\s+work|literature\s+review|method(?:s|ology)?|approach|model|framework|implementation|experiment(?:s|al\s+setup)?|evaluation|results?|discussion|analysis|ablation(?:\s+study)?|limitations?|conclusion(?:s)?|future\s+work|acknowledg(?:e)?ments?|references|appendix)(?:\s|$)/i
+const NUMBERED_SECTION_HEADING_RE = /^(?:\d+(?:\.\d+)+|\d+[.)]|[IVXLCDM]+[.)])\s+\S/i
+
+function detectFallbackSectionsOnPage(vtm, pageNum) {
+  const fontSizes = vtm.spans.map(span => span.fontSize).sort((a, b) => a - b)
+  const median = fontSizes[Math.floor(fontSizes.length / 2)] || 10
+  const lines = new Map()
+  for (const span of vtm.spans) {
+    if (!lines.has(span.lineIndex)) lines.set(span.lineIndex, [])
+    lines.get(span.lineIndex).push(span)
+  }
+
+  const candidates = []
+  for (const spans of lines.values()) {
+    const title = spans.map(span => span.el.textContent.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+    if (!title || title.length > 120 || title.split(/\s+/).length > 16) continue
+    if (/^(?:fig(?:ure)?|table|algorithm|equation)\s+/i.test(title)) continue
+    const maxFont = Math.max(...spans.map(span => span.fontSize))
+    const isNamedSection = ACADEMIC_SECTION_HEADING_RE.test(title)
+    const isNumberedSection = NUMBERED_SECTION_HEADING_RE.test(title)
+    if ((!isNamedSection && !isNumberedSection) || maxFont < median * (isNamedSection ? 1.0 : 1.08)) continue
+    candidates.push({
+      id: `detected-${pageNum}-${candidates.length}`,
+      title,
+      pageNum,
+      depth: 0,
+      charStart: Math.min(...spans.map(span => span.charStart)),
+      charEnd: Math.max(...spans.map(span => span.charEnd)),
+      source: 'detected',
+    })
+  }
+  candidates.sort((a, b) => a.charStart - b.charStart)
+  return candidates
+}
+
+function getSectionsOnRenderedPage(vtm, pageNum) {
+  const outlineSections = resolveOutlineSectionsOnPage(vtm, pageNum)
+  const sections = outlineSections.length ? outlineSections : detectFallbackSectionsOnPage(vtm, pageNum)
+  return sections.map((section, idx) => ({
+    ...section,
+    nextOnPage: sections[idx + 1] || null,
+  }))
+}
+
+async function buildInlineSectionContext(section) {
+  const nextOutline = section.source === 'outline'
+    ? state.paperSections[section.outlineIndex + 1] || null
+    : section.nextOnPage
+  const endPage = Math.min(
+    state.totalPages,
+    nextOutline?.pageNum || section.pageNum + 3,
+    section.pageNum + 7
+  )
+  const chunks = [`[섹션 제목]\n${section.title}`]
+  let remaining = 18000
+
+  for (let pageNum = section.pageNum; pageNum <= endPage && remaining > 0; pageNum++) {
+    let pageText = state.virtualTextMaps?.[pageNum]?.fullText
+    if (!pageText) pageText = await getPDFPageText(pageNum)
+    if (!pageText) continue
+
+    let start = pageNum === section.pageNum ? section.charEnd : 0
+    let end = pageText.length
+    if (nextOutline && nextOutline.pageNum === pageNum) {
+      const nextRange = section.nextOnPage && nextOutline.id === section.nextOnPage.id
+        ? section.nextOnPage
+        : findHeadingRange(pageText, nextOutline.title, start)
+      if (nextRange?.charStart > start) end = nextRange.charStart
+    }
+    const part = pageText.slice(start, end).trim()
+    if (part) {
+      const clipped = part.slice(0, remaining)
+      chunks.push(`[p.${pageNum}]\n${clipped}`)
+      remaining -= clipped.length
+    }
+    if (nextOutline && nextOutline.pageNum === pageNum) break
+  }
+  return chunks.join('\n\n')
+}
+
+function renderSectionExplanationLayer(textLayerDiv, pageNum) {
+  const pageWrapper = textLayerDiv.closest('.pdf-page-wrapper')
+  const vtm = state.virtualTextMaps?.[pageNum]
+  if (!pageWrapper || !vtm) return
+  const overlay = getOrCreateOverlay(pageWrapper)
+  overlay.querySelectorAll('.section-explain-btn').forEach(button => button.remove())
+  const sections = getSectionsOnRenderedPage(vtm, pageNum)
+
+  for (const section of sections) {
+    const rects = getSentenceRects(section, vtm, textLayerDiv)
+    if (!rects.length) continue
+    const anchor = rects[rects.length - 1]
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'section-explain-btn'
+    button.innerHTML = `${icon('lightbulb', 12)}<span>섹션 설명</span>`
+    button.title = `${section.title} 설명`
+    const preferredLeft = anchor.left + anchor.width + 8
+    button.style.left = `${Math.max(6, Math.min(textLayerDiv.clientWidth - 92, preferredLeft))}px`
+    button.style.top = `${Math.max(4, anchor.top + Math.max(0, (anchor.height - 25) / 2))}px`
+    button.addEventListener('click', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (button.disabled) return
+      button.disabled = true
+      button.innerHTML = `${icon('refreshCw', 12)}<span>준비 중</span>`
+      try {
+        const context = await buildInlineSectionContext(section)
+        explainContext({
+          kind: 'section',
+          label: `${section.title} · p.${pageNum}`,
+          text: context,
+          pageNum,
+        })
+      } catch (err) {
+        console.warn('섹션 설명 문맥 준비 실패:', err)
+        showToast('섹션 내용을 불러오지 못했습니다.', 'error')
+      } finally {
+        if (button.isConnected) {
+          button.disabled = false
+          button.innerHTML = `${icon('lightbulb', 12)}<span>섹션 설명</span>`
+        }
+      }
+    })
+    overlay.appendChild(button)
+  }
+}
+
 function renderImageOverlayLayer(textLayerDiv, pageNum) {
   const pageImages = (state.documentImages || []).filter(img => img.page === pageNum)
   const inner = textLayerDiv.parentElement
@@ -11225,6 +11435,7 @@ function segmentPdfElements(container, pageNum) {
     if (pageWrapper) {
       const overlay = getOrCreateOverlay(pageWrapper);
       clearOverlayBoxes(overlay, 'sentence-hover-box', 'sentence-active-box', 'sentence-memo-box', 'sentence-equation-box', 'sentence-pulse-box');
+      renderSectionExplanationLayer(container, pageNum);
       // 메모 카드/하이라이트 재렌더링 - 바로 위에서 방금 sentence-memo-box를
       // 지웠기 때문에, segmentPdfElements를 호출하는 곳(번역 완료, 최초 텍스트
       // 레이어 렌더링 등) 어디서든 이 시점에 반드시 다시 그려줘야 한다. 예전에는
@@ -12361,7 +12572,17 @@ async function loadPDFOutline() {
   
   try {
     const outline = await getPDFOutline()
+    state.pdfOutline = outline || []
+    state.paperSections = flattenPaperOutline(state.pdfOutline)
     outlineContent.innerHTML = ''
+
+    // 텍스트 레이어가 목차보다 먼저 렌더링된 페이지도 있으므로, 목차를 받은
+    // 시점에 한 번 더 본문 섹션 버튼을 그린다. 목차가 없는 PDF는 폰트/제목
+    // 기반 폴백 감지가 그대로 실행된다.
+    document.querySelectorAll('.textLayer').forEach(textLayerDiv => {
+      const pageNum = parseInt(textLayerDiv.closest('.pdf-page-wrapper')?.dataset.page || '0', 10)
+      if (pageNum) renderSectionExplanationLayer(textLayerDiv, pageNum)
+    })
     
     if (!outline || outline.length === 0) {
       // 목차 메타데이터가 존재하지 않는 경우를 대비한 전체 페이지 리스트 폴백(Fallback) 렌더링
