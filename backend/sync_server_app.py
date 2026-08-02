@@ -201,28 +201,37 @@ class SyncStore:
                     and change.base_version not in (0, int(current["version"]))
                     and change.modified_at <= current["modified_at"]
                 )
-                if current and (is_stale_initial or is_stale_version):
-                        conn.execute(
-                            """
-                            INSERT INTO sync_conflicts
-                                (username, entity_type, entity_id, incoming_device,
-                                 incoming_modified_at, incoming_payload_json,
-                                 current_version, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                request.username,
-                                change.entity_type,
-                                change.entity_id,
-                                request.device_id,
-                                change.modified_at,
-                                payload_json,
-                                int(current["version"]),
-                                now,
-                            ),
-                        )
-                        conflicts.append(self._record_dict(current))
-                        continue
+                # Vault files must never use timestamp-based last-writer-wins:
+                # clock skew or a push race could otherwise discard one of two
+                # edits. The client turns the rejected body into a named
+                # conflict copy, so any version mismatch is recoverable.
+                is_vault_version_conflict = bool(
+                    current
+                    and change.entity_type == "vault_file"
+                    and change.base_version != int(current["version"])
+                )
+                if current and (is_stale_initial or is_stale_version or is_vault_version_conflict):
+                    conn.execute(
+                        """
+                        INSERT INTO sync_conflicts
+                            (username, entity_type, entity_id, incoming_device,
+                             incoming_modified_at, incoming_payload_json,
+                             current_version, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            request.username,
+                            change.entity_type,
+                            change.entity_id,
+                            request.device_id,
+                            change.modified_at,
+                            payload_json,
+                            int(current["version"]),
+                            now,
+                        ),
+                    )
+                    conflicts.append(self._record_dict(current))
+                    continue
 
                 version = 1 if current is None else int(current["version"]) + 1
                 values = (
@@ -441,7 +450,8 @@ def create_sync_app(
         path = store.file_path(sha256.lower())
         if not path.is_file():
             raise HTTPException(status_code=404, detail="파일이 없습니다.")
-        return FileResponse(path, media_type="application/pdf", filename=f"{sha256}.pdf")
+        # PDFs and arbitrary Vault assets share the content-addressed store.
+        return FileResponse(path, media_type="application/octet-stream", filename=sha256)
 
     return app
 

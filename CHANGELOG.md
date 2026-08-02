@@ -5,6 +5,7 @@ EasyPaper의 변경 이력입니다. 이 프로젝트는 커밋 해시 기반 �
 
 ## 2026-08-03
 
+- feat: Tailscale 중앙 서버를 통한 Obsidian Vault 전체 파일 자동 동기화와 충돌 사본 보존 추가
 - fix: Anki 자동 실행을 기본 해제하고 설정에서 명시적으로 켤 때만 시작하도록 변경
 - fix: UNIQUE 제약이 없는 신규 채팅 동기화에서 빈 `ON CONFLICT()` 절이 생성되던 오류 수정
 - feat: Ubuntu 중앙 서버와 Mac 클라이언트 사이의 Tailscale 전용 레코드·PDF 동기화 추가

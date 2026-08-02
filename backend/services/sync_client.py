@@ -483,6 +483,14 @@ _APPLY_PRIORITY = {
 
 def apply_remote_changes(changes: list[dict[str, Any]]) -> None:
     init_local_sync_schema()
+    # Vault files use their own manifest/cursor in services.vault_sync. If a
+    # generic record sync stored those records in local_sync_state, the next
+    # database scan would mistake them for removed DB rows and tombstone the
+    # entire Vault.
+    changes = [
+        change for change in changes
+        if change.get("entity_type") in _APPLY_PRIORITY
+    ]
     ordered = sorted(
         changes,
         key=lambda item: (

@@ -46,6 +46,8 @@ const DEFAULT_SETTINGS = {
   notePaths: {},
   pdfPaths: {},
   pdfHighlights: {},
+  vaultSyncEnabled: true,
+  vaultSyncIntervalSeconds: 300,
 };
 
 const AI_PROVIDER_CONFIG = [
@@ -1065,6 +1067,12 @@ class ResearchWorkspaceView extends ItemView {
         button.onclick = () => void this.navigate(route);
       });
     toolbar.createDiv('paper-workspace-spacer');
+    const vaultSync = toolbar.createEl('button', { text: 'Vault 동기화' });
+    vaultSync.onclick = async () => {
+      vaultSync.disabled = true;
+      try { await this.plugin.runVaultSync({ notice: true }); }
+      finally { vaultSync.disabled = false; }
+    };
     this.aiSettingsButton = toolbar.createEl('button', { text: 'AI 설정' });
     this.aiSettingsButton.onclick = () => new AISettingsModal(this.app, this.plugin, this).open();
     void this.refreshAIButtonLabel();
@@ -2500,6 +2508,29 @@ class ResearchWorkspaceSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl('h2', { text: '논문 연구 통합 설정' });
+    new Setting(containerEl)
+      .setName('Obsidian Vault 전체 자동 동기화')
+      .setDesc('노트·첨부파일·테마·플러그인을 중앙 서버를 통해 다른 기기와 자동으로 맞춥니다.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.vaultSyncEnabled !== false)
+        .onChange(async (enabled) => {
+          this.plugin.settings.vaultSyncEnabled = enabled;
+          await this.plugin.saveSettings();
+          this.plugin.configureVaultSync();
+          if (enabled) void this.plugin.runVaultSync({ notice: true });
+        }));
+    new Setting(containerEl)
+      .setName('Vault 동기화 주기')
+      .setDesc('최소 30초, 기본 300초입니다. 파일 변경 후에는 이 주기와 별도로 약 5초 뒤 동기화합니다.')
+      .addText((text) => text
+        .setValue(String(this.plugin.settings.vaultSyncIntervalSeconds || 300))
+        .onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.vaultSyncIntervalSeconds = Math.max(30, Math.min(86400, parsed));
+          await this.plugin.saveSettings();
+          this.plugin.configureVaultSync();
+        }));
     const fields = [
       ['연결 파일', 'connectionFile', '이미 실행 중인 로컬 엔진을 재사용할 때 읽는 연결 파일입니다.'],
       ['연구 엔진 실행 파일', 'backendExecutable', '플러그인이 직접 실행할 로컬 백엔드 파일입니다.'],
@@ -2534,6 +2565,8 @@ module.exports = class PaperResearchWorkspacePlugin extends Plugin {
     this.backendChild = null;
     this.backendStartPromise = null;
     this.currentDocId = null;
+    this.vaultSyncTimer = null;
+    this.vaultSyncInterval = null;
     addIcon(PAPER_RESEARCH_ICON, PAPER_RESEARCH_ICON_SVG);
     this.registerView(VIEW_TYPE, (leaf) => new ResearchWorkspaceView(leaf, this));
     // 이전 리본 항목은 Obsidian 사용자 지정에 숨김(false)으로 저장되어 있었다.
@@ -2554,6 +2587,7 @@ module.exports = class PaperResearchWorkspacePlugin extends Plugin {
       return true;
     }});
     this.addCommand({ id: 'sync-paper-notes', name: '생성된 논문 노트를 Vault와 동기화', callback: () => void this.syncAllNotes() });
+    this.addCommand({ id: 'sync-entire-vault', name: 'Obsidian Vault 전체를 지금 동기화', callback: () => void this.runVaultSync({ notice: true }) });
     this.addCommand({ id: 'export-current-note', name: '현재 논문 노트를 Vault로 내보내기', callback: () => void this.exportCurrentNote() });
     this.addCommand({ id: 'open-scholar', name: 'Scholar 열기', callback: () => void this.openRoute('#scholar') });
     this.addCommand({ id: 'open-research', name: '연구 탐색 열기', callback: () => void this.openRoute('#research') });
@@ -2573,10 +2607,20 @@ module.exports = class PaperResearchWorkspacePlugin extends Plugin {
         menu.addItem((item) => item.setTitle('논문 보관함으로 가져오기').setIcon('book-plus').onClick(() => void this.importPdf(file)));
       }
     }));
+    const scheduleVaultChange = () => this.scheduleVaultSync(5000);
+    this.registerEvent(this.app.vault.on('create', scheduleVaultChange));
+    this.registerEvent(this.app.vault.on('modify', scheduleVaultChange));
+    this.registerEvent(this.app.vault.on('delete', scheduleVaultChange));
+    this.registerEvent(this.app.vault.on('rename', scheduleVaultChange));
     this.addSettingTab(new ResearchWorkspaceSettingTab(this.app, this));
+    this.app.workspace.onLayoutReady(() => this.configureVaultSync());
   }
 
   onunload() {
+    if (this.vaultSyncTimer) window.clearTimeout(this.vaultSyncTimer);
+    if (this.vaultSyncInterval) window.clearInterval(this.vaultSyncInterval);
+    this.vaultSyncTimer = null;
+    this.vaultSyncInterval = null;
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
     if (this.backendChild && !this.backendChild.killed) {
       try { this.backendChild.kill('SIGTERM'); } catch (_) {}
@@ -2589,6 +2633,56 @@ module.exports = class PaperResearchWorkspacePlugin extends Plugin {
     this.backendChild = null;
   }
   async saveSettings() { await this.saveData(this.settings); }
+
+  configureVaultSync() {
+    if (this.vaultSyncTimer) window.clearTimeout(this.vaultSyncTimer);
+    if (this.vaultSyncInterval) window.clearInterval(this.vaultSyncInterval);
+    this.vaultSyncTimer = null;
+    this.vaultSyncInterval = null;
+    if (this.settings.vaultSyncEnabled === false) return;
+    this.scheduleVaultSync(8000);
+    const seconds = Math.max(30, Math.min(86400, Number(this.settings.vaultSyncIntervalSeconds) || 300));
+    this.vaultSyncInterval = window.setInterval(() => void this.runVaultSync(), seconds * 1000);
+  }
+
+  scheduleVaultSync(delay = 5000) {
+    if (this.settings.vaultSyncEnabled === false) return;
+    if (this.vaultSyncTimer) window.clearTimeout(this.vaultSyncTimer);
+    this.vaultSyncTimer = window.setTimeout(() => {
+      this.vaultSyncTimer = null;
+      void this.runVaultSync();
+    }, Math.max(500, delay));
+  }
+
+  async runVaultSync({ notice = false } = {}) {
+    if (this.settings.vaultSyncEnabled === false) {
+      if (notice) new Notice('Vault 전체 동기화가 설정에서 꺼져 있습니다.');
+      return { skipped: true, reason: 'disabled' };
+    }
+    const root = this.app.vault.adapter?.basePath;
+    if (!root) throw new Error('현재 Vault의 로컬 경로를 확인할 수 없습니다.');
+    let progress = null;
+    if (notice) progress = new Notice('Vault 전체를 동기화하는 중…', 0);
+    try {
+      const result = (await this.api('/api/sync/vault/run', {
+        method: 'POST',
+        json: { vault_root: root, scope: 'primary' },
+      })).json;
+      if (notice) {
+        progress?.hide();
+        if (result.skipped) new Notice('이미 Vault 동기화가 진행 중입니다.');
+        else new Notice(`Vault 동기화 완료 · 전송 ${result.pushed || 0} · 수신 ${result.pulled || 0} · 충돌 ${result.conflicts || 0}`);
+      } else if ((result.conflicts || 0) > 0) {
+        new Notice(`Vault 충돌 ${result.conflicts}건을 충돌 사본으로 보존했습니다.`);
+      }
+      return result;
+    } catch (error) {
+      progress?.hide();
+      if (notice) new Notice(`Vault 동기화 실패: ${error.message}`);
+      else console.warn('Vault sync failed', error);
+      return { error: error.message };
+    }
+  }
 
   async activateView() {
     let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];

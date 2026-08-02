@@ -76,6 +76,33 @@ def test_tombstone_retains_natural_key_payload(tmp_path):
     assert item["payload"]["id"] == "doc-1"
 
 
+def test_vault_file_version_mismatch_always_preserves_server_winner(tmp_path):
+    client, headers = _client(tmp_path)
+    initial = _push_payload(title="first")
+    initial["changes"][0].update({
+        "entity_type": "vault_file",
+        "entity_id": "vault-note",
+        "payload": {"scope": "primary", "path": "note.md", "sha256": "1" * 64},
+    })
+    first = client.post("/v1/push", headers=headers, json=initial).json()["accepted"][0]
+
+    concurrent = _push_payload(
+        modified_at="2026-08-04T01:00:00+00:00",
+        base_version=0,
+        title="ignored",
+    )
+    concurrent["device_id"] = "device-b"
+    concurrent["changes"][0].update({
+        "entity_type": "vault_file",
+        "entity_id": "vault-note",
+        "payload": {"scope": "primary", "path": "note.md", "sha256": "2" * 64},
+    })
+    result = client.post("/v1/push", headers=headers, json=concurrent).json()
+    assert result["accepted"] == []
+    assert result["conflicts"][0]["version"] == first["version"]
+    assert result["conflicts"][0]["payload"]["sha256"] == "1" * 64
+
+
 def test_content_addressed_file_upload_validates_hash(tmp_path):
     client, headers = _client(tmp_path)
     body = b"%PDF-test-sync"
@@ -90,6 +117,9 @@ def test_content_addressed_file_upload_validates_hash(tmp_path):
     assert uploaded.status_code == 200
     assert client.head(f"/v1/files/{digest}", headers=headers).status_code == 200
     assert client.get(f"/v1/files/{digest}", headers=headers).content == body
+    assert client.get(f"/v1/files/{digest}", headers=headers).headers["content-type"].startswith(
+        "application/octet-stream"
+    )
 
     bad = client.put("/v1/files/" + "0" * 64, headers=headers, content=body)
     assert bad.status_code == 400
