@@ -1,7 +1,7 @@
 import sqlite3
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 # DB_PATH 환경변수가 있으면 그대로 쓰고(Docker 등에서 데이터 볼륨 경로로
@@ -152,6 +152,129 @@ def init_db():
         )
         """)
 
+        # Scholar 추천 피드의 명시적 관심 신호. paper_json을 함께 보관해
+        # 긍정 평가한 외부 논문도 다음 추천의 관심사 문맥으로 재사용한다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_feedback (
+            username TEXT NOT NULL,
+            paper_id TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            paper_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (username, paper_id)
+        )
+        """)
+
+        # 추천 노출·열람·숨김 기록. 피드를 새로 열 때마다 같은 논문이 반복되는
+        # 문제를 막고, 마지막 방문 이후 Catch-up 범위를 계산하는 기반이다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_impressions (
+            username TEXT NOT NULL,
+            paper_id TEXT NOT NULL,
+            paper_json TEXT NOT NULL,
+            feed_mode TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            seen_count INTEGER NOT NULL DEFAULT 1,
+            opened_at TEXT,
+            hidden_at TEXT,
+            PRIMARY KEY (username, paper_id)
+        )
+        """)
+
+        # 공개 PDF 유무와 관계없이 외부 학술 레코드를 폴더에 보관한다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_bookmarks (
+            username TEXT NOT NULL,
+            paper_id TEXT NOT NULL,
+            paper_json TEXT NOT NULL,
+            folder_id INTEGER,
+            imported_doc_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (username, paper_id)
+        )
+        """)
+        try:
+            cursor.execute("ALTER TABLE scholar_bookmarks ADD COLUMN imported_doc_id TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_feed_state (
+            username TEXT PRIMARY KEY,
+            last_visit_at TEXT,
+            last_feed_at TEXT,
+            last_crawl_at TEXT,
+            crawl_interval_hours INTEGER NOT NULL DEFAULT 24
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_digest_cache (
+            username TEXT NOT NULL,
+            paper_id TEXT NOT NULL,
+            paper_json TEXT NOT NULL,
+            discovered_at TEXT NOT NULL,
+            publication_date TEXT,
+            PRIMARY KEY (username, paper_id)
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scholar_conference_watch (
+            username TEXT NOT NULL,
+            conference_id TEXT NOT NULL,
+            conference_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (username, conference_id)
+        )
+        """)
+
+        # 날짜별 논문 열람 기록. documents.metadata의 last_page는 문서별 마지막
+        # 위치만 알 수 있어 달력형 히스토리를 만들 수 없으므로, 날짜 단위 활동을
+        # 별도로 누적한다. activity_date는 사용자의 로컬 날짜를 클라이언트가
+        # 전달해 자정 전후에도 달력 날짜가 어긋나지 않게 한다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reading_activity (
+            username TEXT NOT NULL,
+            doc_id TEXT NOT NULL,
+            activity_date TEXT NOT NULL,
+            first_opened_at TEXT NOT NULL,
+            last_read_at TEXT NOT NULL,
+            last_page INTEGER NOT NULL,
+            furthest_page INTEGER NOT NULL,
+            total_pages INTEGER NOT NULL,
+            PRIMARY KEY (username, doc_id, activity_date),
+            FOREIGN KEY (doc_id) REFERENCES documents (id) ON DELETE CASCADE
+        )
+        """)
+
+        # 논문을 읽다가 수집한 영어 단어/구문 카드. Anki가 실행 중이 아니어도
+        # 먼저 로컬에 저장한 뒤 나중에 다시 동기화할 수 있도록 상태를 함께 둔다.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vocabulary_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            doc_id TEXT NOT NULL,
+            page_num INTEGER,
+            term TEXT NOT NULL,
+            normalized_term TEXT NOT NULL,
+            meaning_ko TEXT NOT NULL,
+            context_en TEXT NOT NULL,
+            context_ko TEXT NOT NULL,
+            paper_title TEXT NOT NULL DEFAULT '',
+            anki_note_id INTEGER,
+            anki_status TEXT NOT NULL DEFAULT 'pending',
+            anki_error TEXT,
+            obsidian_synced INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (doc_id) REFERENCES documents (id) ON DELETE CASCADE,
+            UNIQUE(username, doc_id, normalized_term)
+        )
+        """)
+
         # 라이브러리 목록/문서 조회가 doc_id(+suffix)로 translations를,
         # doc_id로 documents/page_insights/chats를 매번 훑는데(문서 수 x
         # 페이지 수만큼 뻥튀기됨) 인덱스가 없어 전부 풀스캔이었다. 목록
@@ -164,6 +287,15 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_notes_status ON paper_notes(status, updated_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_library_folders_username ON library_folders(username, name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(username, folder_id, is_deleted)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_feedback_user_rating ON scholar_feedback(username, rating, updated_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_impressions_user_seen ON scholar_impressions(username, last_seen_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_impressions_user_hidden ON scholar_impressions(username, hidden_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_bookmarks_user_folder ON scholar_bookmarks(username, folder_id, updated_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_digest_user_date ON scholar_digest_cache(username, discovered_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scholar_conference_watch_user ON scholar_conference_watch(username, created_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reading_activity_user_date ON reading_activity(username, activity_date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_user_updated ON vocabulary_cards(username, updated_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_anki_status ON vocabulary_cards(username, anki_status)")
 
         conn.commit()
 
@@ -234,6 +366,19 @@ def update_user_credentials(old_username: str, new_username: str, new_password_h
                     "UPDATE documents SET username = ? WHERE username = ?",
                     (new_username, old_username)
                 )
+                cursor.execute(
+                    "UPDATE reading_activity SET username = ? WHERE username = ?",
+                    (new_username, old_username)
+                )
+                for table in (
+                    "scholar_feedback", "scholar_impressions", "scholar_bookmarks",
+                    "scholar_feed_state", "scholar_digest_cache", "scholar_conference_watch",
+                    "vocabulary_cards",
+                ):
+                    cursor.execute(
+                        f"UPDATE {table} SET username = ? WHERE username = ?",
+                        (new_username, old_username),
+                    )
             conn.commit()
             return True
     except Exception:
@@ -354,9 +499,75 @@ def db_delete_document(doc_id: str) -> bool:
         # SQLite foreign_keys가 커넥션마다 활성화되지 않는 현재 구조에서는
         # ON DELETE CASCADE만 믿으면 노트가 고아 레코드로 남는다.
         cursor.execute("DELETE FROM paper_notes WHERE doc_id = ?", (doc_id,))
+        cursor.execute("DELETE FROM reading_activity WHERE doc_id = ?", (doc_id,))
         cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
         conn.commit()
         return True
+
+
+# ── 독서 활동 (Reading Activity) ─────────────────────────────────────────────
+
+def db_record_reading_activity(
+    username: str,
+    doc_id: str,
+    activity_date: str,
+    page: int,
+    total_pages: int,
+) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    page = max(1, int(page))
+    total_pages = max(page, int(total_pages or page))
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO reading_activity
+                (username, doc_id, activity_date, first_opened_at, last_read_at,
+                 last_page, furthest_page, total_pages)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(username, doc_id, activity_date) DO UPDATE SET
+                last_read_at = excluded.last_read_at,
+                last_page = excluded.last_page,
+                furthest_page = MAX(reading_activity.furthest_page, excluded.furthest_page),
+                total_pages = excluded.total_pages
+            """,
+            (username, doc_id, activity_date, now, now, page, page, total_pages),
+        )
+        conn.commit()
+    return {
+        "doc_id": doc_id,
+        "activity_date": activity_date,
+        "last_read_at": now,
+        "last_page": page,
+        "furthest_page": page,
+        "total_pages": total_pages,
+    }
+
+
+def db_list_reading_activity(username: str, year: int, month: int) -> List[dict]:
+    month_prefix = f"{year:04d}-{month:02d}"
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT a.doc_id, a.activity_date, a.first_opened_at, a.last_read_at,
+                   a.last_page, a.furthest_page, a.total_pages,
+                   d.filename, d.metadata, d.folder_id
+            FROM reading_activity a
+            JOIN documents d ON d.id = a.doc_id
+            WHERE a.username = ? AND a.activity_date LIKE ? AND d.is_deleted = 0
+            ORDER BY a.activity_date, a.last_read_at DESC
+            """,
+            (username, month_prefix + "%"),
+        )
+        activities = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            try:
+                item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else {}
+            except (json.JSONDecodeError, TypeError):
+                item["metadata"] = {}
+            activities.append(item)
+        return activities
 
 def db_soft_delete_document(doc_id: str) -> bool:
     with get_db() as conn:
@@ -853,6 +1064,337 @@ def db_update_document_metadata(doc_id: str, metadata: dict) -> None:
         conn.commit()
 
 
+# ── Scholar 추천 피드 평가 ───────────────────────────────────────────────────
+
+def db_set_scholar_feedback(username: str, paper_id: str, rating: int, paper: dict) -> dict:
+    """외부 논문에 대한 관심(1)/비관심(-1)을 저장하고 같은 값을 누르면 해제한다."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        current = conn.execute(
+            "SELECT rating FROM scholar_feedback WHERE username = ? AND paper_id = ?",
+            (username, paper_id),
+        ).fetchone()
+        if current and int(current["rating"]) == rating:
+            conn.execute(
+                "DELETE FROM scholar_feedback WHERE username = ? AND paper_id = ?",
+                (username, paper_id),
+            )
+            conn.commit()
+            return {"paper_id": paper_id, "rating": 0}
+        conn.execute(
+            """
+            INSERT INTO scholar_feedback (username, paper_id, rating, paper_json, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(username, paper_id) DO UPDATE SET
+              rating = excluded.rating,
+              paper_json = excluded.paper_json,
+              updated_at = excluded.updated_at
+            """,
+            (username, paper_id, rating, json.dumps(paper, ensure_ascii=False), now),
+        )
+        conn.commit()
+    return {"paper_id": paper_id, "rating": rating}
+
+
+def db_list_scholar_feedback(username: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT paper_id, rating, paper_json, updated_at
+            FROM scholar_feedback WHERE username = ? ORDER BY updated_at DESC
+            """,
+            (username,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            paper = json.loads(row["paper_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            paper = {}
+        result.append({
+            "paper_id": row["paper_id"], "rating": int(row["rating"]),
+            "paper": paper, "updated_at": row["updated_at"],
+        })
+    return result
+
+
+def db_record_scholar_impressions(
+    username: str, papers: list[dict], feed_mode: str
+) -> None:
+    if not papers:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        conn.executemany(
+            """
+            INSERT INTO scholar_impressions
+                (username, paper_id, paper_json, feed_mode, first_seen_at, last_seen_at, seen_count)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(username, paper_id) DO UPDATE SET
+                paper_json = excluded.paper_json,
+                feed_mode = excluded.feed_mode,
+                last_seen_at = excluded.last_seen_at,
+                seen_count = scholar_impressions.seen_count + 1
+            """,
+            [
+                (
+                    username, str(paper.get("id") or ""),
+                    json.dumps(paper, ensure_ascii=False), feed_mode, now, now,
+                )
+                for paper in papers if paper.get("id")
+            ],
+        )
+        conn.commit()
+
+
+def db_list_scholar_impressions(username: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT paper_id, paper_json, feed_mode, first_seen_at, last_seen_at,
+                   seen_count, opened_at, hidden_at
+            FROM scholar_impressions WHERE username = ?
+            ORDER BY last_seen_at DESC
+            """,
+            (username,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["paper"] = json.loads(item.pop("paper_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            item["paper"] = {}
+        result.append(item)
+    return result
+
+
+def db_set_scholar_interaction(username: str, paper_id: str, action: str) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    if action not in ("open", "hide", "unhide"):
+        raise ValueError("unsupported scholar interaction")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT paper_id FROM scholar_impressions WHERE username = ? AND paper_id = ?",
+            (username, paper_id),
+        ).fetchone()
+        if not row:
+            return {"paper_id": paper_id, "updated": False}
+        if action == "open":
+            conn.execute(
+                "UPDATE scholar_impressions SET opened_at = ? WHERE username = ? AND paper_id = ?",
+                (now, username, paper_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE scholar_impressions SET hidden_at = ? WHERE username = ? AND paper_id = ?",
+                (now if action == "hide" else None, username, paper_id),
+            )
+        conn.commit()
+    return {"paper_id": paper_id, "updated": True, "action": action}
+
+
+def db_set_scholar_bookmark(
+    username: str, paper_id: str, paper: dict, folder_id: Optional[int], saved: bool
+) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        if not saved:
+            conn.execute(
+                "DELETE FROM scholar_bookmarks WHERE username = ? AND paper_id = ?",
+                (username, paper_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO scholar_bookmarks
+                    (username, paper_id, paper_json, folder_id, imported_doc_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NULL, ?, ?)
+                ON CONFLICT(username, paper_id) DO UPDATE SET
+                    paper_json = excluded.paper_json,
+                    folder_id = excluded.folder_id,
+                    updated_at = excluded.updated_at
+                """,
+                (username, paper_id, json.dumps(paper, ensure_ascii=False), folder_id, now, now),
+            )
+        conn.commit()
+    return {"paper_id": paper_id, "saved": saved, "folder_id": folder_id}
+
+
+def db_list_scholar_bookmarks(
+    username: str, folder_id: Optional[int] = None
+) -> list[dict]:
+    query = """
+        SELECT paper_id, paper_json, folder_id, imported_doc_id, created_at, updated_at
+        FROM scholar_bookmarks WHERE username = ?
+    """
+    params: list[Any] = [username]
+    if folder_id is not None:
+        query += " AND folder_id = ?"
+        params.append(folder_id)
+    query += " ORDER BY updated_at DESC"
+    with get_db() as conn:
+        rows = conn.execute(query, params).fetchall()
+    result = []
+    for row in rows:
+        try:
+            paper = json.loads(row["paper_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            paper = {}
+        paper["bookmarked"] = True
+        paper["bookmark_folder_id"] = row["folder_id"]
+        paper["downloaded"] = bool(row["imported_doc_id"])
+        paper["saved_document_id"] = row["imported_doc_id"]
+        result.append({
+            "paper_id": row["paper_id"], "paper": paper,
+            "folder_id": row["folder_id"], "created_at": row["created_at"],
+            "updated_at": row["updated_at"], "imported_doc_id": row["imported_doc_id"],
+        })
+    return result
+
+
+def db_link_scholar_bookmark(username: str, paper_id: str, doc_id: str) -> None:
+    """다운로드가 끝난 외부 레코드와 라이브러리 문서를 하나의 상태로 묶는다."""
+    with get_db() as conn:
+        conn.execute(
+            """
+            UPDATE scholar_bookmarks SET imported_doc_id = ?, updated_at = ?
+            WHERE username = ? AND paper_id = ?
+            """,
+            (doc_id, datetime.now(timezone.utc).isoformat(), username, paper_id),
+        )
+        conn.commit()
+
+
+def db_set_scholar_conference_watch(
+    username: str, conference_id: str, conference: dict, watched: bool
+) -> dict:
+    with get_db() as conn:
+        if watched:
+            conn.execute(
+                """
+                INSERT INTO scholar_conference_watch
+                    (username, conference_id, conference_json, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username, conference_id) DO UPDATE SET
+                    conference_json = excluded.conference_json
+                """,
+                (username, conference_id, json.dumps(conference, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM scholar_conference_watch WHERE username = ? AND conference_id = ?",
+                (username, conference_id),
+            )
+        conn.commit()
+    return {"conference_id": conference_id, "watched": watched}
+
+
+def db_list_scholar_conference_watch(username: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT conference_id, conference_json, created_at
+            FROM scholar_conference_watch WHERE username = ? ORDER BY created_at DESC
+            """,
+            (username,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            conference = json.loads(row["conference_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            conference = {}
+        result.append({
+            "conference_id": row["conference_id"], "conference": conference,
+            "created_at": row["created_at"],
+        })
+    return result
+
+
+def db_get_scholar_feed_state(username: str) -> dict:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM scholar_feed_state WHERE username = ?", (username,)
+        ).fetchone()
+    return dict(row) if row else {
+        "username": username, "last_visit_at": None, "last_feed_at": None,
+        "last_crawl_at": None, "crawl_interval_hours": 24,
+    }
+
+
+def db_touch_scholar_feed(
+    username: str, *, visit: bool = True, crawl: bool = False
+) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO scholar_feed_state
+                (username, last_visit_at, last_feed_at, last_crawl_at, crawl_interval_hours)
+            VALUES (?, ?, ?, ?, 24)
+            ON CONFLICT(username) DO UPDATE SET
+                last_visit_at = CASE WHEN ? THEN excluded.last_visit_at ELSE scholar_feed_state.last_visit_at END,
+                last_feed_at = excluded.last_feed_at,
+                last_crawl_at = CASE WHEN ? THEN excluded.last_crawl_at ELSE scholar_feed_state.last_crawl_at END
+            """,
+            (username, now if visit else None, now, now if crawl else None, int(visit), int(crawl)),
+        )
+        conn.commit()
+    return db_get_scholar_feed_state(username)
+
+
+def db_save_scholar_digest_cache(username: str, papers: list[dict]) -> None:
+    if not papers:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as conn:
+        conn.executemany(
+            """
+            INSERT INTO scholar_digest_cache
+                (username, paper_id, paper_json, discovered_at, publication_date)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(username, paper_id) DO UPDATE SET
+                paper_json = excluded.paper_json,
+                discovered_at = excluded.discovered_at,
+                publication_date = excluded.publication_date
+            """,
+            [
+                (
+                    username, str(paper.get("id") or ""),
+                    json.dumps(paper, ensure_ascii=False), now,
+                    paper.get("publication_date") or None,
+                )
+                for paper in papers if paper.get("id")
+            ],
+        )
+        # 180일 이상 지난 발견 기록은 정리한다. 북마크·평가 데이터와는 별도다.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+        conn.execute(
+            "DELETE FROM scholar_digest_cache WHERE username = ? AND discovered_at < ?",
+            (username, cutoff),
+        )
+        conn.commit()
+
+
+def db_list_scholar_digest_cache(username: str, limit: int = 100) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT paper_json FROM scholar_digest_cache
+            WHERE username = ? ORDER BY publication_date DESC, discovered_at DESC LIMIT ?
+            """,
+            (username, limit),
+        ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            result.append(json.loads(row["paper_json"] or "{}"))
+        except (TypeError, json.JSONDecodeError):
+            continue
+    return result
+
+
 # ── 앱 내부 상태 (app_meta) ───────────────────────────────────────────────────
 
 def db_get_meta(key: str) -> Optional[str]:
@@ -872,3 +1414,132 @@ def db_set_meta(key: str, value: str) -> None:
             (key, value)
         )
         conn.commit()
+
+
+# ── 논문 단어장 ──────────────────────────────────────────────────────────────
+
+def db_list_vocabulary_cards(username: str) -> List[Dict[str, Any]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM vocabulary_cards WHERE username = ? ORDER BY updated_at DESC, id DESC",
+            (username,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def db_get_vocabulary_card(card_id: int, username: str) -> Optional[Dict[str, Any]]:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM vocabulary_cards WHERE id = ? AND username = ?",
+            (card_id, username),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def db_upsert_vocabulary_card(username: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    term = str(payload.get("term") or "").strip()
+    normalized = " ".join(term.casefold().split())
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO vocabulary_cards (
+                username, doc_id, page_num, term, normalized_term, meaning_ko,
+                context_en, context_ko, paper_title, anki_status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            ON CONFLICT(username, doc_id, normalized_term) DO UPDATE SET
+                page_num = excluded.page_num,
+                term = excluded.term,
+                meaning_ko = excluded.meaning_ko,
+                context_en = excluded.context_en,
+                context_ko = excluded.context_ko,
+                paper_title = excluded.paper_title,
+                anki_status = CASE WHEN vocabulary_cards.anki_note_id IS NULL THEN 'pending' ELSE vocabulary_cards.anki_status END,
+                anki_error = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (
+                username, payload["doc_id"], payload.get("page_num"), term, normalized,
+                str(payload.get("meaning_ko") or "").strip(),
+                str(payload.get("context_en") or "").strip(),
+                str(payload.get("context_ko") or "").strip(),
+                str(payload.get("paper_title") or "").strip(), now, now,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM vocabulary_cards WHERE username = ? AND doc_id = ? AND normalized_term = ?",
+            (username, payload["doc_id"], normalized),
+        ).fetchone()
+        conn.commit()
+    return dict(row)
+
+
+def db_update_vocabulary_sync(card_id: int, username: str, status: str, note_id: Optional[int] = None, error: Optional[str] = None) -> None:
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE vocabulary_cards
+               SET anki_status = ?, anki_note_id = COALESCE(?, anki_note_id),
+                   anki_error = ?, updated_at = ?
+               WHERE id = ? AND username = ?""",
+            (status, note_id, error, datetime.now(timezone.utc).isoformat(), card_id, username),
+        )
+        conn.commit()
+
+
+def db_mark_vocabulary_obsidian_synced(card_id: int, username: str) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE vocabulary_cards SET obsidian_synced = 1 WHERE id = ? AND username = ?",
+            (card_id, username),
+        )
+        conn.commit()
+
+
+def db_delete_vocabulary_card(card_id: int, username: str) -> bool:
+    with get_db() as conn:
+        cursor = conn.execute(
+            "DELETE FROM vocabulary_cards WHERE id = ? AND username = ?",
+            (card_id, username),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def db_import_obsidian_vocabulary_cards(username: str, cards: List[Dict[str, Any]]) -> int:
+    """외부 Obsidian 덱의 카드를 앱 단어장 목록에도 보이도록 미러링한다."""
+    now = datetime.now(timezone.utc).isoformat()
+    changed = 0
+    with get_db() as conn:
+        for card in cards:
+            term = str(card.get("term") or "").strip()
+            if not term:
+                continue
+            normalized = " ".join(term.casefold().split())
+            cursor = conn.execute(
+                """
+                INSERT INTO vocabulary_cards (
+                    username, doc_id, page_num, term, normalized_term, meaning_ko,
+                    context_en, context_ko, paper_title, anki_note_id, anki_status,
+                    anki_error, obsidian_synced, created_at, updated_at
+                ) VALUES (?, '__obsidian__', NULL, ?, ?, ?, ?, ?, 'Obsidian 단어장', ?, 'synced', NULL, 1, ?, ?)
+                ON CONFLICT(username, doc_id, normalized_term) DO UPDATE SET
+                    term = excluded.term,
+                    meaning_ko = excluded.meaning_ko,
+                    context_en = excluded.context_en,
+                    context_ko = excluded.context_ko,
+                    anki_note_id = COALESCE(excluded.anki_note_id, vocabulary_cards.anki_note_id),
+                    anki_status = 'synced',
+                    obsidian_synced = 1,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    username, term, normalized,
+                    str(card.get("meaning_ko") or "").strip(),
+                    str(card.get("context_en") or "").strip(),
+                    str(card.get("context_ko") or "").strip(),
+                    card.get("anki_note_id"), now, now,
+                ),
+            )
+            changed += 1 if cursor.rowcount else 0
+        conn.commit()
+    return changed

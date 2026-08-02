@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Request, Response, HTTPException, status, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
+import hmac
+import os
 import json
 import httpx
 from pydantic import BaseModel
@@ -11,6 +13,7 @@ from services.auth import (
     get_login_lockout_remaining,
     record_failed_login,
     reset_login_attempts,
+    SESSION_TTL_REMEMBER_SECONDS,
 )
 from config import (
     get_app_username,
@@ -27,6 +30,7 @@ from config import (
     get_gemini_api_key,
     get_claude_api_key,
     get_openalex_mailto,
+    get_semantic_scholar_api_key,
     get_translation_prompt_template,
     update_translation_prompt_template,
     get_agy_path,
@@ -69,6 +73,40 @@ async def _stream_subprocess_lines(proc):
                 pass
 
 router = APIRouter()
+
+
+@router.get("/auth/integration")
+async def integration_login(token: str, return_to: str = "/"):
+    """로컬 Obsidian 플러그인용 쿠키 부트스트랩 후 앱 화면으로 이동한다.
+
+    iframe의 첫 요청에는 Authorization 헤더를 주입할 수 없으므로 연결 파일의
+    실행별 토큰을 한 번 검증하고 기존 HttpOnly 세션 쿠키로 교환한다. 외부
+    URL로의 리다이렉트는 허용하지 않아 토큰/세션 유출을 막는다.
+    """
+    expected = os.getenv("EASYPAPER_INTEGRATION_TOKEN", "")
+    if not expected or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="통합 연결 토큰이 올바르지 않습니다.")
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return_to = "/"
+
+    session = create_session_token(get_app_username(), ttl_seconds=SESSION_TTL_REMEMBER_SECONDS)
+    response = RedirectResponse(return_to, status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(
+        key="integration_session",
+        value=session,
+        httponly=True,
+        max_age=SESSION_TTL_REMEMBER_SECONDS,
+        expires=SESSION_TTL_REMEMBER_SECONDS,
+        # Obsidian(Electron)의 app:// origin 안에 127.0.0.1 iframe으로 열리므로
+        # cross-site iframe 쿠키가 필요하다. Chromium은 localhost를 secure
+        # context로 취급하므로 Secure+SameSite=None 조합을 사용할 수 있다.
+        samesite="none",
+        secure=True,
+        path="/",
+    )
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 class LoginRequest(BaseModel):
     username: str
@@ -239,6 +277,7 @@ class SystemSettingsRequest(BaseModel):
     gemini_api_key: str = ""
     claude_api_key: str = ""
     openalex_mailto: str = ""
+    semantic_scholar_api_key: str | None = None
     translation_prompt_template: str = ""
 
 @router.get("/settings/system")
@@ -257,6 +296,9 @@ async def get_system_settings(current_user: str = Depends(get_current_user)):
         "gemini_api_key": get_gemini_api_key(),
         "claude_api_key": get_claude_api_key(),
         "openalex_mailto": get_openalex_mailto(),
+        # 검색 키 원문은 설정 조회 응답이나 브라우저 DOM으로 되돌려 보내지 않는다.
+        "semantic_scholar_api_key": "",
+        "semantic_scholar_api_key_set": bool(get_semantic_scholar_api_key()),
         "translation_prompt_template": get_translation_prompt_template()
     }
 
@@ -281,7 +323,12 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
         openai_api_key=data.openai_api_key.strip(),
         gemini_api_key=data.gemini_api_key.strip(),
         claude_api_key=data.claude_api_key.strip(),
-        openalex_mailto=data.openalex_mailto.strip()
+        openalex_mailto=data.openalex_mailto.strip(),
+        semantic_scholar_api_key=(
+            data.semantic_scholar_api_key.strip()
+            if data.semantic_scholar_api_key is not None
+            else get_semantic_scholar_api_key()
+        )
     )
     
     # 고급 설정: 번역 프롬프트 템플릿 저장
@@ -847,5 +894,3 @@ async def get_full_changelog(current_user: str = Depends(get_current_user)):
         return {"content": ""}
     with open(changelog_path, "r", encoding="utf-8") as f:
         return {"content": f.read()}
-
-

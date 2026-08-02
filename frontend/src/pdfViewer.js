@@ -126,7 +126,7 @@ export async function renderScrollView(container, zoom, { onPageVisible } = {}) 
       if (inner) inner.innerHTML = ''
 
       // 번역 블록 높이 동기화
-      const transBlock = w.parentElement?.querySelector('.trans-page-block')
+      const transBlock = container.ownerDocument.getElementById(`trans-block-${w.dataset.page}`)
       if (transBlock) {
         transBlock.style.height = `${height}px`
       }
@@ -236,7 +236,7 @@ async function _renderPage(wrapper, pageNum, generation) {
     wrapper.style.minHeight = ''
 
     // 번역 블록의 높이를 실제 렌더링된 PDF 높이와 동기화
-    const transBlock = wrapper.parentElement?.querySelector('.trans-page-block')
+    const transBlock = wrapper.ownerDocument.getElementById(`trans-block-${pageNum}`)
     if (transBlock) {
       transBlock.style.height = `${Math.floor(viewport.height)}px`
     }
@@ -295,7 +295,13 @@ async function _renderPage(wrapper, pageNum, generation) {
 /** 특정 페이지 wrapper로 스크롤 */
 export function scrollToPage(container, pageNum, { instant = false } = {}) {
   const el = container.querySelector(`[data-page="${pageNum}"]`)
-  if (el) el.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'start' })
+  if (!el) return
+  const elRect = el.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  container.scrollTo({
+    top: container.scrollTop + elRect.top - containerRect.top,
+    behavior: instant ? 'auto' : 'smooth',
+  })
 }
 
 /** 줌 변경 후 전체 재렌더링 */

@@ -18,6 +18,16 @@ def extract_pages(pdf_path: str) -> List[Dict[str, Any]]:
         pages.append(page_data)
 
     doc.close()
+
+    # PDF의 물리적 페이지 경계는 문장/문단 경계와 일치하지 않는다. 페이지 끝의
+    # 미완성 문장을 다음 페이지 첫 본문과 합쳐 한 번만 번역되게 한다. 각주와
+    # Figure/Table 캡션은 _extract_page에서 별도로 보관하므로 경계 판정에 섞이지 않는다.
+    _stitch_page_boundaries(pages)
+    for page in pages:
+        body = page.pop("_body_text", page.get("text", ""))
+        auxiliary = page.pop("_auxiliary_text", "")
+        page["text"] = _combine_body_and_auxiliary(body, auxiliary)
+        page["word_count"] = len(page["text"].split())
     return pages
 
 
@@ -56,14 +66,23 @@ def _extract_page(page: fitz.Page, page_num: int) -> Dict[str, Any]:
     else:
         sorted_blocks = sorted(blocks, key=lambda b: (b[1], b[0]))  # y, x 순 정렬
 
-    # 텍스트 정제
-    text_content = _build_text(sorted_blocks)
+    # 캡션/각주 같은 보조 텍스트가 두 컬럼 본문의 한 문장을 가로막지 않도록
+    # 본문과 분리해 조립한다. 보조 텍스트 자체는 버리지 않고 페이지 끝에 독립
+    # 문단으로 보존한다.
+    body_blocks, auxiliary_blocks = _partition_translation_blocks(
+        sorted_blocks, page.rect.height
+    )
+    body_text = _merge_incomplete_paragraphs(_build_text(body_blocks))
+    auxiliary_text = _build_text(auxiliary_blocks)
+    text_content = _combine_body_and_auxiliary(body_text, auxiliary_text)
 
     return {
         "page_num": page_num,
         "text": text_content,
         "is_two_column": is_two_column,
         "word_count": len(text_content.split()),
+        "_body_text": body_text,
+        "_auxiliary_text": auxiliary_text,
     }
 
 
@@ -234,6 +253,147 @@ def _build_text(blocks: list) -> str:
 
     raw = "\n\n".join(paragraphs)
     return clean_text_for_translation(raw)
+
+
+_TERMINAL_PUNCTUATION_RE = re.compile(r'[.!?][\s\*\"\'’”)]*$')
+_SECTION_HEADING_RE = re.compile(
+    r'^\*{0,2}\s*(?:\d+(?:\.\d+)*\.?|[IVXLCDM]+\.?)\s+[A-Z][^.!?]{0,100}\*{0,2}$',
+    re.IGNORECASE,
+)
+_FOOTNOTE_PREFIX_RE = re.compile(r'^\s*(?:[⋆★*†‡⋄⊠§¶]|\(\s*[†‡*]\s*\))')
+
+
+def _plain_markdown(text: str) -> str:
+    return re.sub(r'\*{1,2}', '', text or '').strip()
+
+
+def _is_caption_text(text: str) -> bool:
+    """Figure/Fig./Table 번호로 시작하는 실제 캡션인지 보수적으로 판별한다."""
+    plain = _plain_markdown(text)
+    return bool(_CAPTION_RE.match(plain))
+
+
+def _is_footnote_block(block: tuple, page_height: float) -> bool:
+    if len(block) < 5:
+        return False
+    text = _plain_markdown(block[4])
+    y0 = block[1]
+    # 저자 각주/교신저자 표시는 보통 하단에 있고 기호로 시작한다. 본문의 일반
+    # 불릿을 잘못 분리하지 않도록 페이지 아래쪽이라는 조건을 함께 사용한다.
+    if y0 < page_height * 0.72:
+        return False
+    return bool(_FOOTNOTE_PREFIX_RE.match(text)) or (
+        'corresponding author' in text.lower()
+        or 'equal contribution' in text.lower()
+    )
+
+
+def _partition_translation_blocks(blocks: list, page_height: float) -> tuple[list, list]:
+    body, auxiliary = [], []
+    for block in blocks:
+        text = block[4] if len(block) > 4 else ''
+        if _is_caption_text(text) or _is_footnote_block(block, page_height):
+            auxiliary.append(block)
+        else:
+            body.append(block)
+    return body, auxiliary
+
+
+def _is_heading_text(text: str) -> bool:
+    plain = _plain_markdown(text).strip()
+    if not plain or _is_caption_text(plain):
+        return True
+    if _SECTION_HEADING_RE.match(plain):
+        return True
+    return plain.lower() in {
+        'abstract', 'introduction', 'conclusion', 'conclusions',
+        'references', 'acknowledgement', 'acknowledgements',
+    }
+
+
+def _ends_complete(text: str) -> bool:
+    return bool(_TERMINAL_PUNCTUATION_RE.search((text or '').rstrip()))
+
+
+def _merge_incomplete_paragraphs(text: str) -> str:
+    """같은 페이지에서 PDF 블록 때문에 갈라진 미완성 본문 문단을 잇는다.
+
+    2단 논문의 Figure/각주 또는 PyMuPDF 블록 경계가 문장 중간에 끼는 경우를
+    대상으로 하며, 제목·캡션·완결 문장은 그대로 유지한다.
+    """
+    paragraphs = [p.strip() for p in re.split(r'\n{2,}', text or '') if p.strip()]
+    merged: list[str] = []
+    body_started = False
+    for paragraph in paragraphs:
+        plain = _plain_markdown(paragraph).strip()
+        if plain.lower() == 'abstract' or _SECTION_HEADING_RE.match(plain):
+            body_started = True
+        if (
+            merged
+            and body_started
+            and not _ends_complete(merged[-1])
+            and not _is_heading_text(merged[-1])
+            and not _is_heading_text(paragraph)
+        ):
+            merged[-1] = f"{merged[-1].rstrip()} {paragraph.lstrip()}"
+        else:
+            merged.append(paragraph)
+    return '\n\n'.join(merged)
+
+
+def _combine_body_and_auxiliary(body: str, auxiliary: str) -> str:
+    return '\n\n'.join(part for part in (body.strip(), auxiliary.strip()) if part)
+
+
+def _take_trailing_incomplete_sentence(text: str) -> tuple[str, str]:
+    """마지막 문단의 미완성 문장만 떼어 (남은 본문, 조각)으로 반환한다."""
+    paragraphs = [p.strip() for p in re.split(r'\n{2,}', text or '') if p.strip()]
+    if not paragraphs or _ends_complete(paragraphs[-1]) or _is_heading_text(paragraphs[-1]):
+        return text, ''
+
+    last = paragraphs[-1]
+    # 마지막 완결 문장 뒤만 이동한다. 괄호/인용부호가 마침표 뒤에 오는 경우도 포함.
+    boundaries = list(re.finditer(r'[.!?](?:[\*\"\'’”)]*)\s+', last))
+    if boundaries:
+        cut = boundaries[-1].end()
+        prefix, fragment = last[:cut].strip(), last[cut:].strip()
+        paragraphs[-1] = prefix
+    else:
+        fragment = last
+        paragraphs.pop()
+    return '\n\n'.join(p for p in paragraphs if p), fragment
+
+
+def _prepend_to_first_paragraph(text: str, fragment: str) -> str:
+    paragraphs = [p.strip() for p in re.split(r'\n{2,}', text or '') if p.strip()]
+    if not paragraphs:
+        return fragment.strip()
+    paragraphs[0] = f"{fragment.rstrip()} {paragraphs[0].lstrip()}"
+    return '\n\n'.join(paragraphs)
+
+
+def _stitch_page_boundaries(pages: List[Dict[str, Any]]) -> None:
+    """연속 페이지 사이에서 잘린 본문 문장을 다음 페이지에 완성한다."""
+    for index in range(len(pages) - 1):
+        current = pages[index]
+        following = pages[index + 1]
+        current_body = current.get('_body_text', current.get('text', ''))
+        next_body = following.get('_body_text', following.get('text', ''))
+        if not current_body.strip() or not next_body.strip():
+            continue
+
+        first_next = re.split(r'\n{2,}', next_body.strip(), maxsplit=1)[0]
+        if _is_heading_text(first_next):
+            continue
+        remaining, fragment = _take_trailing_incomplete_sentence(current_body)
+        if not fragment:
+            continue
+
+        # 지나치게 짧은 페이지 번호/수식 조각은 본문 문장으로 간주하지 않는다.
+        if len(re.sub(r'\W+', '', fragment)) < 3:
+            continue
+        current['_body_text'] = remaining
+        following['_body_text'] = _prepend_to_first_paragraph(next_body, fragment)
 
 
 def clean_text_for_translation(text: str) -> str:

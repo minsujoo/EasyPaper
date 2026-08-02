@@ -1,0 +1,57 @@
+name: macOS Intel Package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Build macOS Intel DMG
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build local backend sidecar
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+          packaging/build.sh
+
+      - name: Bundle backend sidecar
+        run: src-tauri/scripts/copy-sidecar.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop build dependencies
+        run: npm ci
+
+      - name: Build unsigned Intel DMG
+        run: >-
+          npm run tauri -- build --bundles dmg
+          --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload Intel DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-reader-macos-intel-${{ github.sha }}
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

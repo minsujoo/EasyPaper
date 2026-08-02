@@ -1,10 +1,16 @@
 import './style.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
+import { uploadPDF, checkHealth, streamTranslation, getJobStatus, getPageTranslation, loginAPI, logoutAPI, checkAuthAPI, changeCredentialsAPI, getSkipLoginAPI, setSkipLoginAPI, getSystemSettingsAPI, saveSystemSettingsAPI, getSyncSettingsAPI, saveSyncSettingsAPI, runSyncNowAPI, getSyncStatusAPI, restartJobAPI, streamPullModelAPI, streamChatAPI, clearTranslationCacheAPI, clearPagesCacheAPI, getChatHistoryAPI, cancelJobAPI, triggerSystemUpdateAPI, streamPageInsightAPI, getOllamaStatusAPI, streamInstallOllamaAPI, fetchCliAvailability, streamInstallClaudeCodeAPI, streamInstallCodexAPI, streamInstallAntigravityAPI, getUpdateCheckConfigAPI, setUpdateCheckConfigAPI, checkForUpdateAPI, getPostUpdateNoticeAPI, streamCompareChatAPI, getCompareChatHistoryAPI, getFullChangelogAPI, getChatSessionsAPI, getCompareChatSessionsAPI, getSuggestedQuestionsAPI } from './api.js'
 import { loadPDF, renderScrollView, scrollToPage, reRenderAll, getScale, getTotalPages, getPDFOutline, getPDFPageText, renderFigureCrop } from './pdfViewer.js'
-import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchLibraryReferenceInsight, downloadLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote, fetchLibraryFolders, createLibraryFolder, renameLibraryFolder, deleteLibraryFolder, moveLibraryDocToFolder } from './library.js'
+import { fetchLibrary, fetchLibraryDoc, deleteLibraryDoc, fetchLibraryTranslation, fetchLibraryDocImages, updateLibraryDocMetadata, saveReadingProgress, fetchReadingHistory, updateLibraryTranslation, fetchLibraryTrash, restoreLibraryDoc, emptyLibraryTrash, deleteLibraryDocPermanently, searchLibrary, searchAcademicPapers, fetchScholarFeed, rateScholarPaper, importScholarPaper, exportAnnotatedPdf, fetchLibraryReferences, resolveLibraryReference, fetchLibraryReferenceInsight, downloadLibraryReference, fetchPrimer, regeneratePrimer, fetchPaperNotes, fetchPaperNote, regeneratePaperNote, fetchLibraryFolders, createLibraryFolder, renameLibraryFolder, deleteLibraryFolder, moveLibraryDocToFolder, fetchVocabularyCards, suggestVocabularyCard, saveVocabularyCard, deleteVocabularyCard, syncVocabularyCards, fetchAnkiStatus, saveAnkiConfig, startVocabularyReview, revealVocabularyReview, answerVocabularyReview } from './library.js'
 import { icon } from './icons.js'
+
+// Obsidian 사용자 정의 탭 안에서 실행될 때도 동일한 SPA를 재사용한다. 부모
+// 플러그인은 해시 변경 알림으로 현재 논문을 파악해 Vault 노트 내보내기 같은
+// 네이티브 동작을 연결한다.
+const isObsidianEmbedded = new URLSearchParams(window.location.search).get('embedded') === 'obsidian'
+if (isObsidianEmbedded) document.documentElement.classList.add('obsidian-embedded')
 
 
 // ── 글로벌 API 인터셉터 (인증 만료/실패 대응) ─────────
@@ -186,6 +192,12 @@ const settingGeminiKey     = $('setting-gemini-key')
 const settingClaudeKey     = $('setting-claude-key')
 const settingOpenAlexMailto = $('setting-openalex-mailto')
 const settingChatSameAsTrans = $('setting-chat-same-as-trans')
+const settingSyncServerUrl = $('setting-sync-server-url')
+const settingSyncToken = $('setting-sync-token')
+const settingSyncInterval = $('setting-sync-interval')
+const settingSyncSaveBtn = $('setting-sync-save-btn')
+const settingSyncRunBtn = $('setting-sync-run-btn')
+const settingSyncStatus = $('setting-sync-status')
 
 // (provider/model selects are now custom ProviderModelPicker instances – see below)
 
@@ -224,7 +236,8 @@ const libTabHistory     = $('lib-tab-history')
 const libTabTrash       = $('lib-tab-trash')
 const libTabChat        = $('lib-tab-chat')
 const libTabAnnotations = $('lib-tab-annotations')
-const libTabNotes       = $('lib-tab-notes')
+const libTabPaperSearch = $('lib-tab-paper-search')
+const libTabVocabulary  = $('lib-tab-vocabulary')
 const libEmptyTrashBtn  = $('lib-empty-trash-btn')
 const libraryStatsContainer = $('library-stats-container')
 const librarySearchBox  = $('library-search-box')
@@ -238,6 +251,45 @@ const annotationSubtabHighlight = $('annotation-subtab-highlight')
 const annotationSubtabUnderline = $('annotation-subtab-underline')
 const annotationList            = $('annotation-list')
 const libraryNotesSection       = $('library-notes-section')
+const libraryContentSwitch      = $('library-content-switch')
+const libraryContentSwitchBtns  = document.querySelectorAll('.library-content-switch-btn')
+const libraryHistorySection     = $('library-history-section')
+const readingCalendarTitle      = $('reading-calendar-title')
+const readingCalendarGrid       = $('reading-calendar-grid')
+const readingCalendarPrev       = $('reading-calendar-prev')
+const readingCalendarNext       = $('reading-calendar-next')
+const readingCalendarToday      = $('reading-calendar-today')
+const readingDayHeading         = $('reading-day-heading')
+const readingDayList            = $('reading-day-list')
+const paperSearchSection        = $('paper-search-section')
+const libraryVocabularySection  = $('library-vocabulary-section')
+const vocabularyList            = $('vocabulary-list')
+const vocabularySyncBtn         = $('vocabulary-sync-btn')
+const vocabularySettingsBtn     = $('vocabulary-settings-btn')
+const vocabularyReviewBtn       = $('vocabulary-review-btn')
+const ankiConnectionBadge       = $('anki-connection-badge')
+const paperSearchForm           = $('paper-search-form')
+const paperSearchInput          = $('paper-search-input')
+const paperSearchYearFrom       = $('paper-search-year-from')
+const paperSearchYearTo         = $('paper-search-year-to')
+const paperSearchSort           = $('paper-search-sort')
+const paperSearchOpenAccess     = $('paper-search-open-access')
+const paperSearchSubmit         = $('paper-search-submit')
+const paperSearchLoading        = $('paper-search-loading')
+const paperSearchError          = $('paper-search-error')
+const paperSearchOutput         = $('paper-search-output')
+const paperSearchAnswerText     = $('paper-search-answer-text')
+const paperSearchAiBadge        = $('paper-search-ai-badge')
+const paperSearchQueryMeta      = $('paper-search-query-meta')
+const paperSearchResultCount    = $('paper-search-result-count')
+const paperSearchResults        = $('paper-search-results')
+const paperSearchHero           = $('paper-search-hero')
+const paperSearchResultTitle    = $('paper-search-result-title')
+const scholarFeedIntro          = $('scholar-feed-intro')
+const scholarFeedTitle          = $('scholar-feed-title')
+const scholarFeedDescription    = $('scholar-feed-description')
+const scholarFolderSelect       = $('scholar-folder-select')
+const scholarRefreshBtn         = $('scholar-refresh-btn')
 const paperNoteList             = $('paper-note-list')
 const notesRefreshBtn           = $('notes-refresh-btn')
 const paperNoteModalBody        = $('paper-note-modal-body')
@@ -297,7 +349,11 @@ const resumeTransBtn    = $('resume-trans-btn')
 const backBtn           = $('back-btn')
 const logoBtn           = $('logo-btn')
 const viewerReadToggleBtn = $('viewer-read-toggle-btn')
+const viewerBookmarkBtn   = $('viewer-bookmark-btn')
+const viewerBookmarkText  = $('viewer-bookmark-text')
 const viewerScrollContainer = $('viewer-scroll-container')
+const pdfScrollContainer = $('pdf-scroll-column')
+const translationScrollContainer = $('translation-scroll-column')
 const progressMini          = $('translation-progress-mini')
 const progressMiniBar       = $('progress-mini-bar')
 const progressMiniText      = $('progress-mini-text')
@@ -451,7 +507,7 @@ function resetState() {
   // 폴링 중단
   if (state.pollingTimer) { clearInterval(state.pollingTimer); state.pollingTimer = null }
   if (state.chatActiveStream) { state.chatActiveStream(); state.chatActiveStream = null }
-  for (const popup of state.explanationPopups.values()) popup.abort?.()
+  for (const popup of [...state.explanationPopups.values()]) closeExplanationPopup(popup)
   
   Object.assign(state, {
     sessionId: null, filename: null, title: null, totalPages: 0, currentPage: 1,
@@ -462,7 +518,8 @@ function resetState() {
     citationStyle: null, referencesHeaderPageNum: null, pdfOutline: [], paperSections: []
   })
   if (typeof toggleCropMode === 'function') toggleCropMode(false)
-  viewerScrollContainer.innerHTML = ''
+  pdfScrollContainer.innerHTML = ''
+  translationScrollContainer.innerHTML = ''
   if (uploadPopup) uploadPopup.classList.add('hidden')
   progressMini.classList.add('hidden')
   
@@ -659,12 +716,7 @@ async function handleFiles(files) {
 
 // ── 스크롤 뷰어 초기화 ────────────────────────────
 // ── 페이지 쌍 생성 ────────────────────────────────
-function createPagePair(pageNum) {
-  const pair = document.createElement('div')
-  pair.className = 'page-pair'
-  pair.dataset.page = pageNum
-
-  // 좌측: PDF wrapper
+function createPageColumns(pageNum) {
   const pdfWrapper = document.createElement('div')
   pdfWrapper.className = 'pdf-page-wrapper'
   pdfWrapper.dataset.page = pageNum
@@ -679,9 +731,7 @@ function createPagePair(pageNum) {
   const transBlock = createTransBlock(pageNum)
   transBlock.style.height = `${initialHeight}px`
 
-  pair.appendChild(pdfWrapper)
-  pair.appendChild(transBlock)
-  return pair
+  return { pdfWrapper, transBlock }
 }
 
 // 번역 모드가 'pane'일 때, 번역 창이 펼쳐진 시점에 전체 문서 백그라운드 번역
@@ -702,73 +752,82 @@ async function ensureTranslationJobStarted() {
 }
 
 // ── 스크롤 뷰어 초기화 ────────────────────────────
+let translationPageObserver = null
+
+async function ensureTranslationPageLoaded(pageNum) {
+  if (state.translationCache[pageNum]) {
+    if (state.translationCache[pageNum] !== '__fetching__') {
+      renderTransContent(pageNum, state.translationCache[pageNum], true)
+    }
+    return
+  }
+  if (state.translatedPages.has(pageNum)) {
+    state.translationCache[pageNum] = '__fetching__'
+    const currentSessionId = state.sessionId
+    try {
+      const res = await fetchLibraryTranslation(currentSessionId, pageNum, getTranslationOptions())
+      state.translationCache[pageNum] = res.translation
+      state.translationSentences[pageNum] = res.sentences || []
+      if (state.sessionId === currentSessionId) renderTransContent(pageNum, res.translation, true)
+    } catch (err) {
+      console.warn(`Failed to lazy load translation for page ${pageNum}:`, err)
+      delete state.translationCache[pageNum]
+      renderPageMemos(pageNum)
+    }
+  } else if (getTranslationMode() === 'scroll') {
+    translatePage(pageNum)
+  }
+}
+
+async function prefetchTranslationPage(pageNum) {
+  if (pageNum > state.totalPages || state.translationCache[pageNum]) return
+  if (state.translatedPages.has(pageNum)) {
+    state.translationCache[pageNum] = '__fetching__'
+    const currentSessionId = state.sessionId
+    fetchLibraryTranslation(currentSessionId, pageNum, getTranslationOptions()).then(res => {
+      if (state.sessionId === currentSessionId) {
+        state.translationCache[pageNum] = res.translation
+        state.translationSentences[pageNum] = res.sentences || []
+        renderTransContent(pageNum, res.translation, true)
+      }
+    }).catch(() => {
+      if (state.sessionId === currentSessionId) {
+        delete state.translationCache[pageNum]
+        renderPageMemos(pageNum)
+      }
+    })
+  } else if (getTranslationMode() === 'scroll') {
+    translatePage(pageNum)
+  }
+}
+
 async function initScrollViewer() {
-  viewerScrollContainer.innerHTML = ''
+  pdfScrollContainer.innerHTML = ''
+  translationScrollContainer.innerHTML = ''
 
   for (let i = 1; i <= state.totalPages; i++) {
-    viewerScrollContainer.appendChild(createPagePair(i))
+    const { pdfWrapper, transBlock } = createPageColumns(i)
+    pdfScrollContainer.appendChild(pdfWrapper)
+    translationScrollContainer.appendChild(transBlock)
   }
 
-  await renderScrollView(viewerScrollContainer, state.zoom, {
+  await renderScrollView(pdfScrollContainer, state.zoom, {
     onPageVisible: async (pageNum) => {
       updatePageDisplay(pageNum)
-      
-      // 페이지가 가시화되었을 때 번역 완료된 페이지인데 캐시가 없는 경우 레이지 로딩 적용
-      if (state.translationCache[pageNum]) {
-        if (state.translationCache[pageNum] !== '__fetching__') {
-          renderTransContent(pageNum, state.translationCache[pageNum], true)
-        }
-      } else if (state.translatedPages.has(pageNum)) {
-        state.translationCache[pageNum] = '__fetching__'
-        const currentSessionId = state.sessionId
-        try {
-          const opts = getTranslationOptions()
-          const res = await fetchLibraryTranslation(currentSessionId, pageNum, opts)
-          state.translationCache[pageNum] = res.translation
-          state.translationSentences[pageNum] = res.sentences || []
-          // 패치하는 중에 사용자가 다른 세션으로 이동하지 않았는지 확인
-          if (state.sessionId === currentSessionId) {
-            renderTransContent(pageNum, res.translation, true)
-          }
-        } catch (err) {
-          console.warn(`Failed to lazy load translation for page ${pageNum}:`, err)
-          delete state.translationCache[pageNum]
-          // 번역 로딩 실패 시 폴백 세그멘테이션 상태로 메모가 계속 숨겨져 있지
-          // 않도록, 이미 그려진 문장 분할 기준으로 메모를 다시 그려준다.
-          renderPageMemos(pageNum)
-        }
-      } else if (getTranslationMode() === 'scroll') {
-        // 번역 모드가 'scroll'이면 전체 문서 백그라운드 잡이 아예 시작되지
-        // 않으므로, 스크롤로 보이게 된 페이지를 그때그때 개별 번역한다.
-        translatePage(pageNum)
-      }
-
-      // 비동기 다음 페이지 번역 프리페칭 및 미리 렌더링
-      const nextPage = pageNum + 1
-      if (nextPage <= state.totalPages && !state.translationCache[nextPage]) {
-        if (state.translatedPages.has(nextPage)) {
-          state.translationCache[nextPage] = '__fetching__'
-          const currentSessionId = state.sessionId
-          const opts = getTranslationOptions()
-          fetchLibraryTranslation(currentSessionId, nextPage, opts).then(res => {
-            if (state.sessionId === currentSessionId) {
-              state.translationCache[nextPage] = res.translation
-              state.translationSentences[nextPage] = res.sentences || []
-              renderTransContent(nextPage, res.translation, true)
-            }
-          }).catch(err => {
-            if (state.sessionId === currentSessionId) {
-              delete state.translationCache[nextPage]
-              renderPageMemos(nextPage)
-            }
-          })
-        } else if (getTranslationMode() === 'scroll') {
-          // 다음 페이지도 미리 번역해둬 스크롤이 도착했을 때 바로 보이게 한다.
-          translatePage(nextPage)
-        }
-      }
+      await ensureTranslationPageLoaded(pageNum)
+      prefetchTranslationPage(pageNum + 1)
     }
   })
+
+  if (translationPageObserver) translationPageObserver.disconnect()
+  translationPageObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return
+      const pageNum = parseInt(entry.target.dataset.page, 10)
+      if (!isNaN(pageNum)) ensureTranslationPageLoaded(pageNum)
+    })
+  }, { root: translationScrollContainer, rootMargin: '500px 0px', threshold: 0.01 })
+  translationScrollContainer.querySelectorAll('.trans-page-block').forEach(block => translationPageObserver.observe(block))
 
   // 번역 모드가 'pane'이고 번역 창이 이미 펼쳐진 상태로 문서를 열었다면,
   // (예: 이전에 펼친 채로 남겨둔 경우) 폴링을 시작하기 전에 전체 문서 번역
@@ -1206,11 +1265,40 @@ function updatePageDisplay(pageNum) {
 // ── 마지막으로 읽던 위치(책갈피) 자동 저장 ─────────
 // 스크롤 중 페이지가 바뀔 때마다 API를 호출하지 않도록 디바운스한다.
 let saveLastReadPageTimer = null
+function updateBookmarkUI(page = state.currentPage) {
+  if (!viewerBookmarkBtn || !viewerBookmarkText) return
+  const hasBookmark = !state.disableBookmark && Number.isInteger(Number(page))
+  viewerBookmarkBtn.classList.toggle('active', hasBookmark)
+  viewerBookmarkBtn.classList.toggle('hidden', state.disableBookmark)
+  const total = Math.max(1, Number(state.totalPages || 1))
+  const current = Math.min(total, Math.max(1, Number(page || 1)))
+  const percent = Math.round((current / total) * 100)
+  viewerBookmarkText.textContent = `${current}p · ${percent}%`
+  viewerBookmarkBtn.title = `${current}페이지를 책갈피로 저장했습니다. 현재 페이지에서 갱신하려면 누르세요.`
+}
+
+async function persistReadingProgress(page, { notify = false } = {}) {
+  if (!state.currentDocId || !state.totalPages) return
+  const result = await saveReadingProgress(
+    state.currentDocId,
+    page,
+    state.totalPages,
+    localDateKey(),
+    !state.disableBookmark,
+  )
+  state.currentDocMetadata.last_read_at = result.metadata?.last_read_at
+  if (!state.disableBookmark) {
+    state.currentDocMetadata.last_page = page
+    updateBookmarkUI(page)
+  }
+  if (notify) showToast(`${page}페이지에 책갈피를 저장했습니다.`, 'success')
+}
+
 function scheduleSaveLastReadPage(pageNum) {
-  if (!state.currentDocId || state.disableBookmark) return
+  if (!state.currentDocId) return
   if (saveLastReadPageTimer) clearTimeout(saveLastReadPageTimer)
   saveLastReadPageTimer = setTimeout(() => {
-    updateLibraryDocMetadata(state.currentDocId, { last_page: pageNum }).catch(() => {})
+    persistReadingProgress(pageNum).catch(() => {})
   }, 1500)
 }
 
@@ -1309,7 +1397,7 @@ pageInput.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return
   const num = Math.max(1, Math.min(parseInt(e.target.value) || 1, state.totalPages))
   pageInput.value = num
-  scrollToPage(viewerScrollContainer, num)
+  scrollToPage(pdfScrollContainer, num)
 })
 pageInput.addEventListener('blur', (e) => {
   const num = Math.max(1, Math.min(parseInt(e.target.value) || 1, state.totalPages))
@@ -1323,21 +1411,21 @@ const scrollPageDownBtn = $('scroll-page-down-btn')
 const scrollBottomBtn   = $('scroll-bottom-btn')
 
 if (scrollTopBtn) {
-  scrollTopBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, 1))
+  scrollTopBtn.addEventListener('click', () => scrollToPage(pdfScrollContainer, 1))
 }
 if (scrollBottomBtn) {
-  scrollBottomBtn.addEventListener('click', () => scrollToPage(viewerScrollContainer, state.totalPages))
+  scrollBottomBtn.addEventListener('click', () => scrollToPage(pdfScrollContainer, state.totalPages))
 }
 if (scrollPageUpBtn) {
   scrollPageUpBtn.addEventListener('click', () => {
     const target = Math.max(1, (parseInt(pageInput.value, 10) || 1) - 1)
-    scrollToPage(viewerScrollContainer, target)
+    scrollToPage(pdfScrollContainer, target)
   })
 }
 if (scrollPageDownBtn) {
   scrollPageDownBtn.addEventListener('click', () => {
     const target = Math.min(state.totalPages, (parseInt(pageInput.value, 10) || 1) + 1)
-    scrollToPage(viewerScrollContainer, target)
+    scrollToPage(pdfScrollContainer, target)
   })
 }
 
@@ -1381,7 +1469,7 @@ async function setZoom(newZoom) {
   newZoom = previewZoom(newZoom)
   lastCommittedZoom = newZoom
   if (!state.sessionId) { clearZoomPreviewTransform(); return }
-  await reRenderAll(viewerScrollContainer, newZoom, {
+  await reRenderAll(pdfScrollContainer, newZoom, {
     onPageVisible: (pageNum) => updatePageDisplay(pageNum)
   })
   // 재렌더링이 끝나 새 배율의 캔버스로 이미 교체된 뒤에 transform을 지워야
@@ -1722,6 +1810,18 @@ if (viewerReadToggleBtn) {
   })
 }
 
+if (viewerBookmarkBtn) {
+  viewerBookmarkBtn.addEventListener('click', async () => {
+    if (!state.currentDocId || state.disableBookmark) return
+    try {
+      if (saveLastReadPageTimer) clearTimeout(saveLastReadPageTimer)
+      await persistReadingProgress(state.currentPage, { notify: true })
+    } catch (err) {
+      showToast('책갈피를 저장하지 못했습니다.', 'error')
+    }
+  })
+}
+
 // ── 논문 제목 수정 (Viewer 화면) ──────────────────
 if (docTitleEditBtn) {
   docTitleEditBtn.addEventListener('click', () => {
@@ -1830,7 +1930,10 @@ async function checkAuthentication() {
     loginScreen.classList.remove('active')
     globalLogoutBtn.classList.remove('hidden')
     globalSettingsBtn.classList.remove('hidden')
-    if (location.hash && location.hash.startsWith('#viewer?id=')) {
+    if (location.hash && location.hash !== '#library') {
+      // 뷰어뿐 아니라 Obsidian 통합 바로가기(Scholar/노트/단어장/히스토리)도
+      // 초기 해시를 보존해야 한다. 여기서 showLibraryScreen()을 먼저 호출하면
+      // 그 함수가 해시를 #library로 바꿔 요청한 탭이 사라진다.
       // 뷰어로 바로 진입하는 경로라 라이브러리 화면이 렌더링되지 않으므로,
       // 안읽음 배지/휴지통 탭 표시는 별도로 한 번 조회해서 채워야 한다.
       await handleRouting()
@@ -2597,6 +2700,7 @@ globalSettingsBtn.addEventListener('click', async () => {
 
   // 3. 시스템 설정값 로드 (백엔드 통신)
   await refreshSystemSettings()
+  await refreshSyncSettings()
 
   // 4. 계정 변경값 초기화
   changeCurrentPassword.value = ''
@@ -2614,6 +2718,83 @@ globalSettingsBtn.addEventListener('click', async () => {
     }
   }
 })
+
+function renderSyncStatus(status = {}) {
+  if (!settingSyncStatus) return
+  if (!status.server_url || !status.token_set) {
+    settingSyncStatus.textContent = '중앙 동기화가 설정되지 않았습니다.'
+    settingSyncStatus.style.color = 'var(--text-secondary)'
+    if (settingSyncRunBtn) settingSyncRunBtn.disabled = true
+    return
+  }
+  if (settingSyncRunBtn) settingSyncRunBtn.disabled = !!status.running
+  if (status.running) {
+    settingSyncStatus.textContent = '동기화 중…'
+    settingSyncStatus.style.color = 'var(--accent-mid)'
+  } else if (status.last_error) {
+    settingSyncStatus.textContent = `마지막 오류: ${status.last_error}`
+    settingSyncStatus.style.color = 'var(--error)'
+  } else if (status.last_completed_at) {
+    const result = status.last_result || {}
+    settingSyncStatus.textContent = `완료 · 보냄 ${result.pushed || 0} · 받음 ${result.pulled || 0} · 파일 ${result.uploaded || 0}/${result.downloaded || 0}`
+    settingSyncStatus.style.color = 'var(--success)'
+  } else {
+    settingSyncStatus.textContent = `연결 준비됨 · 기기 ${String(status.device_id || '').slice(0, 8)}`
+    settingSyncStatus.style.color = 'var(--text-secondary)'
+  }
+}
+
+async function refreshSyncSettings() {
+  if (!settingSyncServerUrl) return
+  try {
+    const data = await getSyncSettingsAPI()
+    settingSyncServerUrl.value = data.server_url || ''
+    settingSyncToken.value = ''
+    settingSyncToken.placeholder = data.token_set ? '저장된 토큰 유지 (변경할 때만 입력)' : '기기 동기화 토큰'
+    settingSyncInterval.value = String(data.interval_seconds || 300)
+    renderSyncStatus(data.runtime || {})
+  } catch (err) {
+    console.warn('동기화 설정 로드 실패:', err)
+    renderSyncStatus({ last_error: err.message })
+  }
+}
+
+if (settingSyncSaveBtn) {
+  settingSyncSaveBtn.addEventListener('click', async () => {
+    settingSyncSaveBtn.disabled = true
+    try {
+      const token = settingSyncToken.value.trim()
+      const data = await saveSyncSettingsAPI({
+        server_url: settingSyncServerUrl.value.trim(),
+        token: token || null,
+        interval_seconds: Number(settingSyncInterval.value || 300),
+      })
+      settingSyncToken.value = ''
+      settingSyncToken.placeholder = data.token_set ? '저장된 토큰 유지 (변경할 때만 입력)' : '기기 동기화 토큰'
+      renderSyncStatus(data.runtime || {})
+      showToast('동기화 설정을 저장했습니다.', 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      settingSyncSaveBtn.disabled = false
+    }
+  })
+}
+
+if (settingSyncRunBtn) {
+  settingSyncRunBtn.addEventListener('click', async () => {
+    settingSyncRunBtn.disabled = true
+    renderSyncStatus({ server_url: settingSyncServerUrl.value, token_set: true, running: true })
+    try {
+      const result = await runSyncNowAPI()
+      showToast(`동기화 완료: 보냄 ${result.pushed || 0}, 받음 ${result.pulled || 0}`, 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      await refreshSyncSettings()
+    }
+  })
+}
 
 closeSettingsBtn.addEventListener('click', () => {
   closeOverlayModal(settingsModal)
@@ -2838,6 +3019,7 @@ settingDisableHoverTooltip.addEventListener('change', () => {
 settingDisableBookmark.addEventListener('change', () => {
   state.disableBookmark = !settingDisableBookmark.checked
   localStorage.setItem('easypaper_disable_bookmark', state.disableBookmark)
+  updateBookmarkUI(state.currentPage)
 })
 
 settingDisableInsights.addEventListener('change', () => {
@@ -3684,6 +3866,8 @@ async function loadLibraryCount() {
 }
 
 // 탭 클릭 이벤트 리스너 등록
+let archiveContentView = 'papers'
+
 function updateTabUI(activeTab) {
   state.currentLibraryTab = activeTab
   activeCategoryFilter = 'ALL'
@@ -3694,7 +3878,8 @@ function updateTabUI(activeTab) {
   if (libTabTrash) libTabTrash.classList.toggle('active', activeTab === 'trash')
   if (libTabChat) libTabChat.classList.toggle('active', activeTab === 'chat')
   if (libTabAnnotations) libTabAnnotations.classList.toggle('active', activeTab === 'annotations')
-  if (libTabNotes) libTabNotes.classList.toggle('active', activeTab === 'notes')
+  if (libTabPaperSearch) libTabPaperSearch.classList.toggle('active', activeTab === 'paper-search')
+  if (libTabVocabulary) libTabVocabulary.classList.toggle('active', activeTab === 'vocabulary')
 
   if (libEmptyTrashBtn) {
     if (activeTab === 'trash') {
@@ -3705,7 +3890,8 @@ function updateTabUI(activeTab) {
   }
 
   // 휴지통/채팅/주석 탭인 경우 새 논문 추가/비교하기 플로팅 버튼을 숨깁니다.
-  const isListOnlyTab = activeTab === 'trash' || activeTab === 'chat' || activeTab === 'annotations' || activeTab === 'notes'
+  const isArchiveNotes = activeTab === 'archive' && archiveContentView === 'notes'
+  const isListOnlyTab = activeTab === 'trash' || activeTab === 'chat' || activeTab === 'annotations' || activeTab === 'paper-search' || activeTab === 'history' || activeTab === 'vocabulary' || isArchiveNotes
   if (libUploadBtn) {
     if (isListOnlyTab) {
       libUploadBtn.classList.add('hidden')
@@ -3722,12 +3908,18 @@ function updateTabUI(activeTab) {
   // 전용 UI는 숨긴다.
   const isChatTab = activeTab === 'chat'
   const isAnnotationsTab = activeTab === 'annotations'
-  const isNotesTab = activeTab === 'notes'
-  const hidesGrid = isChatTab || isAnnotationsTab || isNotesTab
+  const isPaperSearchTab = activeTab === 'paper-search'
+  const isHistoryTab = activeTab === 'history'
+  const isVocabularyTab = activeTab === 'vocabulary'
+  const hidesGrid = isChatTab || isAnnotationsTab || isArchiveNotes || isPaperSearchTab || isHistoryTab || isVocabularyTab
   if (libraryGrid) libraryGrid.classList.toggle('hidden', hidesGrid)
   if (libraryChatSection) libraryChatSection.classList.toggle('hidden', !isChatTab)
   if (libraryAnnotationsSection) libraryAnnotationsSection.classList.toggle('hidden', !isAnnotationsTab)
-  if (libraryNotesSection) libraryNotesSection.classList.toggle('hidden', !isNotesTab)
+  if (libraryNotesSection) libraryNotesSection.classList.toggle('hidden', !isArchiveNotes)
+  if (libraryHistorySection) libraryHistorySection.classList.toggle('hidden', !isHistoryTab)
+  if (libraryContentSwitch) libraryContentSwitch.classList.toggle('hidden', activeTab !== 'archive')
+  if (paperSearchSection) paperSearchSection.classList.toggle('hidden', !isPaperSearchTab)
+  if (libraryVocabularySection) libraryVocabularySection.classList.toggle('hidden', !isVocabularyTab)
   if (librarySearchBox) librarySearchBox.classList.toggle('hidden', hidesGrid)
   if (librarySearchStatus && hidesGrid) librarySearchStatus.classList.add('hidden')
   if (libraryFilterRow) libraryFilterRow.classList.toggle('hidden', hidesGrid)
@@ -3771,10 +3963,285 @@ if (libTabAnnotations) {
     updateTabUI('annotations')
   })
 }
-if (libTabNotes) {
-  libTabNotes.addEventListener('click', () => {
-    if (state.currentLibraryTab === 'notes') return
-    updateTabUI('notes')
+libraryContentSwitchBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const view = btn.dataset.view
+    if (!['papers', 'notes'].includes(view) || archiveContentView === view) return
+    archiveContentView = view
+    libraryContentSwitchBtns.forEach(item => item.classList.toggle('active', item.dataset.view === view))
+    updateTabUI('archive')
+  })
+})
+if (libTabPaperSearch) {
+  libTabPaperSearch.addEventListener('click', async () => {
+    if (state.currentLibraryTab === 'paper-search') return
+    updateTabUI('paper-search')
+    await populateScholarFolders()
+    setScholarMode(scholarMode)
+  })
+}
+if (libTabVocabulary) {
+  libTabVocabulary.addEventListener('click', () => {
+    if (state.currentLibraryTab === 'vocabulary') return
+    updateTabUI('vocabulary')
+  })
+}
+
+function validAcademicUrl(value) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' ? parsed.href : ''
+  } catch { return '' }
+}
+
+let scholarMode = 'recommended'
+
+function scholarBibtex(paper) {
+  const firstAuthor = (paper.authors?.[0] || 'unknown').split(/\s+/).pop().replace(/[^A-Za-z0-9]/g, '') || 'paper'
+  const key = `${firstAuthor}${paper.year || ''}`
+  const fields = [
+    `  title = {${paper.title || ''}}`,
+    paper.authors?.length ? `  author = {${paper.authors.join(' and ')}}` : '',
+    paper.year ? `  year = {${paper.year}}` : '',
+    paper.venue ? `  booktitle = {${paper.venue}}` : '',
+    paper.doi ? `  doi = {${String(paper.doi).replace(/^https:\/\/doi\.org\//i, '')}}` : '',
+    paper.url ? `  url = {${paper.url}}` : '',
+  ].filter(Boolean)
+  return `@article{${key},\n${fields.join(',\n')}\n}`
+}
+
+async function copyScholarBibtex(paper) {
+  try {
+    await navigator.clipboard.writeText(scholarBibtex(paper))
+    showToast('BibTeX를 복사했습니다.', 'success')
+  } catch {
+    showToast('BibTeX를 복사하지 못했습니다.', 'error')
+  }
+}
+
+async function saveScholarPaper(paper, button) {
+  if (!paper.pdf_url) return
+  const original = button.textContent
+  button.disabled = true
+  button.textContent = '저장 중…'
+  try {
+    await importScholarPaper(paper, { ...getTranslationOptions(), translationMode: getTranslationMode() })
+    button.textContent = '저장됨 ✓'
+    button.classList.add('scholar-saved')
+    showToast('논문을 라이브러리에 저장했습니다.', 'success')
+    await loadLibraryCount()
+  } catch (err) {
+    button.disabled = false
+    button.textContent = original
+    showToast(err.message, 'error')
+  }
+}
+
+async function setScholarRating(paper, rating, card) {
+  try {
+    const result = await rateScholarPaper(paper, rating)
+    paper.rating = result.rating
+    card.querySelectorAll('.scholar-rating-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.dataset.rating) === result.rating)
+    })
+    showToast(result.rating ? '다음 추천에 반영됩니다.' : '평가를 취소했습니다.', 'success')
+  } catch (err) {
+    showToast(err.message, 'error')
+  }
+}
+
+function searchSimilarScholarPaper(paper) {
+  setScholarMode('search')
+  paperSearchInput.value = `${paper.title}${paper.abstract ? `\n${paper.abstract.slice(0, 500)}` : ''}`
+  paperSearchInput.focus()
+  paperSearchForm.requestSubmit()
+}
+
+function renderAcademicSearchResults(data) {
+  paperSearchResults.innerHTML = ''
+  paperSearchAnswerText.textContent = data.answer || ''
+  paperSearchAiBadge.textContent = data.ai_used ? 'AI 분석됨' : '기본 요약'
+  paperSearchAiBadge.className = data.ai_used ? 'ai-active' : 'ai-fallback'
+  const keywords = (data.keywords || []).map(word => `<span>${escapeHtml(word)}</span>`).join('')
+  const queries = (data.search_queries?.length ? data.search_queries : [data.search_query || data.question || ''])
+    .map(query => `<span>${escapeHtml(query)}</span>`).join('')
+  paperSearchQueryMeta.innerHTML = `
+    ${data.interpretation ? `<p class="paper-search-interpretation"><strong>검색 의도</strong> ${escapeHtml(data.interpretation)}</p>` : ''}
+    <strong>다중 검색어</strong><div>${queries}</div>
+    ${keywords ? `<strong>핵심어</strong><div>${keywords}</div>` : ''}`
+  paperSearchResultCount.textContent = `${data.total || 0}편 · ${escapeHtml(data.source || 'OpenAlex')}`
+
+  if (!(data.results || []).length) {
+    paperSearchResults.innerHTML = '<div class="paper-search-empty">검색 결과가 없습니다. 연도 또는 무료 원문 필터를 완화해 보세요.</div>'
+    return
+  }
+
+  ;(data.results || []).forEach((paper, index) => {
+    const card = document.createElement('article')
+    card.className = 'paper-search-card'
+    const authors = (paper.authors || []).slice(0, 5).join(', ')
+    const hasMoreAuthors = (paper.authors || []).length > 5
+    const url = validAcademicUrl(paper.url)
+    const pdfUrl = validAcademicUrl(paper.pdf_url)
+    const citationCount = Number.isFinite(Number(paper.citation_count)) ? Number(paper.citation_count).toLocaleString() : '—'
+    card.innerHTML = `
+      <div class="paper-search-rank">${index + 1}</div>
+      <div class="paper-search-card-body">
+        <div class="paper-search-card-meta">
+          ${paper.year ? `<span>${escapeHtml(String(paper.year))}</span>` : ''}
+          ${paper.venue ? `<span>${escapeHtml(paper.venue)}</span>` : ''}
+          <span>인용 ${citationCount}</span>
+          ${paper.is_open_access ? '<span class="oa">OPEN ACCESS</span>' : ''}
+        </div>
+        <h4>${escapeHtml(paper.title || '제목 없음')}</h4>
+        <div class="paper-search-authors">${escapeHtml(authors)}${hasMoreAuthors ? ' 외' : ''}</div>
+        <div class="paper-search-relevance"><strong>왜 관련 있나요?</strong><p>${escapeHtml(paper.relevance || '')}</p></div>
+        <div class="paper-search-card-actions"></div>
+      </div>`
+    const actions = card.querySelector('.paper-search-card-actions')
+    if (url) {
+      const originalBtn = document.createElement('button')
+      originalBtn.type = 'button'
+      originalBtn.className = 'file-btn-outline'
+      originalBtn.textContent = '원문 정보'
+      originalBtn.addEventListener('click', () => openExternalUrl(url))
+      actions.appendChild(originalBtn)
+    }
+    if (pdfUrl) {
+      const saveBtn = document.createElement('button')
+      saveBtn.type = 'button'
+      saveBtn.className = 'file-btn scholar-save-btn'
+      saveBtn.textContent = '라이브러리에 저장'
+      saveBtn.addEventListener('click', () => saveScholarPaper(paper, saveBtn))
+      actions.appendChild(saveBtn)
+
+      const pdfBtn = document.createElement('button')
+      pdfBtn.type = 'button'
+      pdfBtn.className = 'file-btn'
+      pdfBtn.textContent = 'PDF 열기'
+      pdfBtn.addEventListener('click', () => openExternalUrl(pdfUrl))
+      actions.appendChild(pdfBtn)
+    }
+    const similarBtn = document.createElement('button')
+    similarBtn.type = 'button'
+    similarBtn.className = 'file-btn-outline'
+    similarBtn.textContent = '유사 논문'
+    similarBtn.addEventListener('click', () => searchSimilarScholarPaper(paper))
+    actions.appendChild(similarBtn)
+
+    const bibtexBtn = document.createElement('button')
+    bibtexBtn.type = 'button'
+    bibtexBtn.className = 'file-btn-outline'
+    bibtexBtn.textContent = 'BibTeX'
+    bibtexBtn.addEventListener('click', () => copyScholarBibtex(paper))
+    actions.appendChild(bibtexBtn)
+
+    for (const [rating, label, title] of [[1, '👍', '관심 있음'], [-1, '👎', '관심 없음']]) {
+      const ratingBtn = document.createElement('button')
+      ratingBtn.type = 'button'
+      ratingBtn.className = `file-btn-outline scholar-rating-btn${paper.rating === rating ? ' active' : ''}`
+      ratingBtn.dataset.rating = String(rating)
+      ratingBtn.textContent = label
+      ratingBtn.title = title
+      ratingBtn.setAttribute('aria-label', title)
+      ratingBtn.addEventListener('click', () => setScholarRating(paper, rating, card))
+      actions.appendChild(ratingBtn)
+    }
+    paperSearchResults.appendChild(card)
+  })
+}
+
+async function populateScholarFolders() {
+  if (!scholarFolderSelect) return
+  try {
+    const data = await fetchLibraryFolders()
+    const selected = scholarFolderSelect.value
+    scholarFolderSelect.innerHTML = '<option value="">전체 보관함</option>' +
+      (data.folders || []).map(folder => `<option value="${folder.id}">${escapeHtml(folder.name)} (${folder.document_count || 0})</option>`).join('')
+    scholarFolderSelect.value = selected
+  } catch {}
+}
+
+async function loadScholarFeed() {
+  if (scholarMode === 'search') return
+  paperSearchLoading.classList.remove('hidden')
+  paperSearchError.classList.add('hidden')
+  paperSearchOutput.classList.add('hidden')
+  if (scholarRefreshBtn) scholarRefreshBtn.disabled = true
+  try {
+    const data = await fetchScholarFeed(
+      scholarMode === 'latest' ? 'latest' : 'recommended',
+      scholarFolderSelect?.value || null,
+    )
+    renderAcademicSearchResults(data)
+    paperSearchResultTitle.textContent = scholarMode === 'latest' ? '최신 논문' : '맞춤 추천'
+    paperSearchOutput.classList.remove('hidden')
+  } catch (err) {
+    paperSearchError.textContent = err.message
+    paperSearchError.classList.remove('hidden')
+  } finally {
+    paperSearchLoading.classList.add('hidden')
+    if (scholarRefreshBtn) scholarRefreshBtn.disabled = false
+  }
+}
+
+function setScholarMode(mode, { load = true } = {}) {
+  scholarMode = mode
+  document.querySelectorAll('.scholar-mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode))
+  paperSearchHero.classList.toggle('hidden', mode !== 'search')
+  scholarFeedIntro.classList.toggle('hidden', mode === 'search')
+  if (scholarFolderSelect) scholarFolderSelect.closest('label').classList.toggle('hidden', mode === 'search')
+  if (scholarRefreshBtn) scholarRefreshBtn.classList.toggle('hidden', mode === 'search')
+  paperSearchOutput.classList.add('hidden')
+  paperSearchError.classList.add('hidden')
+  if (mode === 'recommended') {
+    scholarFeedTitle.textContent = '내 연구에 맞는 논문'
+    scholarFeedDescription.textContent = '보관함과 관심 평가를 바탕으로 관련 연구를 추천합니다.'
+  } else if (mode === 'latest') {
+    scholarFeedTitle.textContent = '놓치면 안 될 최신 논문'
+    scholarFeedDescription.textContent = '내 연구 관심사와 관련된 최근 발표 논문을 날짜순으로 보여줍니다.'
+  }
+  if (load && mode !== 'search') loadScholarFeed()
+  if (mode === 'search') window.setTimeout(() => paperSearchInput?.focus(), 0)
+}
+
+document.querySelectorAll('.scholar-mode-btn').forEach(btn => btn.addEventListener('click', () => setScholarMode(btn.dataset.mode)))
+if (scholarRefreshBtn) scholarRefreshBtn.addEventListener('click', loadScholarFeed)
+if (scholarFolderSelect) scholarFolderSelect.addEventListener('change', loadScholarFeed)
+
+if (paperSearchForm) {
+  paperSearchForm.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const query = paperSearchInput.value.trim()
+    if (query.length < 2) {
+      showToast('두 글자 이상의 연구 질문을 입력하세요.', 'error')
+      paperSearchInput.focus()
+      return
+    }
+    const payload = {
+      query,
+      open_access: paperSearchOpenAccess.checked,
+      sort: paperSearchSort.value,
+    }
+    if (paperSearchYearFrom.value) payload.year_from = Number(paperSearchYearFrom.value)
+    if (paperSearchYearTo.value) payload.year_to = Number(paperSearchYearTo.value)
+
+    paperSearchLoading.classList.remove('hidden')
+    paperSearchError.classList.add('hidden')
+    paperSearchOutput.classList.add('hidden')
+    paperSearchSubmit.disabled = true
+    try {
+      const data = await searchAcademicPapers(payload)
+      renderAcademicSearchResults(data)
+      paperSearchResultTitle.textContent = '검색 결과'
+      paperSearchOutput.classList.remove('hidden')
+    } catch (err) {
+      paperSearchError.textContent = err.message
+      paperSearchError.classList.remove('hidden')
+    } finally {
+      paperSearchLoading.classList.add('hidden')
+      paperSearchSubmit.disabled = false
+    }
   })
 }
 
@@ -4278,7 +4745,425 @@ if (libraryFolderCreateBtn) {
   })
 }
 
+// ── 달력형 독서 히스토리 ─────────────────────────────────────────
+const nowForReadingCalendar = new Date()
+let readingCalendarCursor = new Date(nowForReadingCalendar.getFullYear(), nowForReadingCalendar.getMonth(), 1)
+let selectedReadingDate = null
+let readingHistoryActivities = []
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function readingActivitiesForDate(dateKey) {
+  return readingHistoryActivities.filter(item => item.activity_date === dateKey)
+}
+
+function renderReadingDayPanel(dateKey) {
+  selectedReadingDate = dateKey
+  readingCalendarGrid?.querySelectorAll('.reading-calendar-day').forEach(day => {
+    day.classList.toggle('selected', day.dataset.date === dateKey)
+  })
+  const items = readingActivitiesForDate(dateKey)
+  const parsed = new Date(`${dateKey}T00:00:00`)
+  if (readingDayHeading) {
+    readingDayHeading.textContent = parsed.toLocaleDateString('ko-KR', {
+      month: 'long', day: 'numeric', weekday: 'long',
+    })
+  }
+  if (!readingDayList) return
+  if (!items.length) {
+    readingDayList.innerHTML = '<p>이날 기록된 독서 활동이 없습니다.</p>'
+    return
+  }
+  readingDayList.innerHTML = ''
+  items.forEach(item => {
+    const title = item.metadata?.title || item.filename || '제목 없는 논문'
+    const page = Math.max(1, Number(item.furthest_page || item.last_page || 1))
+    const total = Math.max(page, Number(item.total_pages || 1))
+    const percent = Math.min(100, Math.round((page / total) * 100))
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'reading-day-paper'
+    button.innerHTML = `
+      <div class="reading-day-paper-title">${escapeHtml(title)}</div>
+      <div class="reading-day-paper-meta"><span>${item.completed ? '완독' : `${page} / ${total}페이지`}</span><span>${percent}%</span></div>
+      <div class="reading-day-progress"><span style="width:${percent}%"></span></div>
+    `
+    button.addEventListener('click', async () => {
+      try {
+        const doc = await fetchLibraryDoc(item.doc_id)
+        await openFromLibrary(doc)
+      } catch (err) {
+        showToast('논문을 열지 못했습니다.', 'error')
+      }
+    })
+    readingDayList.appendChild(button)
+  })
+}
+
+function renderReadingCalendarGrid(year, month) {
+  if (!readingCalendarGrid) return
+  readingCalendarGrid.innerHTML = ''
+  const firstWeekday = new Date(year, month - 1, 1).getDay()
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const todayKey = localDateKey()
+
+  for (let index = 0; index < 42; index++) {
+    const dayNumber = index - firstWeekday + 1
+    const cell = document.createElement('button')
+    cell.type = 'button'
+    cell.className = 'reading-calendar-day'
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cell.classList.add('outside')
+      cell.disabled = true
+      readingCalendarGrid.appendChild(cell)
+      continue
+    }
+
+    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`
+    const activities = readingActivitiesForDate(dateKey)
+    cell.dataset.date = dateKey
+    cell.classList.toggle('today', dateKey === todayKey)
+    cell.classList.toggle('has-activity', activities.length > 0)
+    cell.classList.toggle('selected', dateKey === selectedReadingDate)
+    const previews = activities.slice(0, 2).map(item => {
+      const title = item.metadata?.title || item.filename || '제목 없는 논문'
+      return `<div class="reading-calendar-paper">${escapeHtml(title)}</div>`
+    }).join('')
+    const more = activities.length > 2 ? `<div class="reading-calendar-more">+${activities.length - 2}편</div>` : ''
+    cell.innerHTML = `<span class="reading-calendar-number">${dayNumber}</span>${activities.length ? `<div class="reading-calendar-papers">${previews}${more}</div>` : ''}`
+    cell.addEventListener('click', () => renderReadingDayPanel(dateKey))
+    readingCalendarGrid.appendChild(cell)
+  }
+}
+
+async function renderReadingHistory() {
+  if (!libraryHistorySection) return
+  const year = readingCalendarCursor.getFullYear()
+  const month = readingCalendarCursor.getMonth() + 1
+  if (readingCalendarTitle) readingCalendarTitle.textContent = `${year}년 ${month}월`
+  if (readingCalendarGrid) readingCalendarGrid.innerHTML = '<div class="lib-empty" style="grid-column:1/-1;padding:60px"><span class="spinner"></span></div>'
+  try {
+    const data = await fetchReadingHistory(year, month)
+    readingHistoryActivities = data.activities || []
+    const latestDate = readingHistoryActivities[0]?.activity_date
+    selectedReadingDate = latestDate || (year === new Date().getFullYear() && month === new Date().getMonth() + 1 ? localDateKey() : null)
+    if (libraryStatsContainer) {
+      libraryStatsContainer.innerHTML = `
+        <div class="library-stats-widget">
+          <div class="library-stats-item"><span class="library-stats-label">${icon('calendar', 13)} 읽은 날</span><span class="library-stats-value">${data.active_days || 0}<span>일</span></span></div>
+          <div style="width:1px;height:28px;background:var(--border-strong)"></div>
+          <div class="library-stats-item"><span class="library-stats-label">${icon('bookOpen', 13)} 읽은 논문</span><span class="library-stats-value">${data.paper_count || 0}<span>편</span></span></div>
+        </div>`
+      libraryStatsContainer.classList.remove('hidden')
+    }
+    renderReadingCalendarGrid(year, month)
+    if (selectedReadingDate) renderReadingDayPanel(selectedReadingDate)
+    else {
+      readingDayHeading.textContent = '독서 기록이 없습니다'
+      readingDayList.innerHTML = '<p>논문을 열어 읽기 시작하면 이 달력에 자동으로 표시됩니다.</p>'
+    }
+  } catch (err) {
+    console.error('독서 히스토리 조회 실패:', err)
+    readingCalendarGrid.innerHTML = '<div class="lib-empty" style="grid-column:1/-1;padding:60px"><p>독서 히스토리를 불러오지 못했습니다.</p></div>'
+  }
+}
+
+if (readingCalendarPrev) readingCalendarPrev.addEventListener('click', () => {
+  readingCalendarCursor = new Date(readingCalendarCursor.getFullYear(), readingCalendarCursor.getMonth() - 1, 1)
+  selectedReadingDate = null
+  renderReadingHistory()
+})
+if (readingCalendarNext) readingCalendarNext.addEventListener('click', () => {
+  readingCalendarCursor = new Date(readingCalendarCursor.getFullYear(), readingCalendarCursor.getMonth() + 1, 1)
+  selectedReadingDate = null
+  renderReadingHistory()
+})
+if (readingCalendarToday) readingCalendarToday.addEventListener('click', () => {
+  const now = new Date()
+  readingCalendarCursor = new Date(now.getFullYear(), now.getMonth(), 1)
+  selectedReadingDate = localDateKey(now)
+  renderReadingHistory()
+})
+
+function vocabEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}
+
+async function refreshAnkiBadge() {
+  if (!ankiConnectionBadge) return null
+  try {
+    const data = await fetchAnkiStatus()
+    ankiConnectionBadge.textContent = data.connected ? 'Anki 연결됨' : 'Anki 대기 중'
+    ankiConnectionBadge.classList.toggle('online', !!data.connected)
+    ankiConnectionBadge.classList.toggle('offline', !data.connected)
+    return data
+  } catch {
+    ankiConnectionBadge.textContent = 'Anki 확인 실패'
+    ankiConnectionBadge.className = 'anki-badge offline'
+    return null
+  }
+}
+
+async function renderVocabulary() {
+  if (!vocabularyList) return
+  vocabularyList.innerHTML = '<div class="vocabulary-empty">단어장을 불러오는 중입니다…</div>'
+  refreshAnkiBadge()
+  try {
+    const data = await fetchVocabularyCards()
+    const cards = data.cards || []
+    if (!cards.length) {
+      vocabularyList.innerHTML = '<div class="vocabulary-empty"><h3>아직 저장한 단어가 없습니다</h3><p>논문에서 모르는 영어 단어나 구문을 드래그한 뒤 책 아이콘을 누르세요.</p></div>'
+      return
+    }
+    vocabularyList.innerHTML = cards.map(card => `
+      <article class="vocabulary-card" data-card-id="${card.id}">
+        <div class="vocabulary-card-head">
+          <div><h3>${vocabEscape(card.term)}</h3><strong>${vocabEscape(card.meaning_ko)}</strong></div>
+          <span class="vocabulary-sync-state ${card.anki_status === 'synced' ? 'synced' : 'pending'}">${card.anki_status === 'synced' ? 'Anki 완료' : '동기화 대기'}</span>
+        </div>
+        <p class="vocabulary-context-en">${vocabEscape(card.context_en)}</p>
+        <p class="vocabulary-context-ko">${vocabEscape(card.context_ko)}</p>
+        <footer><span>${vocabEscape(card.paper_title || '')}${card.page_num ? ` · p.${card.page_num}` : ''}</span>${card.doc_id === '__obsidian__' ? '<span class="vocabulary-external-badge">Obsidian 연동</span>' : `<button type="button" class="vocabulary-delete-btn" data-card-id="${card.id}" title="단어장에서 삭제">${icon('trash2', 14)}</button>`}</footer>
+      </article>`).join('')
+    vocabularyList.querySelectorAll('.vocabulary-delete-btn').forEach(btn => btn.addEventListener('click', async () => {
+      if (!window.confirm('이 단어 카드를 앱 단어장에서 삭제할까요? Anki에 이미 보낸 카드는 유지됩니다.')) return
+      try { await deleteVocabularyCard(Number(btn.dataset.cardId)); await renderVocabulary() }
+      catch (err) { showToast(err.message, 'error') }
+    }))
+  } catch (err) {
+    vocabularyList.innerHTML = `<div class="vocabulary-empty"><p>${vocabEscape(err.message)}</p></div>`
+  }
+}
+
+function ensureVocabularyEditor() {
+  let modal = $('vocabulary-editor-modal')
+  if (modal) return modal
+  modal = document.createElement('div')
+  modal.id = 'vocabulary-editor-modal'
+  modal.className = 'modal-overlay hidden'
+  modal.innerHTML = `
+    <div class="modal-card vocabulary-editor-card">
+      <div class="vocabulary-editor-head"><div><span class="modal-eyebrow">PAPER VOCABULARY</span><h2>단어 카드 만들기</h2></div><button type="button" class="icon-btn vocab-close">${icon('x', 18)}</button></div>
+      <label>단어 또는 구문<input id="vocab-term-input" maxlength="160"></label>
+      <label>문맥상 뜻<input id="vocab-meaning-input" maxlength="1000" placeholder="AI가 문맥에 맞는 뜻을 제안합니다"></label>
+      <label>영문 문장<textarea id="vocab-context-en-input" rows="3" maxlength="4000"></textarea></label>
+      <label>문장 해석<textarea id="vocab-context-ko-input" rows="3" maxlength="4000"></textarea></label>
+      <div id="vocab-suggest-status" class="vocab-suggest-status"></div>
+      <div class="modal-actions"><button type="button" class="file-btn-outline vocab-cancel">취소</button><button type="button" class="file-btn vocab-save">저장하고 Anki로 보내기</button></div>
+    </div>`
+  document.body.appendChild(modal)
+  modal.querySelectorAll('.vocab-close,.vocab-cancel').forEach(btn => btn.addEventListener('click', () => closeOverlayModal(modal)))
+  modal.addEventListener('click', e => { if (e.target === modal) closeOverlayModal(modal) })
+  return modal
+}
+
+async function openVocabularyEditor(seed) {
+  const modal = ensureVocabularyEditor()
+  const termInput = modal.querySelector('#vocab-term-input')
+  const meaningInput = modal.querySelector('#vocab-meaning-input')
+  const enInput = modal.querySelector('#vocab-context-en-input')
+  const koInput = modal.querySelector('#vocab-context-ko-input')
+  const statusEl = modal.querySelector('#vocab-suggest-status')
+  const saveBtn = modal.querySelector('.vocab-save')
+  termInput.value = seed.term || ''
+  meaningInput.value = ''
+  enInput.value = seed.context_en || seed.term || ''
+  koInput.value = seed.context_ko || ''
+  statusEl.textContent = '문맥에 맞는 뜻을 생성하는 중입니다…'
+  saveBtn.disabled = false
+  openOverlayModal(modal)
+  termInput.focus()
+
+  try {
+    const suggestion = await suggestVocabularyCard({ doc_id: state.sessionId, term: termInput.value, context_en: enInput.value, context_ko: koInput.value })
+    meaningInput.value = suggestion.meaning_ko || ''
+    koInput.value = suggestion.context_ko || koInput.value
+    statusEl.textContent = 'AI 제안이 입력되었습니다. 저장 전에 자유롭게 수정할 수 있습니다.'
+  } catch (err) {
+    statusEl.textContent = `${err.message} 직접 입력해도 저장할 수 있습니다.`
+  }
+
+  saveBtn.onclick = async () => {
+    if (!termInput.value.trim() || !meaningInput.value.trim()) {
+      showToast('단어와 문맥상 뜻을 입력해 주세요.', 'error'); return
+    }
+    saveBtn.disabled = true
+    saveBtn.textContent = '저장 중…'
+    try {
+      const result = await saveVocabularyCard({
+        doc_id: state.sessionId, page_num: seed.page_num, term: termInput.value.trim(),
+        meaning_ko: meaningInput.value.trim(), context_en: enInput.value.trim(),
+        context_ko: koInput.value.trim(), paper_title: state.title || state.filename || '', sync_anki: true,
+      })
+      closeOverlayModal(modal)
+      const synced = result.card?.anki_status === 'synced'
+      showToast(synced ? '단어를 저장하고 Anki에 보냈습니다.' : '단어를 저장했습니다. Anki가 켜지면 자동 동기화할 수 있습니다.', synced ? 'success' : 'info')
+    } catch (err) { showToast(err.message, 'error') }
+    finally { saveBtn.disabled = false; saveBtn.textContent = '저장하고 Anki로 보내기' }
+  }
+}
+
+function getVocabularySelectionSeed(selection) {
+  const term = extractSelectionText(selection).trim().replace(/\s+/g, ' ')
+  if (!selection?.rangeCount) return { term, context_en: term, context_ko: '', page_num: null }
+  const range = selection.getRangeAt(0)
+  let node = range.startContainer
+  let el = node.nodeType === 3 ? node.parentElement : node
+  const pageEl = el?.closest?.('.pdf-page-wrapper, .trans-page-block')
+  const pageNum = parseInt(pageEl?.dataset.page || '0', 10) || null
+  let sentenceIdx = parseInt(el?.closest?.('.pdf-sentence,.trans-sentence')?.dataset.sentenceIdx || '', 10)
+  if (!Number.isFinite(sentenceIdx) && pageNum && state.virtualTextMaps?.[pageNum]) {
+    const rect = range.getBoundingClientRect()
+    const charIdx = estimateCharIdxFromPoint(rect.left, rect.top + rect.height / 2, state.virtualTextMaps[pageNum])
+    const sRange = findSentenceAtChar(charIdx, state.pdfPageSentences?.[pageNum] || [])
+    sentenceIdx = sRange?.originalSentenceIdx ?? sRange?.sentenceIdx
+  }
+  const sentence = Number.isFinite(sentenceIdx) ? state.translationSentences?.[pageNum]?.[sentenceIdx] : null
+  return { term, context_en: sentence?.src || term, context_ko: sentence?.trans || '', page_num: pageNum }
+}
+
+if (vocabularySyncBtn) vocabularySyncBtn.addEventListener('click', async () => {
+  vocabularySyncBtn.disabled = true
+  try {
+    const result = await syncVocabularyCards()
+    const legacy = result.obsidian?.imported || 0
+    const completed = result.synced + legacy
+    const alreadyThere = result.obsidian?.existing || 0
+    const mirrored = result.obsidian?.mirrored || 0
+    let message = `${completed}개 카드를 Anki와 동기화했습니다.`
+    if (completed === 0 && alreadyThere > 0) {
+      message = `Anki의 기존 ${alreadyThere}개 카드를 확인하고 단어장에 ${mirrored}개 반영했습니다.`
+    }
+    showToast(result.failed || result.obsidian?.failed ? `${completed}개 완료, 일부 카드는 대기 중입니다.` : message, result.failed || result.obsidian?.failed ? 'info' : 'success')
+    await renderVocabulary()
+  } catch (err) { showToast(err.message, 'error') }
+  finally { vocabularySyncBtn.disabled = false }
+})
+
+if (vocabularySettingsBtn) vocabularySettingsBtn.addEventListener('click', async () => {
+  const status = await fetchAnkiStatus().catch(() => null)
+  const current = status?.config || { deck: '논문 영어', url: 'http://127.0.0.1:8765', obsidian_path: '' }
+  const deck = window.prompt('Anki 덱 이름', current.deck)
+  if (!deck) return
+  const url = window.prompt('AnkiConnect 로컬 주소', current.url)
+  if (!url) return
+  try {
+    await saveAnkiConfig({ deck, url, api_key: '', obsidian_path: current.obsidian_path || '' })
+    showToast('Anki 연동 설정을 저장했습니다.', 'success')
+    await refreshAnkiBadge()
+  } catch (err) { showToast(err.message, 'error') }
+})
+
+let vocabularyReviewState = { revealed: false, reviewed: 0, card: null }
+
+function ensureVocabularyReviewModal() {
+  let modal = $('vocabulary-review-modal')
+  if (modal) return modal
+  modal = document.createElement('div')
+  modal.id = 'vocabulary-review-modal'
+  modal.className = 'modal-overlay vocabulary-review-overlay hidden'
+  modal.innerHTML = `
+    <div class="vocabulary-review-shell">
+      <header><div><span class="modal-eyebrow">SPACED REPETITION</span><h2>논문 단어 복습</h2></div><div class="vocabulary-review-progress">복습 0개</div><button type="button" class="icon-btn vocabulary-review-close">${icon('x', 18)}</button></header>
+      <main class="vocabulary-review-card"><div class="vocabulary-review-front"></div><div class="vocabulary-review-back hidden"></div></main>
+      <footer><button type="button" class="file-btn vocabulary-review-reveal">뜻 확인 <kbd>Space</kbd></button><div class="vocabulary-review-ratings hidden">
+        <button data-ease="1" class="review-again"><span>다시</span><small></small><kbd>1</kbd></button>
+        <button data-ease="2" class="review-hard"><span>어려움</span><small></small><kbd>2</kbd></button>
+        <button data-ease="3" class="review-good"><span>보통</span><small></small><kbd>3</kbd></button>
+        <button data-ease="4" class="review-easy"><span>쉬움</span><small></small><kbd>4</kbd></button>
+      </div></footer>
+    </div>`
+  document.body.appendChild(modal)
+  modal.querySelector('.vocabulary-review-close').addEventListener('click', () => closeOverlayModal(modal))
+  modal.querySelector('.vocabulary-review-reveal').addEventListener('click', revealCurrentVocabularyCard)
+  modal.querySelectorAll('[data-ease]').forEach(btn => btn.addEventListener('click', () => answerCurrentVocabularyCard(Number(btn.dataset.ease))))
+  return modal
+}
+
+function renderVocabularyReviewCard(card, revealed = false) {
+  const modal = ensureVocabularyReviewModal()
+  const cardRoot = modal.querySelector('.vocabulary-review-card')
+  if (!cardRoot.querySelector('.vocabulary-review-front')) {
+    cardRoot.innerHTML = '<div class="vocabulary-review-front"></div><div class="vocabulary-review-back hidden"></div>'
+  }
+  vocabularyReviewState.card = card
+  vocabularyReviewState.revealed = revealed
+  modal.querySelector('.vocabulary-review-progress').textContent = `복습 ${vocabularyReviewState.reviewed}개`
+  modal.querySelector('.vocabulary-review-front').innerHTML = DOMPurify.sanitize(card?.front || '')
+  modal.querySelector('.vocabulary-review-back').innerHTML = DOMPurify.sanitize(card?.back || '')
+  modal.querySelector('.vocabulary-review-back').classList.toggle('hidden', !revealed)
+  modal.querySelector('.vocabulary-review-reveal').classList.toggle('hidden', revealed)
+  const ratings = modal.querySelector('.vocabulary-review-ratings')
+  ratings.classList.toggle('hidden', !revealed)
+  ratings.querySelectorAll('[data-ease]').forEach(btn => {
+    const ease = Number(btn.dataset.ease)
+    const idx = (card?.buttons || []).indexOf(ease)
+    btn.classList.toggle('hidden', idx < 0)
+    btn.querySelector('small').textContent = idx >= 0 ? (card.next_reviews?.[idx] || '') : ''
+  })
+}
+
+function renderVocabularyReviewComplete() {
+  const modal = ensureVocabularyReviewModal()
+  modal.querySelector('.vocabulary-review-card').innerHTML = `<div class="vocabulary-review-complete">${icon('check', 36)}<h2>오늘 복습을 마쳤습니다</h2><p>${vocabularyReviewState.reviewed}개 카드를 복습했습니다.</p></div>`
+  modal.querySelector('footer').classList.add('hidden')
+  modal.querySelector('.vocabulary-review-progress').textContent = '완료'
+}
+
+async function revealCurrentVocabularyCard() {
+  if (vocabularyReviewState.revealed) return
+  try {
+    const data = await revealVocabularyReview()
+    if (data.card) renderVocabularyReviewCard(data.card, true)
+  } catch (err) { showToast(err.message, 'error') }
+}
+
+async function answerCurrentVocabularyCard(ease) {
+  if (!vocabularyReviewState.revealed) return
+  const modal = ensureVocabularyReviewModal()
+  modal.querySelectorAll('[data-ease]').forEach(btn => { btn.disabled = true })
+  try {
+    const data = await answerVocabularyReview(ease)
+    vocabularyReviewState.reviewed += 1
+    if (data.complete || !data.card) renderVocabularyReviewComplete()
+    else renderVocabularyReviewCard(data.card, false)
+  } catch (err) { showToast(err.message, 'error') }
+  finally { modal.querySelectorAll('[data-ease]').forEach(btn => { btn.disabled = false }) }
+}
+
+if (vocabularyReviewBtn) vocabularyReviewBtn.addEventListener('click', async () => {
+  vocabularyReviewBtn.disabled = true
+  try {
+    const data = await startVocabularyReview()
+    vocabularyReviewState = { revealed: false, reviewed: 0, card: data.card || null }
+    const modal = ensureVocabularyReviewModal()
+    modal.querySelector('footer').classList.remove('hidden')
+    openOverlayModal(modal)
+    if (data.complete || !data.card) renderVocabularyReviewComplete()
+    else renderVocabularyReviewCard(data.card, false)
+  } catch (err) { showToast(err.message, 'error') }
+  finally { vocabularyReviewBtn.disabled = false }
+})
+
+document.addEventListener('keydown', e => {
+  const modal = $('vocabulary-review-modal')
+  if (!modal || modal.classList.contains('hidden')) return
+  if (e.code === 'Space' && !vocabularyReviewState.revealed) { e.preventDefault(); revealCurrentVocabularyCard(); return }
+  if (vocabularyReviewState.revealed && ['1', '2', '3', '4'].includes(e.key)) answerCurrentVocabularyCard(Number(e.key))
+  if (e.key === 'Escape') closeOverlayModal(modal)
+})
+
 async function renderLibrary() {
+  if (state.currentLibraryTab === 'paper-search') return
+  if (state.currentLibraryTab === 'history') {
+    await renderReadingHistory()
+    return
+  }
   if (state.currentLibraryTab === 'chat') {
     await renderChatSessions()
     return
@@ -4287,7 +5172,11 @@ async function renderLibrary() {
     await renderAnnotationsBrowser()
     return
   }
-  if (state.currentLibraryTab === 'notes') {
+  if (state.currentLibraryTab === 'vocabulary') {
+    await renderVocabulary()
+    return
+  }
+  if (state.currentLibraryTab === 'archive' && archiveContentView === 'notes') {
     await renderPaperNotes()
     return
   }
@@ -4336,46 +5225,14 @@ async function renderLibrary() {
       refreshTrashTabVisibility()
     }
 
-    // 현재 선택된 탭에 따라 논문 목록 필터링
-    const docs = allDocs.filter(doc => {
-      if (state.currentLibraryTab === 'trash') return true
-      const isRead = doc.metadata?.read === true
-      return state.currentLibraryTab === 'history' ? isRead : !isRead
-    })
+    // 보관함은 완독 여부와 무관하게 모든 논문을 유지한다. 읽은 날짜와 진도는
+    // 별도의 달력형 히스토리에서 확인한다.
+    const docs = allDocs
 
     renderLibraryFolderFilters(docs)
 
-    // 히스토리 탭인 경우 상단에 독서 현황 통계 요약 카드 렌더링
-    if (state.currentLibraryTab === 'history') {
-      const now = new Date()
-      const thisYear = now.getFullYear()
-      const thisMonth = now.getMonth()
-      
-      const readDocs = allDocs.filter(d => d.metadata?.read === true)
-      const thisMonthCount = readDocs.filter(d => {
-        if (!d.metadata?.read_at) return false
-        const rDate = new Date(d.metadata.read_at)
-        return rDate.getFullYear() === thisYear && rDate.getMonth() === thisMonth
-      }).length
-      
-      libraryStatsContainer.innerHTML = `
-        <div class="library-stats-widget">
-          <div class="library-stats-item">
-            <span class="library-stats-label">${icon('calendar', 13, 'style="vertical-align:-2px;margin-right:3px"')}이번 달 읽은 논문</span>
-            <span class="library-stats-value">${thisMonthCount}<span>편</span></span>
-          </div>
-          <div style="width: 1px; height: 28px; background: var(--border-strong);"></div>
-          <div class="library-stats-item">
-            <span class="library-stats-label">${icon('award', 13, 'style="vertical-align:-2px;margin-right:3px"')}누적 완독 논문</span>
-            <span class="library-stats-value">${readDocs.length}<span>편</span></span>
-          </div>
-        </div>
-      `
-      libraryStatsContainer.classList.remove('hidden')
-    } else {
-      libraryStatsContainer.classList.add('hidden')
-      libraryStatsContainer.innerHTML = ''
-    }
+    libraryStatsContainer.classList.add('hidden')
+    libraryStatsContainer.innerHTML = ''
 
     if (docs.length === 0 && currentLibraryFolders.length === 0) {
       libraryGrid.appendChild(createEmptyState(state.currentLibraryTab === 'history')); return
@@ -4630,7 +5487,7 @@ async function openAnnotationTarget(doc, pageNum) {
   try {
     const freshDoc = await fetchLibraryDoc(doc.id)
     await openFromLibrary(freshDoc)
-    scrollToPage(viewerScrollContainer, pageNum)
+    scrollToPage(pdfScrollContainer, pageNum)
   } catch (err) {
     console.error('주석에서 논문 열기 실패:', err)
     showToast('논문을 불러오지 못했습니다.', 'error')
@@ -4780,7 +5637,7 @@ async function renderPaperNotes() {
       paperNoteList.appendChild(card)
     })
 
-    if (hasGenerating && state.currentLibraryTab === 'notes') {
+    if (hasGenerating && state.currentLibraryTab === 'archive' && archiveContentView === 'notes') {
       paperNotePollingTimer = setTimeout(() => renderPaperNotes(), 3000)
     }
   } catch (err) {
@@ -5154,6 +6011,9 @@ function prepareDocItemHtml(doc) {
     ctaBtnFullHtml = `<button class="doc-restore-btn" data-id="${doc.id}"><span>복원</span>${icon('refreshCw', 15)}</button>`
   } else {
     iconActionsHtml = `
+      <button class="doc-note-btn" data-id="${doc.id}" title="연결된 노트 열기">
+        ${icon('fileText', 14)}
+      </button>
       <button class="doc-folder-btn" data-id="${doc.id}" title="폴더로 이동">
         ${icon('folder', 14)}
       </button>
@@ -5177,6 +6037,26 @@ function prepareDocItemHtml(doc) {
 // 카드/리스트 뷰 공용: 위임 없이 각 아이템 컨테이너에 직접 붙는 이벤트 리스너를 등록한다.
 // 클래스명(.doc-card-check-btn, .doc-open-btn 등)만 맞으면 어떤 레이아웃이든 동작한다.
 function wireDocItemEvents(container, doc, displayTitle) {
+  const noteBtn = container.querySelector('.doc-note-btn')
+  if (noteBtn) {
+    noteBtn.addEventListener('click', async (event) => {
+      event.stopPropagation()
+      try {
+        const note = await fetchPaperNote(doc.id)
+        if (note.content) {
+          await openPaperNote(doc.id)
+          return
+        }
+        if (note.status !== 'generating') await requestPaperNoteGeneration(doc.id)
+        archiveContentView = 'notes'
+        libraryContentSwitchBtns.forEach(item => item.classList.toggle('active', item.dataset.view === 'notes'))
+        updateTabUI('archive')
+      } catch (err) {
+        showToast('노트를 불러오지 못했습니다.', 'error')
+      }
+    })
+  }
+
   const folderBtn = container.querySelector('.doc-folder-btn')
   if (folderBtn) {
     folderBtn.addEventListener('click', (event) => {
@@ -5958,9 +6838,13 @@ async function openFromLibrary(doc, shouldPushState = true) {
       : 1
     pageInput.value = restorePage
     state.currentPage = restorePage
+    updateBookmarkUI(restorePage)
 
     showViewer()
     hideOutlineSidebar()
+    // 문서를 연 사실 자체도 히스토리에 남긴다. PDF 렌더링을 기다리지 않고
+    // 백그라운드에서 기록해 첫 화면 표시를 지연시키지 않는다.
+    persistReadingProgress(restorePage).catch(() => {})
 
     // PDF가 로드된 뒤에만 가능한 두 작업(페이지 렌더링, 목차 조회)은 서로 무관하므로
     // 병렬로 실행한다 - 이전에는 순차 실행이라 두 작업 시간이 그대로 더해졌었다.
@@ -5968,7 +6852,7 @@ async function openFromLibrary(doc, shouldPushState = true) {
       (async () => {
         await initScrollViewer()
         if (restorePage > 1) {
-          scrollToPage(viewerScrollContainer, restorePage, { instant: true })
+          scrollToPage(pdfScrollContainer, restorePage, { instant: true })
         }
       })(),
       loadPDFOutline(),
@@ -7428,6 +8312,9 @@ function createSelectionMenu() {
       <button class="menu-btn memo-btn" title="메모 추가">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
       </button>
+      <button class="menu-btn vocabulary-add-btn" title="단어장에 추가">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14.5"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20"/><path d="M12 7v6M9 10h6"/></svg>
+      </button>
       
       <div class="menu-divider" style="width: 1px; background: var(--border-strong); height: 16px; margin: 0 2px;"></div>
     </div>
@@ -7595,6 +8482,16 @@ function createSelectionMenu() {
     if (text) {
       askAIAssistant(text)
     }
+    selection.removeAllRanges()
+    hideSelectionMenu()
+  })
+
+  menu.querySelector('.vocabulary-add-btn').addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const selection = window.getSelection()
+    const seed = getVocabularySelectionSeed(selection)
+    if (!seed.term) { showToast('저장할 영어 단어나 구문을 드래그해 주세요.', 'error'); return }
+    openVocabularyEditor(seed)
     selection.removeAllRanges()
     hideSelectionMenu()
   })
@@ -8613,24 +9510,24 @@ function detectFallbackSectionsOnPage(vtm, pageNum) {
 
 function getSectionsOnRenderedPage(vtm, pageNum) {
   const outlineSections = resolveOutlineSectionsOnPage(vtm, pageNum)
+  // PDF가 제공하는 목차가 있으면 사용자가 목차 패널에서 보는 항목과 정확히
+  // 같은 목록만 설명 섹션으로 사용한다. 자동 제목 감지를 섞으면 목차에는 없는
+  // 문단/소제목까지 버튼이 생겨 섹션이 과도하게 잘게 나뉜다.
+  if ((state.paperSections || []).length > 0) {
+    return outlineSections
+      .filter(section => isExplainableSectionHeading(section, vtm))
+      .map((section, idx) => ({
+        ...section,
+        nextOnPage: outlineSections[idx + 1] || null,
+      }))
+  }
+
+  // 목차 메타데이터가 없는 논문에만 번호·대표 학술 제목·상대 글꼴 크기를
+  // 이용한 보조 감지를 적용한다.
   const detectedSections = detectFallbackSectionsOnPage(vtm, pageNum)
-  const sections = [...outlineSections]
+  const sections = []
   for (const detected of detectedSections) {
-    const overlappingOutline = outlineSections.find(outline => (
-      detected.charStart < outline.charEnd && detected.charEnd > outline.charStart
-    ))
-    if (!overlappingOutline) {
-      sections.push(detected)
-      continue
-    }
-    if (
-      EXPLAINABLE_SECTION_MARKER_RE.test(detected.title)
-      && !EXPLAINABLE_SECTION_MARKER_RE.test(overlappingOutline.title)
-    ) {
-      const outlineIdx = sections.indexOf(overlappingOutline)
-      if (outlineIdx >= 0) sections.splice(outlineIdx, 1)
-      sections.push(detected)
-    }
+    sections.push(detected)
   }
   sections.sort((a, b) => a.charStart - b.charStart)
   return sections
@@ -8641,10 +9538,134 @@ function getSectionsOnRenderedPage(vtm, pageNum) {
     }))
 }
 
+// 제목 표기법에 의존하지 않고 본문 자체의 문단 경계를 찾는다. PDF마다 문단
+// 정보가 따로 저장되어 있지 않으므로 (1) 텍스트 맵의 빈 줄, (2) 같은 열에서의
+// 큰 줄 간격, (3) 첫 줄 들여쓰기, (4) 열 전환을 함께 사용한다. 지나치게 긴
+// 문단은 이미 정렬된 문장 경계에서 나눠 설명 요청이 과도하게 커지지 않게 한다.
+function detectParagraphExplanationRanges(vtm, pageNum) {
+  const fullText = vtm?.fullText || ''
+  if (!fullText.trim() || !vtm?.spans?.length) return []
+
+  const linesByIndex = new Map()
+  for (const span of vtm.spans) {
+    if (span.charStart == null || span.charEnd == null) continue
+    if (!linesByIndex.has(span.lineIndex)) linesByIndex.set(span.lineIndex, [])
+    linesByIndex.get(span.lineIndex).push(span)
+  }
+  const pageWidth = vtm.spans[0]?.el?.closest('.textLayer')?.clientWidth || 600
+  const lines = [...linesByIndex.values()].map(spans => {
+    const charStart = Math.min(...spans.map(span => span.charStart))
+    const charEnd = Math.max(...spans.map(span => span.charEnd))
+    const left = Math.min(...spans.map(span => span.left))
+    const top = Math.min(...spans.map(span => span.top))
+    const fontSize = Math.max(...spans.map(span => span.fontSize))
+    return {
+      charStart, charEnd, left, top, fontSize,
+      column: left >= pageWidth * 0.45 ? 1 : 0,
+      text: fullText.slice(charStart, charEnd).replace(/\s+/g, ' ').trim(),
+    }
+  }).filter(line => line.text)
+
+  const fontSizes = lines.map(line => line.fontSize).sort((a, b) => a - b)
+  const medianFont = fontSizes[Math.floor(fontSizes.length / 2)] || 10
+  const baselineByColumn = new Map()
+  for (const column of [0, 1]) {
+    const lefts = lines.filter(line => line.column === column).map(line => line.left).sort((a, b) => a - b)
+    if (lefts.length) baselineByColumn.set(column, lefts[Math.floor(lefts.length * 0.2)])
+  }
+  const positiveGaps = []
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].column !== lines[i - 1].column) continue
+    const gap = lines[i].top - lines[i - 1].top
+    if (gap > 0 && gap < medianFont * 4) positiveGaps.push(gap)
+  }
+  positiveGaps.sort((a, b) => a - b)
+  const medianLineGap = positiveGaps[Math.floor(positiveGaps.length / 2)] || medianFont * 1.2
+
+  const boundaries = new Set([0, fullText.length])
+  for (const match of fullText.matchAll(/\n\n+/g)) {
+    let start = match.index + match[0].length
+    while (start < fullText.length && /\s/.test(fullText[start])) start++
+    boundaries.add(start)
+  }
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]
+    const previous = lines[i - 1]
+    const columnChanged = line.column !== previous.column || line.top < previous.top - medianFont * 3
+    const gap = line.top - previous.top
+    const baseline = baselineByColumn.get(line.column) ?? line.left
+    const firstLineIndent = !columnChanged && line.left > baseline + medianFont * 0.7
+    const largeGap = !columnChanged && gap > medianLineGap * 1.45
+    if (columnChanged || firstLineIndent || largeGap) boundaries.add(line.charStart)
+  }
+
+  const ordered = [...boundaries].filter(Number.isFinite).sort((a, b) => a - b)
+  const rawRanges = []
+  for (let i = 0; i < ordered.length - 1; i++) {
+    let start = ordered[i]
+    let end = ordered[i + 1]
+    while (start < end && /\s/.test(fullText[start])) start++
+    while (end > start && /\s/.test(fullText[end - 1])) end--
+    if (end > start) rawRanges.push({ charStart: start, charEnd: end })
+  }
+
+  const sentenceRanges = (state.pdfPageSentences?.[pageNum] || [])
+    .filter(range => !range.isEquation && range.charEnd > range.charStart)
+    .sort((a, b) => a.charStart - b.charStart)
+  const splitRanges = []
+  for (const range of rawRanges) {
+    if (range.charEnd - range.charStart <= 1400) {
+      splitRanges.push(range)
+      continue
+    }
+    const sentences = sentenceRanges.filter(sentence => (
+      sentence.charStart >= range.charStart && sentence.charEnd <= range.charEnd
+    ))
+    if (!sentences.length) {
+      splitRanges.push(range)
+      continue
+    }
+    let chunkStart = range.charStart
+    for (const sentence of sentences) {
+      if (sentence.charEnd - chunkStart >= 800) {
+        splitRanges.push({ charStart: chunkStart, charEnd: sentence.charEnd })
+        chunkStart = sentence.charEnd
+      }
+    }
+    if (range.charEnd - chunkStart >= 160) splitRanges.push({ charStart: chunkStart, charEnd: range.charEnd })
+    else if (splitRanges.length) splitRanges[splitRanges.length - 1].charEnd = range.charEnd
+  }
+
+  const results = []
+  for (const range of splitRanges) {
+    const text = fullText.slice(range.charStart, range.charEnd).replace(/\s+/g, ' ').trim()
+    const letters = (text.match(/[\p{L}\p{N}]/gu) || []).length
+    const words = text.split(/\s+/).filter(Boolean).length
+    if (text.length < 160 || words < 20 || letters / Math.max(1, text.length) < 0.45) continue
+    if (/^(?:fig(?:ure)?|table|algorithm|equation)\s*[A-Z0-9IVX.:-]*/i.test(text) && text.length < 700) continue
+    if (/^(?:references|bibliography)\b/i.test(text) || /^\[?\d+\]?\s+[A-Z][\p{L}-]+(?:,|\s+et\s+al\.)/u.test(text)) continue
+    results.push({
+      id: `paragraph-${pageNum}-${results.length}`,
+      title: `문단 ${results.length + 1}`,
+      pageNum,
+      depth: 0,
+      ...range,
+      source: 'paragraph',
+      preview: text.slice(0, 90),
+    })
+  }
+  return results
+}
+
 const EXPLAINABLE_SECTION_MARKER_RE = /^(?:[A-Z]|[IVXLCDM]+)[.)]\s+\S/
 
 function isExplainableSectionHeading(section, vtm) {
   const title = String(section?.title || '').trim()
+  if (!title || title.length > 140) return false
+  if (/^(?:fig(?:ure)?|table|algorithm|equation)\s+/i.test(title)) return false
+  if (/^(?:references|bibliography)$/i.test(title)) return false
+  if (section?.source === 'outline') return true
+  if (ACADEMIC_SECTION_HEADING_RE.test(title) || NUMBERED_SECTION_HEADING_RE.test(title)) return true
   if (EXPLAINABLE_SECTION_MARKER_RE.test(title)) return true
   const prefix = vtm.fullText.slice(Math.max(0, section.charStart - 16), section.charStart)
   return /(?:^|\n\n)(?:[A-Z]|[IVXLCDM]+)[.)]\s*$/m.test(prefix)
@@ -8688,13 +9709,23 @@ async function buildInlineSectionContext(section) {
   const nextOutline = section.source === 'outline'
     ? state.paperSections[section.outlineIndex + 1] || null
     : section.nextOnPage
-  const endPage = Math.min(
-    state.totalPages,
-    nextOutline?.pageNum || section.pageNum + 3,
-    section.pageNum + 7
-  )
+  const endPage = Math.min(state.totalPages, nextOutline?.pageNum || section.pageNum + 7)
   const chunks = [`[섹션 제목]\n${section.title}`]
   let remaining = 18000
+
+  const findNextHeadingStart = (pageText, from = 0) => {
+    const lineRe = /^([^\n]{2,140})$/gm
+    lineRe.lastIndex = Math.max(0, from)
+    let match
+    while ((match = lineRe.exec(pageText))) {
+      const title = match[1].replace(/\s+/g, ' ').trim()
+      if (!title || /^(?:fig(?:ure)?|table|algorithm|equation)\s+/i.test(title)) continue
+      if (ACADEMIC_SECTION_HEADING_RE.test(title) || NUMBERED_SECTION_HEADING_RE.test(title)) {
+        return match.index + match[1].indexOf(match[1].trimStart())
+      }
+    }
+    return -1
+  }
 
   for (let pageNum = section.pageNum; pageNum <= endPage && remaining > 0; pageNum++) {
     let pageText = state.virtualTextMaps?.[pageNum]?.fullText
@@ -8708,6 +9739,11 @@ async function buildInlineSectionContext(section) {
         ? section.nextOnPage
         : findHeadingRange(pageText, nextOutline.title, start)
       if (nextRange?.charStart > start) end = nextRange.charStart
+    } else if (!nextOutline) {
+      // 목차 메타데이터가 없는 PDF도 다음 번호/학술 제목을 만나는 지점까지
+      // 여러 문단과 페이지를 하나의 섹션으로 묶는다.
+      const nextHeadingStart = findNextHeadingStart(pageText, start)
+      if (nextHeadingStart > start) end = nextHeadingStart
     }
     const part = pageText.slice(start, end).trim()
     if (part) {
@@ -8715,7 +9751,7 @@ async function buildInlineSectionContext(section) {
       chunks.push(`[p.${pageNum}]\n${clipped}`)
       remaining -= clipped.length
     }
-    if (nextOutline && nextOutline.pageNum === pageNum) break
+    if ((nextOutline && nextOutline.pageNum === pageNum) || end < pageText.length) break
   }
   return chunks.join('\n\n')
 }
@@ -8728,9 +9764,11 @@ function renderSectionExplanationLayer(textLayerDiv, pageNum) {
     button._cleanupExplainHover?.()
     button.remove()
   })
-  const sections = getSectionsOnRenderedPage(vtm, pageNum)
+  // 문단 경계는 섹션 문맥을 구성할 때 사용하되, 진입점은 섹션 제목마다 하나만
+  // 만든다. 문단마다 아이콘을 만들면 긴 섹션에서 화면이 지나치게 조각난다.
+  const explainRanges = getSectionsOnRenderedPage(vtm, pageNum)
 
-  for (const section of sections) {
+  for (const section of explainRanges) {
     const rects = getSentenceRects(section, vtm, textLayerDiv)
     if (!rects.length) continue
     const button = document.createElement('button')
@@ -9578,7 +10616,7 @@ function renderFigureRefOverlayLayer(textLayerDiv, pageNum) {
         e.stopPropagation()
         window.getSelection().removeAllRanges()
         hideFigurePreviewTooltip()
-        scrollToPage(viewerScrollContainer, targets[0].page)
+        scrollToPage(pdfScrollContainer, targets[0].page)
       })
       overlay.appendChild(box)
     })
@@ -9665,7 +10703,7 @@ function getOrCreateFigurePreviewTooltip() {
       return
     }
     hideFigurePreviewTooltip()
-    scrollToPage(viewerScrollContainer, target.page)
+    scrollToPage(pdfScrollContainer, target.page)
   })
 
   el.querySelector('.figure-preview-tooltip-resize-handle').addEventListener('mousedown', (e) => {
@@ -10204,14 +11242,26 @@ function makeExplanationSessionId() {
   return `explain:${state.sessionId}:${unique}`
 }
 
+function getExplanationOverlayLayer() {
+  let layer = document.getElementById('explanation-overlay-layer')
+  if (!layer) {
+    layer = document.createElement('div')
+    layer.id = 'explanation-overlay-layer'
+    layer.className = 'explanation-overlay-layer'
+    document.body.appendChild(layer)
+  }
+  return layer
+}
+
 function updateExplanationConnector(popup) {
   const { pageWrapper, element } = popup
   if (!pageWrapper?.isConnected || !element?.isConnected) return
-  let svg = pageWrapper.querySelector('.explanation-connector-svg')
+  const layer = getExplanationOverlayLayer()
+  let svg = layer.querySelector('.explanation-connector-svg')
   if (!svg) {
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     svg.classList.add('explanation-connector-svg')
-    pageWrapper.appendChild(svg)
+    layer.prepend(svg)
   }
   let path = svg.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)
   if (!path) {
@@ -10225,28 +11275,50 @@ function updateExplanationConnector(popup) {
     svg.appendChild(path)
   }
 
+  const liveAnchorRect = popup.anchorElement?.isConnected
+    ? popup.anchorElement.getBoundingClientRect()
+    : null
+  const wrapperRect = pageWrapper.getBoundingClientRect()
+  const anchorX = liveAnchorRect
+    ? liveAnchorRect.left + liveAnchorRect.width / 2
+    : wrapperRect.left + popup.anchorX
+  const anchorY = liveAnchorRect
+    ? liveAnchorRect.top + liveAnchorRect.height / 2
+    : wrapperRect.top + popup.anchorY
   const left = element.offsetLeft
   const top = element.offsetTop
   const width = element.offsetWidth
   const height = element.offsetHeight
-  const targetX = popup.anchorX < left ? left
-    : popup.anchorX > left + width ? left + width
-      : Math.max(left, Math.min(left + width, popup.anchorX))
-  const targetY = popup.anchorY < top ? top
-    : popup.anchorY > top + height ? top + height
-      : Math.max(top, Math.min(top + height, popup.anchorY))
-  const bendX = popup.anchorX + (targetX - popup.anchorX) * 0.5
+  const targetX = anchorX < left ? left
+    : anchorX > left + width ? left + width
+      : Math.max(left, Math.min(left + width, anchorX))
+  const targetY = anchorY < top ? top
+    : anchorY > top + height ? top + height
+      : Math.max(top, Math.min(top + height, anchorY))
+  const bendX = anchorX + (targetX - anchorX) * 0.5
   path.setAttribute(
     'd',
-    `M ${popup.anchorX} ${popup.anchorY} C ${bendX} ${popup.anchorY}, ${bendX} ${targetY}, ${targetX} ${targetY}`
+    `M ${anchorX} ${anchorY} C ${bendX} ${anchorY}, ${bendX} ${targetY}, ${targetX} ${targetY}`
   )
 }
+
+let explanationConnectorFrame = null
+function scheduleExplanationConnectorUpdate() {
+  if (explanationConnectorFrame != null) return
+  explanationConnectorFrame = requestAnimationFrame(() => {
+    explanationConnectorFrame = null
+    state.explanationPopups.forEach(updateExplanationConnector)
+  })
+}
+document.addEventListener('scroll', scheduleExplanationConnectorUpdate, true)
+window.addEventListener('resize', scheduleExplanationConnectorUpdate)
 
 function closeExplanationPopup(popup) {
   popup.abort?.()
   popup.resizeObserver?.disconnect()
   popup.element?.remove()
-  const svg = popup.pageWrapper?.querySelector('.explanation-connector-svg')
+  const layer = document.getElementById('explanation-overlay-layer')
+  const svg = layer?.querySelector('.explanation-connector-svg')
   svg?.querySelector(`[data-popup-id="${CSS.escape(popup.id)}"]`)?.remove()
   if (svg && !svg.querySelector('path')) svg.remove()
   state.explanationPopups.delete(popup.id)
@@ -10255,6 +11327,7 @@ function closeExplanationPopup(popup) {
       .some(other => other.anchorButton === popup.anchorButton)
     if (!stillUsed) popup.anchorButton.classList.remove('explanation-anchor-hidden')
   }
+  if (layer && !layer.querySelector('.explanation-popup, .explanation-connector-svg')) layer.remove()
 }
 
 const EXPLANATION_POPUP_SIZE_KEY = 'easypaper_explanation_popup_size'
@@ -10262,7 +11335,6 @@ const EXPLANATION_POPUP_DEFAULT_WIDTH = 480
 const EXPLANATION_POPUP_DEFAULT_HEIGHT = 520
 const EXPLANATION_POPUP_MIN_WIDTH = 340
 const EXPLANATION_POPUP_MIN_HEIGHT = 300
-const EXPLANATION_POPUP_RESIZE_HEADROOM = 120
 
 function loadExplanationPopupSize() {
   try {
@@ -10394,6 +11466,7 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
     pageNum,
     imageBase64,
     pageWrapper,
+    anchorElement,
     anchorButton,
     anchorX,
     anchorY,
@@ -10411,29 +11484,30 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
     EXPLANATION_POPUP_MIN_HEIGHT,
     Math.min(preferredSize.height, window.innerHeight - 24)
   )
-  const viewerRect = viewerScrollContainer.getBoundingClientRect()
-  const minVisibleLeft = viewerRect.left - wrapperRect.left + 12
-  const maxVisibleLeft = viewerRect.right - wrapperRect.left - popupWidth - 12
-  // 우하단 손잡이를 바로 드래그해도 창을 키울 수 있도록 오른쪽에 여유 공간을
-  // 남긴다. 설명 아이콘이 페이지 오른쪽 레일에 있어도 팝업이 화면 끝에 붙지 않는다.
-  const maxResizableLeft = maxVisibleLeft - EXPLANATION_POPUP_RESIZE_HEADROOM
-  const minVisibleTop = viewerRect.top - wrapperRect.top + 12
-  const maxVisibleTop = viewerRect.bottom - wrapperRect.top - popupHeight - 12
-  const desiredLeft = anchorX + 38
-  const desiredTop = anchorY - 34
+  const anchorViewportX = anchorRect
+    ? anchorRect.left + anchorRect.width / 2
+    : wrapperRect.left + anchorX
+  const anchorViewportY = anchorRect
+    ? anchorRect.top + anchorRect.height / 2
+    : wrapperRect.top + anchorY
+  const minVisibleLeft = 12
+  const maxVisibleLeft = Math.max(12, window.innerWidth - popupWidth - 12)
+  const minVisibleTop = 12
+  const maxVisibleTop = Math.max(12, window.innerHeight - popupHeight - 12)
+  const rightSideLeft = anchorViewportX + 38
+  const desiredLeft = rightSideLeft <= maxVisibleLeft
+    ? rightSideLeft
+    : anchorViewportX - popupWidth - 38
+  const desiredTop = anchorViewportY - 34
   element.className = 'explanation-popup'
   element.dataset.popupId = popup.id
   element.style.width = `${popupWidth}px`
   element.style.height = `${popupHeight}px`
-  element.style.left = `${maxVisibleLeft >= minVisibleLeft
-    ? Math.min(
-        maxVisibleLeft,
-        Math.max(minVisibleLeft, maxResizableLeft >= minVisibleLeft ? Math.min(maxResizableLeft, desiredLeft) : desiredLeft)
-      )
-    : desiredLeft}px`
-  element.style.top = `${maxVisibleTop >= minVisibleTop
-    ? Math.min(maxVisibleTop, Math.max(minVisibleTop, desiredTop))
-    : desiredTop}px`
+  element.style.left = `${Math.min(maxVisibleLeft, Math.max(minVisibleLeft, desiredLeft))}px`
+  element.style.top = `${Math.min(maxVisibleTop, Math.max(minVisibleTop, desiredTop))}px`
+  const resizeHandles = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+    .map(direction => `<div class="explanation-popup-resize-handle resize-${direction}" data-direction="${direction}" title="드래그하여 창 크기 조절" aria-hidden="true"></div>`)
+    .join('')
   element.innerHTML = `
     <header class="explanation-popup-header">
       <div class="explanation-popup-title">${icon('lightbulb', 14)}<span>설명</span></div>
@@ -10446,13 +11520,13 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
       <textarea rows="1" placeholder="이 설명에 대해 질문하세요"></textarea>
       <button type="submit" title="질문 보내기">${icon('send', 14)}</button>
     </form>
-    <div class="explanation-popup-resize-handle" title="드래그하여 창 크기 조절" aria-hidden="true"></div>
+    ${resizeHandles}
   `
   popup.element = element
   popup.messagesEl = element.querySelector('.explanation-popup-messages')
   popup.input = element.querySelector('textarea')
   popup.sendButton = element.querySelector('.explanation-popup-form button')
-  pageWrapper.appendChild(element)
+  getExplanationOverlayLayer().appendChild(element)
   state.explanationPopups.set(popup.id, popup)
   anchorButton?.classList.add('explanation-anchor-hidden')
   popup.resizeObserver = new ResizeObserver(() => updateExplanationConnector(popup))
@@ -10476,39 +11550,56 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
     }
   })
 
-  const resizeHandle = element.querySelector('.explanation-popup-resize-handle')
-  resizeHandle.addEventListener('mousedown', (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startX = e.clientX
-    const startY = e.clientY
-    const startWidth = element.offsetWidth
-    const startHeight = element.offsetHeight
-    element.classList.add('resizing')
+  element.querySelectorAll('.explanation-popup-resize-handle').forEach(resizeHandle => {
+    resizeHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const direction = resizeHandle.dataset.direction || 'se'
+      const startX = e.clientX
+      const startY = e.clientY
+      const startLeft = element.offsetLeft
+      const startTop = element.offsetTop
+      const startWidth = element.offsetWidth
+      const startHeight = element.offsetHeight
+      const fixedRight = startLeft + startWidth
+      const fixedBottom = startTop + startHeight
+      element.classList.add('resizing')
 
-    const onMove = (moveEvent) => {
-      const maxWidth = Math.max(EXPLANATION_POPUP_MIN_WIDTH, window.innerWidth - 24)
-      const maxHeight = Math.max(EXPLANATION_POPUP_MIN_HEIGHT, window.innerHeight - 24)
-      const width = Math.min(maxWidth, Math.max(
-        EXPLANATION_POPUP_MIN_WIDTH,
-        startWidth + moveEvent.clientX - startX
-      ))
-      const height = Math.min(maxHeight, Math.max(
-        EXPLANATION_POPUP_MIN_HEIGHT,
-        startHeight + moveEvent.clientY - startY
-      ))
-      element.style.width = `${width}px`
-      element.style.height = `${height}px`
-      updateExplanationConnector(popup)
-    }
-    const onUp = () => {
-      element.classList.remove('resizing')
-      saveExplanationPopupSize(element)
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+      const onMove = (moveEvent) => {
+        const dx = moveEvent.clientX - startX
+        const dy = moveEvent.clientY - startY
+        let left = startLeft
+        let top = startTop
+        let width = startWidth
+        let height = startHeight
+
+        if (direction.includes('e')) width = Math.min(window.innerWidth - startLeft - 8, startWidth + dx)
+        if (direction.includes('s')) height = Math.min(window.innerHeight - startTop - 8, startHeight + dy)
+        if (direction.includes('w')) {
+          left = Math.max(8, Math.min(fixedRight - EXPLANATION_POPUP_MIN_WIDTH, startLeft + dx))
+          width = fixedRight - left
+        }
+        if (direction.includes('n')) {
+          top = Math.max(8, Math.min(fixedBottom - EXPLANATION_POPUP_MIN_HEIGHT, startTop + dy))
+          height = fixedBottom - top
+        }
+        width = Math.max(EXPLANATION_POPUP_MIN_WIDTH, width)
+        height = Math.max(EXPLANATION_POPUP_MIN_HEIGHT, height)
+        element.style.left = `${left}px`
+        element.style.top = `${top}px`
+        element.style.width = `${width}px`
+        element.style.height = `${height}px`
+        updateExplanationConnector(popup)
+      }
+      const onUp = () => {
+        element.classList.remove('resizing')
+        saveExplanationPopupSize(element)
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
   })
 
   const header = element.querySelector('.explanation-popup-header')
@@ -10521,8 +11612,16 @@ function createExplanationPopup({ kind, label, text, pageNum, imageBase64, ancho
     const initialLeft = element.offsetLeft
     const initialTop = element.offsetTop
     const onMove = (moveEvent) => {
-      element.style.left = `${initialLeft + moveEvent.clientX - startX}px`
-      element.style.top = `${initialTop + moveEvent.clientY - startY}px`
+      const left = Math.min(
+        Math.max(8, window.innerWidth - element.offsetWidth - 8),
+        Math.max(8, initialLeft + moveEvent.clientX - startX)
+      )
+      const top = Math.min(
+        Math.max(8, window.innerHeight - element.offsetHeight - 8),
+        Math.max(8, initialTop + moveEvent.clientY - startY)
+      )
+      element.style.left = `${left}px`
+      element.style.top = `${top}px`
       updateExplanationConnector(popup)
     }
     const onUp = () => {
@@ -11343,9 +12442,8 @@ function askAIAssistantImage(base64Img, pageNum) {
   chatInput.focus();
 }
 
-if (viewerScrollContainer) {
-  viewerScrollContainer.addEventListener('scroll', hideSelectionMenu);
-}
+pdfScrollContainer?.addEventListener('scroll', hideSelectionMenu)
+translationScrollContainer?.addEventListener('scroll', hideSelectionMenu)
 
 window.addEventListener('resize', hideSelectionMenu);
 
@@ -11361,15 +12459,15 @@ function setToolbarHidden(hidden) {
   document.body.classList.toggle('toolbar-hidden', hidden)
 }
 
-if (viewerScrollContainer && viewerTopbar) {
-  let lastToolbarScrollTop = viewerScrollContainer.scrollTop
+if (pdfScrollContainer && viewerTopbar) {
+  let lastToolbarScrollTop = pdfScrollContainer.scrollTop
   const TOOLBAR_HIDE_THRESHOLD = 8   // 이보다 작은 이동은 잔떨림으로 보고 무시
   const TOOLBAR_TOP_ZONE = 64        // 이 안쪽이면 방향과 무관하게 항상 표시
 
-  viewerScrollContainer.addEventListener('scroll', () => {
+  pdfScrollContainer.addEventListener('scroll', () => {
     if (!state.toolbarAutoHide) return
 
-    const currentScrollTop = viewerScrollContainer.scrollTop
+    const currentScrollTop = pdfScrollContainer.scrollTop
     const delta = currentScrollTop - lastToolbarScrollTop
 
     if (currentScrollTop <= TOOLBAR_TOP_ZONE) {
@@ -12253,6 +13351,37 @@ function waitForScrollSettle(container, timeoutMs = 1000) {
   })
 }
 
+// Element.scrollIntoView()는 가장 가까운 스크롤 영역만 움직이는 것이 아니라
+// 모든 스크롤 가능한 조상을 함께 움직인다. 번역 문장을 찾을 때 이 API를 쓰면
+// .trans-page-content와 전체 논문 뷰어가 동시에 이동해 원문까지 따라 움직였다.
+// 아래 함수는 지정한 컨테이너의 scrollTop만 바꿔 다른 패널의 위치를 보존한다.
+function scrollElementInsideContainer(element, container, behavior = 'smooth') {
+  if (!element || !container) return
+  const elementRect = element.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const delta = (
+    elementRect.top + elementRect.height / 2
+    - (containerRect.top + containerRect.height / 2)
+  )
+  const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
+  const nextScrollTop = Math.max(0, Math.min(maxScrollTop, container.scrollTop + delta))
+  container.scrollTo({ top: nextScrollTop, behavior })
+}
+
+// 원문과 번역은 서로 다른 스크롤 열이므로 원문 위치만 직접 이동한다.
+function scrollPdfSentence(textLayer, rects) {
+  if (!textLayer || !rects?.length) return
+  const viewerRect = pdfScrollContainer.getBoundingClientRect()
+  const textLayerRect = textLayer.getBoundingClientRect()
+  const firstTop = Math.min(...rects.map(rect => rect.top))
+  const lastBottom = Math.max(...rects.map(rect => rect.top + rect.height))
+  const sourceCenter = textLayerRect.top + (firstTop + lastBottom) / 2
+  const viewerCenter = viewerRect.top + viewerRect.height / 2
+  const scrollDelta = sourceCenter - viewerCenter
+  if (Math.abs(scrollDelta) < 2) return
+  pdfScrollContainer.scrollBy({ top: scrollDelta, behavior: 'smooth' })
+}
+
 async function locateTermInPdf(pageNum, term) {
   const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`)
   if (!pw) {
@@ -12264,7 +13393,7 @@ async function locateTermInPdf(pageNum, term) {
   if (!isVtmFresh(vtm)) {
     // 페이지로 스크롤해 지연 렌더링을 트리거한 뒤, 텍스트 레이어 재생성 및
     // 재세그멘테이션이 끝나 virtualTextMaps가 갱신될 때까지 잠시 대기한다.
-    pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    scrollElementInsideContainer(pw, pdfScrollContainer, 'smooth')
     const deadline = Date.now() + 3000
     while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 100))
@@ -12318,10 +13447,10 @@ async function locateTermInPdf(pageNum, term) {
   // 먼저 그려져서 화면 밖에 있는 동안 다 사라져버리는 문제(그래서 두 번 클릭해야 겨우
   // 보이는 것처럼 느껴짐)를 막기 위해, 스크롤이 실제로 자리를 잡을 때까지 기다린 뒤에
   // 하이라이트를 그린다. 이미 화면에 보이는 위치라면(스크롤이 사실상 필요 없다면) 바로 그린다.
-  const alreadyInView = isElementReasonablyInView(pw, viewerScrollContainer)
-  pw.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const alreadyInView = isElementReasonablyInView(pw, pdfScrollContainer)
+  scrollElementInsideContainer(pw, pdfScrollContainer, 'smooth')
   if (!alreadyInView) {
-    await waitForScrollSettle(viewerScrollContainer)
+    await waitForScrollSettle(pdfScrollContainer)
   }
   const overlay = getOrCreateOverlay(pw)
   renderSentenceOverlay(overlay, rects, 'sentence-locate-pulse-box')
@@ -13057,7 +14186,7 @@ if (viewerScrollContainer) {
 
   // 클릭: PDF textLayer 클릭 → active 하이라이트 + 번역 스크롤
   //        trans-sentence 클릭 → PDF 스크롤
-  viewerScrollContainer.addEventListener('click', (e) => {
+  viewerScrollContainer.addEventListener('click', async (e) => {
     try {
       state.hoverSelectionDisabled = true;
       if (sentenceHoverTimer) { clearTimeout(sentenceHoverTimer); sentenceHoverTimer = null; }
@@ -13075,8 +14204,24 @@ if (viewerScrollContainer) {
         const sentenceIdx = parseInt(transSent.dataset.sentenceIdx, 10);
         if (isNaN(sentenceIdx)) return;
 
-        const sentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum];
-        if (!sentenceRanges) return;
+        let sentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum];
+        let vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum];
+        const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`);
+        if (!pw) return;
+
+        // 번역 열은 원문과 독립적으로 먼 페이지까지 이동할 수 있다. 아직 원문
+        // 페이지가 렌더되지 않았다면 원문 열만 해당 페이지로 옮겨 렌더를 기다린다.
+        if (!sentenceRanges || !isVtmFresh(vtm)) {
+          scrollElementInsideContainer(pw, pdfScrollContainer, 'smooth');
+          const deadline = Date.now() + 3000;
+          while (Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            sentenceRanges = state.pdfPageSentences && state.pdfPageSentences[pageNum];
+            vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum];
+            if (sentenceRanges && isVtmFresh(vtm)) break;
+          }
+        }
+        if (!sentenceRanges || !isVtmFresh(vtm)) return;
 
         const sRange = sentenceRanges.find(r => {
           const idx = r.sentenceIdx >= 10000 ? (r.originalSentenceIdx ?? r.sentenceIdx) : r.sentenceIdx;
@@ -13087,15 +14232,12 @@ if (viewerScrollContainer) {
         applyActiveHighlight(pageNum, sRange);
 
         // PDF 영역으로 스크롤
-        const vtm = state.virtualTextMaps && state.virtualTextMaps[pageNum];
-        const pw = viewerScrollContainer.querySelector(`.pdf-page-wrapper[data-page="${pageNum}"]`);
         if (vtm && pw) {
           const textLayer = pw.querySelector('.textLayer');
           if (textLayer) {
             const rects = getSentenceRects(sRange, vtm, textLayer);
             if (rects.length > 0) {
-              // 해당 pageWrapper가 뷰포트에 없으면 스크롤
-              pw.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              scrollPdfSentence(textLayer, rects);
 
               // pulse 애니메이션
               const overlay = getOrCreateOverlay(pw);
@@ -13134,7 +14276,10 @@ if (viewerScrollContainer) {
           `.trans-sentence[data-page="${pageNum}"][data-sentence-idx="${transIdx}"]`
         );
         if (matches.length > 0) {
-          matches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // 현재 번역 페이지와 그 안의 문장 위치만 이동하고 원문 열은 보존한다.
+          const translationContent = matches[0].closest('.trans-page-content');
+          scrollElementInsideContainer(matches[0], translationContent, 'auto');
+          scrollElementInsideContainer(matches[0], translationScrollContainer, 'smooth');
           matches.forEach(match => {
             match.classList.add('sentence-pulse');
             setTimeout(() => match.classList.remove('sentence-pulse'), 1000);
@@ -13448,6 +14593,22 @@ async function handleRouting() {
       }
       showToast('비교할 논문 정보를 불러올 수 없습니다.', 'error')
       location.hash = 'library'
+    } else if (hash === '#scholar') {
+      await showLibraryScreen(false)
+      updateTabUI('paper-search')
+      await populateScholarFolders()
+      setScholarMode(scholarMode)
+    } else if (hash === '#vocabulary') {
+      await showLibraryScreen(false)
+      updateTabUI('vocabulary')
+    } else if (hash === '#history') {
+      await showLibraryScreen(false)
+      updateTabUI('history')
+    } else if (hash === '#notes') {
+      await showLibraryScreen(false)
+      archiveContentView = 'notes'
+      libraryContentSwitchBtns.forEach(item => item.classList.toggle('active', item.dataset.view === 'notes'))
+      updateTabUI('archive')
     } else {
       console.log("[Router] Routing to Library screen. Viewer active:", viewerScreen.classList.contains('active'), "Library active:", libraryScreen.classList.contains('active'))
       if (viewerScreen.classList.contains('active') || paperNoteScreen?.classList.contains('active') || !libraryScreen.classList.contains('active')) {
@@ -13456,6 +14617,14 @@ async function handleRouting() {
     }
   } catch (err) {
     console.error("[Router] Error in handleRouting:", err)
+  } finally {
+    if (isObsidianEmbedded && window.parent !== window) {
+      window.parent.postMessage({
+        source: 'paper-research-workspace',
+        type: 'route-change',
+        hash: window.location.hash || '#library',
+      }, '*')
+    }
   }
 }
 
@@ -13467,6 +14636,19 @@ window.addEventListener('popstate', (e) => {
 window.addEventListener('hashchange', () => {
   console.log("[Router] hashchange fired")
   handleRouting()
+})
+
+// Obsidian 플러그인 툴바에서 이미 열린 iframe을 다시 로그인/새로고침하지
+// 않고 원하는 내부 화면으로 이동한다. 부모 창 이외의 메시지와 알려지지 않은
+// 해시는 무시해 임의 스크립트가 라우팅을 조작하지 못하게 한다.
+window.addEventListener('message', (event) => {
+  if (!isObsidianEmbedded || event.source !== window.parent) return
+  const data = event.data || {}
+  if (data.source !== 'paper-research-workspace' || data.type !== 'navigate') return
+  const route = String(data.route || '')
+  if (!/^#(?:library|scholar|history|notes|vocabulary|viewer\?id=[A-Za-z0-9%._~-]+|note\?id=[A-Za-z0-9%._~-]+)$/.test(route)) return
+  if (window.location.hash === route) handleRouting()
+  else window.location.hash = route
 })
 
 // ── 논문 목차(Outline) 제어 및 바인딩 ─────────────────
@@ -13532,7 +14714,7 @@ async function loadPDFOutline() {
         const iconSvg = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="opacity:0.6; margin-right:8px; flex-shrink:0;"><circle cx="12" cy="12" r="8"/></svg>`
         div.innerHTML = `${iconSvg}<span>${p} 페이지</span>`
         div.addEventListener('click', () => {
-          scrollToPage(viewerScrollContainer, p)
+          scrollToPage(pdfScrollContainer, p)
         })
         div.title = `${p}페이지로 이동`
         appendOutlineExplainButton(div, `${p} 페이지`, p)
@@ -13551,7 +14733,7 @@ async function loadPDFOutline() {
         div.innerHTML = `${iconSvg}<span class="outline-item-title">${escapeHtml(item.title)}</span>`
         if (item.pageNum) {
           div.addEventListener('click', () => {
-            scrollToPage(viewerScrollContainer, item.pageNum)
+            scrollToPage(pdfScrollContainer, item.pageNum)
           })
           div.title = `${item.pageNum}페이지로 이동`
         }

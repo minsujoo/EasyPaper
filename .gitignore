@@ -390,3 +390,12 @@ backend/logs/
 
 # EasyPaper 데이터 백업 아카이브
 backups/
+
+# Local central-sync runtime data (database, uploaded PDFs, recovery files)
+sync-data/
+backend/sync-data/
+
+# Local/incomplete environments and generated schema backups
+backend/.venv-py310-incomplete/
+src-tauri/gen.root-owned-backup/
+src-tauri/permissions.root-owned-backup/

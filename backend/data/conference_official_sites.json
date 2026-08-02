@@ -1,0 +1,755 @@
+{
+  "source": "CCF Deadlines official-link directory plus official society series pages",
+  "generated_at": "2026-08-02",
+  "sites": {
+    "AAAI": {
+      "series_url": "https://aaai.org/conference/aaai/aaai-27/",
+      "years": {
+        "2022": "https://aaai.org/Conferences/AAAI-22/",
+        "2023": "https://www.aaai.org/Conferences/AAAI-23/",
+        "2024": "https://www.aaai.org/aaai-conference/",
+        "2025": "https://aaai.org/conference/aaai/aaai-25/",
+        "2026": "https://aaai.org/conference/aaai/aaai-26/",
+        "2027": "https://aaai.org/conference/aaai/aaai-27/"
+      },
+      "directory_title": "AAAI"
+    },
+    "AAMAS": {
+      "series_url": "https://openreview.net/group?id=ifaamas.org/AAMAS/2027/Conference",
+      "years": {
+        "2023": "https://aamas2023.soton.ac.uk/",
+        "2024": "https://www.aamas2024-conference.auckland.ac.nz/",
+        "2025": "https://aamas2025.org/",
+        "2026": "https://cyprusconferences.org/aamas2026",
+        "2027": "https://openreview.net/group?id=ifaamas.org/AAMAS/2027/Conference"
+      },
+      "directory_title": "AAMAS",
+      "year_url_template": "https://aamas{year}.org/"
+    },
+    "ACC": {
+      "series_url": "https://a2c2.org/acc/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ACCV": {
+      "series_url": "https://accv2026.org/",
+      "years": {
+        "2024": "https://accv2024.org/",
+        "2026": "https://accv2026.org/"
+      },
+      "directory_title": "ACCV"
+    },
+    "ACL": {
+      "series_url": "https://2027.aclweb.org/",
+      "years": {
+        "2022": "https://www.2022.aclweb.org/",
+        "2023": "https://2023.aclweb.org/",
+        "2024": "https://2024.aclweb.org/",
+        "2025": "https://2025.aclweb.org/",
+        "2026": "https://2026.aclweb.org/",
+        "2027": "https://2027.aclweb.org/"
+      },
+      "directory_title": "ACL",
+      "year_url_template": "https://{year}.aclweb.org/"
+    },
+    "AIM": {
+      "series_url": "https://www.ieee-ras.org/conferences-workshops/technically-co-sponsored/aim",
+      "years": {},
+      "directory_title": ""
+    },
+    "AISTATS": {
+      "series_url": "https://virtual.aistats.org/Conferences/2026",
+      "years": {
+        "2022": "https://aistats.org/aistats2022/",
+        "2024": "https://aistats.org/aistats2024/",
+        "2025": "https://aistats.org/aistats2025",
+        "2026": "https://virtual.aistats.org/Conferences/2026"
+      },
+      "directory_title": "AISTATS"
+    },
+    "ASONAM": {
+      "series_url": "https://asonam.cpsc.ucalgary.ca/",
+      "years": {},
+      "directory_title": ""
+    },
+    "BMVC": {
+      "series_url": "https://bmvc2026.bmva.org/",
+      "years": {
+        "2021": "https://britishmachinevisionassociation.github.io/bmvc",
+        "2023": "https://www.bmvc2023.org/",
+        "2024": "https://bmvc2024.org/",
+        "2025": "https://bmvc2025.bmva.org/",
+        "2026": "https://bmvc2026.bmva.org/"
+      },
+      "directory_title": "BMVC",
+      "year_url_template": "https://bmvc{year}.org/"
+    },
+    "CAV": {
+      "series_url": "https://conferences.i-cav.org/2026/",
+      "years": {
+        "2022": "http://i-cav.org/2022/",
+        "2025": "https://conferences.i-cav.org/2025/",
+        "2026": "https://conferences.i-cav.org/2026/"
+      },
+      "directory_title": "CAV"
+    },
+    "CDC": {
+      "series_url": "https://ieeecss.org/conferences/conference-calendar",
+      "years": {},
+      "directory_title": ""
+    },
+    "CHI": {
+      "series_url": "https://chi2027.acm.org/",
+      "years": {
+        "2024": "http://chi2024.acm.org/",
+        "2025": "https://chi2025.acm.org/",
+        "2026": "https://chi2026.acm.org/",
+        "2027": "https://chi2027.acm.org/"
+      },
+      "directory_title": "CHI",
+      "year_url_template": "https://chi{year}.acm.org/"
+    },
+    "CIKM": {
+      "series_url": "https://cikm2026.diag.uniroma1.it/",
+      "years": {
+        "2020": "https://www.cikm2020.org/",
+        "2021": "https://www.cikm2021.org/",
+        "2022": "https://www.cikm2022.org/",
+        "2023": "https://uobevents.eventsair.com/cikm2023/",
+        "2024": "https://cikm2024.org/",
+        "2025": "https://cikm2025.org",
+        "2026": "https://cikm2026.diag.uniroma1.it/"
+      },
+      "directory_title": "CIKM",
+      "year_url_template": "https://cikm{year}.org/"
+    },
+    "COLT": {
+      "series_url": "https://learningtheory.org/colt2026/",
+      "years": {
+        "2022": "https://learningtheory.org/colt2022/index.html",
+        "2024": "https://www.learningtheory.org/colt2024/",
+        "2025": "https://learningtheory.org/colt2025/",
+        "2026": "https://learningtheory.org/colt2026/"
+      },
+      "directory_title": "COLT"
+    },
+    "CVPR": {
+      "series_url": "https://cvpr.thecvf.com/Conferences/2026",
+      "years": {
+        "2022": "http://cvpr2022.thecvf.com/",
+        "2023": "http://cvpr2023.thecvf.com/",
+        "2024": "https://cvpr.thecvf.com/Conferences/2024",
+        "2025": "https://cvpr.thecvf.com/Conferences/2025/CallForPapers",
+        "2026": "https://cvpr.thecvf.com/Conferences/2026"
+      },
+      "directory_title": "CVPR",
+      "year_url_template": "https://cvpr.thecvf.com/Conferences/{year}"
+    },
+    "CoRL": {
+      "series_url": "https://www.corl.org/",
+      "years": {
+        "2024": "https://2024.corl.org/",
+        "2025": "https://www.corl.org/",
+        "2026": "https://www.corl.org/"
+      },
+      "directory_title": "CoRL"
+    },
+    "EC": {
+      "series_url": "https://www.sigecom.org/ec/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ECAI": {
+      "series_url": "https://eurai.org/ecai",
+      "years": {
+        "2023": "https://ecai2023.eu/",
+        "2024": "https://www.ecai2024.eu/",
+        "2025": "https://ecai2025.org/deadlines/",
+        "2026": "https://eurai.org/ecai"
+      },
+      "directory_title": "ECAI"
+    },
+    "ECCV": {
+      "series_url": "https://eccv.ecva.net/",
+      "years": {
+        "2022": "https://eccv2022.ecva.net/",
+        "2024": "https://eccv2024.ecva.net/",
+        "2026": "https://eccv.ecva.net/"
+      },
+      "directory_title": "ECCV",
+      "year_url_template": "https://eccv.ecva.net/Conferences/{year}"
+    },
+    "EMNLP": {
+      "series_url": "https://2026.emnlp.org/",
+      "years": {
+        "2022": "https://2022.emnlp.org",
+        "2023": "https://2023.emnlp.org",
+        "2024": "https://2024.emnlp.org",
+        "2025": "https://2025.emnlp.org/",
+        "2026": "https://2026.emnlp.org/"
+      },
+      "directory_title": "EMNLP",
+      "year_url_template": "https://{year}.emnlp.org/"
+    },
+    "FM": {
+      "series_url": "https://conf.researchr.org/home/fm-2026",
+      "years": {
+        "2021": "http://lcs.ios.ac.cn/fm2021/",
+        "2024": "https://www.fm24.polimi.it/",
+        "2026": "https://conf.researchr.org/home/fm-2026"
+      },
+      "directory_title": "FM"
+    },
+    "GECCO": {
+      "series_url": "https://gecco-2026.sigevo.org/HomePage",
+      "years": {
+        "2025": "https://gecco-2025.sigevo.org/HomePage",
+        "2026": "https://gecco-2026.sigevo.org/HomePage"
+      },
+      "directory_title": "GECCO"
+    },
+    "HRI": {
+      "series_url": "https://humanrobotinteraction.org/",
+      "years": {},
+      "directory_title": "",
+      "year_url_template": "https://humanrobotinteraction.org/{year}/"
+    },
+    "HSCC": {
+      "series_url": "https://www.isis.vanderbilt.edu/events/hscciccps-2026",
+      "years": {
+        "2026": "https://www.isis.vanderbilt.edu/events/hscciccps-2026"
+      },
+      "directory_title": "HSCC"
+    },
+    "I3D": {
+      "series_url": "https://i3dsymposium.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "IC2S2": {
+      "series_url": "https://www.ic2s2.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ICAPS": {
+      "series_url": "https://icaps26.icaps-conference.org/",
+      "years": {
+        "2025": "https://icaps25.icaps-conference.org/",
+        "2026": "https://icaps26.icaps-conference.org/"
+      },
+      "directory_title": "ICAPS"
+    },
+    "ICASSP": {
+      "series_url": "https://2027.ieeeicassp.org/",
+      "years": {
+        "2022": "https://2022.ieeeicassp.org",
+        "2023": "https://2023.ieeeicassp.org",
+        "2024": "https://2024.ieeeicassp.org/",
+        "2025": "https://2025.ieeeicassp.org/",
+        "2026": "https://2026.ieeeicassp.org/",
+        "2027": "https://2027.ieeeicassp.org/"
+      },
+      "directory_title": "ICASSP"
+    },
+    "ICCAS": {
+      "series_url": "https://icros.org/iccas/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ICCE-Asia": {
+      "series_url": "https://www.icce-asia.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ICCPS": {
+      "series_url": "https://iccps.acm.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ICCV": {
+      "series_url": "https://iccv.thecvf.com/Conferences/2025",
+      "years": {
+        "2021": "http://iccv2021.thecvf.com/home/",
+        "2023": "http://iccv2023.thecvf.com/home/",
+        "2025": "https://iccv.thecvf.com/Conferences/2025"
+      },
+      "directory_title": "ICCV",
+      "year_url_template": "https://iccv.thecvf.com/Conferences/{year}"
+    },
+    "ICDE": {
+      "series_url": "https://icde2027.github.io/",
+      "years": {
+        "2021": "https://icde2021.gr/",
+        "2022": "https://icde2022.ieeecomputer.my/important-dates/",
+        "2023": "https://icde2023.ics.uci.edu/",
+        "2024": "https://icde2024.github.io/",
+        "2025": "https://ieee-icde.org/2025/",
+        "2026": "https://icde2026.github.io/",
+        "2027": "https://icde2027.github.io/"
+      },
+      "directory_title": "ICDE"
+    },
+    "ICDM": {
+      "series_url": "http://icdm2026.neu.edu.cn/",
+      "years": {
+        "2021": "https://icdm2021.auckland.ac.nz/",
+        "2022": "https://icdm22.cse.usf.edu/key-dates.html",
+        "2023": "http://cloud-conf.net/icdm2023/index.html",
+        "2024": "https://icdm2024.org/dates/",
+        "2025": "https://www3.cs.stonybrook.edu/~icdm2025/cfp.html",
+        "2026": "http://icdm2026.neu.edu.cn/"
+      },
+      "directory_title": "ICDM"
+    },
+    "ICEIC": {
+      "series_url": "https://iceic.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ICIP": {
+      "series_url": "https://2026.ieeeicip.org/",
+      "registration_urls": {"2026": "https://2026.ieeeicip.org/registration/"},
+      "years": {
+        "2023": "https://2023.ieeeicip.org/",
+        "2024": "https://2024.ieeeicip.org/",
+        "2025": "https://2025.ieeeicip.org/",
+        "2026": "https://2026.ieeeicip.org/"
+      },
+      "directory_title": "ICIP"
+    },
+    "ICLR": {
+      "series_url": "https://iclr.cc/Conferences/2027",
+      "years": {
+        "2022": "https://iclr.cc/Conferences/2022",
+        "2023": "https://iclr.cc/Conferences/2023",
+        "2024": "https://iclr.cc/Conferences/2024",
+        "2025": "https://iclr.cc/Conferences/2025",
+        "2026": "https://iclr.cc/Conferences/2026",
+        "2027": "https://iclr.cc/Conferences/2027"
+      },
+      "directory_title": "ICLR",
+      "year_url_template": "https://iclr.cc/Conferences/{year}"
+    },
+    "ICML": {
+      "series_url": "https://icml.cc/Conferences/2026",
+      "years": {
+        "2022": "https://icml.cc/Conferences/2022",
+        "2023": "https://icml.cc/Conferences/2023",
+        "2024": "https://icml.cc/Conferences/2024",
+        "2025": "https://icml.cc/Conferences/2025",
+        "2026": "https://icml.cc/Conferences/2026"
+      },
+      "directory_title": "ICML",
+      "year_url_template": "https://icml.cc/Conferences/{year}"
+    },
+    "ICPR": {
+      "series_url": "https://icpr2026.org/",
+      "registration_urls": {"2026": "https://icpr2026.org/registration.html"},
+      "years": {
+        "2024": "https://icpr2024.org/",
+        "2026": "https://icpr2026.org/"
+      },
+      "directory_title": "ICPR"
+    },
+    "ICRA": {
+      "series_url": "https://2027.ieee-icra.org/",
+      "years": {
+        "2022": "https://www.icra2022.org/",
+        "2023": "https://www.icra2023.org/",
+        "2024": "https://2024.ieee-icra.org",
+        "2025": "https://2025.ieee-icra.org",
+        "2026": "https://2026.ieee-icra.org/",
+        "2027": "https://2027.ieee-icra.org/"
+      },
+      "directory_title": "ICRA",
+      "year_url_template": "https://{year}.ieee-icra.org/"
+    },
+    "ICROS-Summer": {
+      "series_url": "https://conf.icros.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "IEIE-Summer": {
+      "series_url": "https://www.theieie.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "IFAC": {
+      "series_url": "https://www.ifac-control.org/events",
+      "years": {"2026": "https://ifac2026.org/"},
+      "registration_urls": {"2026": "https://ifac2026.org/fairContents.do?FAIRMENU_IDX=21697&hl=ENG"},
+      "directory_title": ""
+    },
+    "IJCAI": {
+      "series_url": "https://2026.ijcai.org/",
+      "registration_urls": {"2026": "https://2026.ijcai.org/registration/"},
+      "years": {
+        "2022": "https://ijcai-22.org",
+        "2023": "https://ijcai-23.org",
+        "2024": "https://ijcai24.org/",
+        "2025": "https://2025.ijcai.org/",
+        "2026": "https://2026.ijcai.org/"
+      },
+      "directory_title": "IJCAI"
+    },
+    "IJCAR": {
+      "series_url": "https://www.floc26.org/ijcar",
+      "years": {
+        "2026": "https://www.floc26.org/ijcar"
+      },
+      "directory_title": "IJCAR"
+    },
+    "IPIU": {
+      "series_url": "https://www.ipiu.or.kr/",
+      "years": {},
+      "directory_title": ""
+    },
+    "IPSN": {
+      "series_url": "https://ipsn.acm.org/2022/",
+      "years": {
+        "2022": "https://ipsn.acm.org/2022/"
+      },
+      "directory_title": "IPSN"
+    },
+    "IROS": {
+      "series_url": "https://www.ieee-ras.org/conferences-workshops/fully-sponsored/iros",
+      "years": {
+        "2023": "https://ieee-iros.org/",
+        "2024": "http://iros2024-abudhabi.org/",
+        "2025": "http://www.iros25.org/",
+        "2026": "https://2026.ieee-iros.org/",
+        "2027": "https://www.ieee-ras.org/event/2027-ieee-rsj-international-conference-on-intelligent-robots-and-systems-iros-70525/"
+      },
+      "directory_title": "IROS"
+    },
+    "ISMAR": {
+      "series_url": "https://www.ieeeismar.net/2026/",
+      "years": {
+        "2023": "https://ismar23.org/",
+        "2024": "https://ieeeismar.org/",
+        "2025": "https://www.ieeeismar.net/2025/",
+        "2026": "https://www.ieeeismar.net/2026/"
+      },
+      "directory_title": "ISMAR"
+    },
+    "ITC-CSCC": {
+      "series_url": "https://itc-cscc.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "ITSC": {
+      "series_url": "https://ieee-itss.org/conf/itsc/",
+      "years": {"2026": "https://ieee-itsc.org/2026/"},
+      "registration_urls": {"2026": "https://ieee-itsc.org/2026/attend/registration/"},
+      "directory_title": ""
+    },
+    "IV": {
+      "series_url": "https://ieee-itss.org/conf/iv/",
+      "years": {
+        "2027": "https://ieee-iv.org/2027/"
+      },
+      "directory_title": ""
+    },
+    "KDD": {
+      "series_url": "https://kdd2027.kdd.org/",
+      "registration_urls": {"2026": "https://kdd2026.kdd.org/registration/"},
+      "years": {
+        "2021": "https://www.kdd.org/kdd2021/",
+        "2022": "https://www.kdd.org/kdd2022/",
+        "2023": "https://kdd.org/kdd2023/",
+        "2024": "https://kdd2024.kdd.org/research-track-call-for-papers/",
+        "2025": "https://kdd2025.kdd.org/",
+        "2026": "https://kdd2026.kdd.org/",
+        "2027": "https://kdd2027.kdd.org/"
+      },
+      "directory_title": "SIGKDD",
+      "year_url_template": "https://kdd{year}.kdd.org/"
+    },
+    "KR": {
+      "series_url": "https://kr.org/KR2026/",
+      "years": {
+        "2023": "https://kr.org/KR2023/",
+        "2024": "https://kr.org/KR2024/",
+        "2025": "https://kr.org/KR2025/",
+        "2026": "https://kr.org/KR2026/"
+      },
+      "directory_title": "KR"
+    },
+    "L4DC": {
+      "series_url": "https://l4dc.web.ox.ac.uk/",
+      "years": {},
+      "directory_title": ""
+    },
+    "MM": {
+      "series_url": "https://2026.acmmm.org/",
+      "years": {
+        "2021": "https://2021.acmmm.org/",
+        "2022": "https://2022.acmmm.org/",
+        "2023": "https://www.acmmm2023.org/",
+        "2024": "https://2024.acmmm.org/",
+        "2025": "https://acmmm2025.org/",
+        "2026": "https://2026.acmmm.org/"
+      },
+      "directory_title": "ACM MM",
+      "year_url_template": "https://acmmm{year}.org/"
+    },
+    "MMsys": {
+      "series_url": "https://2027.acmmmsys.org",
+      "years": {
+        "2026": "https://2026.acmmmsys.org",
+        "2027": "https://2027.acmmmsys.org"
+      },
+      "directory_title": "MMSys"
+    },
+    "MobiCom": {
+      "series_url": "https://www.sigmobile.org/mobicom/2027/",
+      "years": {
+        "2022": "https://www.sigmobile.org/mobicom/2022/",
+        "2023": "https://www.sigmobile.org/mobicom/2023/",
+        "2024": "https://www.sigmobile.org/mobicom/2024/",
+        "2025": "https://sigmobile.org/mobicom/2025/",
+        "2026": "https://sigmobile.org/mobicom/2026/",
+        "2027": "https://www.sigmobile.org/mobicom/2027/"
+      },
+      "directory_title": "MobiCom"
+    },
+    "MobiSys": {
+      "series_url": "https://www.sigmobile.org/mobisys/2026/",
+      "years": {
+        "2022": "https://www.sigmobile.org/mobisys/2022/",
+        "2026": "https://www.sigmobile.org/mobisys/2026/"
+      },
+      "directory_title": "MobiSys"
+    },
+    "NeurIPS": {
+      "series_url": "https://neurips.cc/Conferences/2026",
+      "years": {
+        "2021": "https://neurips.cc/Conferences/2021/",
+        "2022": "https://neurips.cc/Conferences/2022",
+        "2023": "https://neurips.cc/Conferences/2023",
+        "2024": "https://neurips.cc/Conferences/2024",
+        "2025": "https://neurips.cc/Conferences/2025",
+        "2026": "https://neurips.cc/Conferences/2026"
+      },
+      "directory_title": "NeurIPS",
+      "year_url_template": "https://neurips.cc/Conferences/{year}"
+    },
+    "PAKDD": {
+      "series_url": "https://www.pakdd2026.org/",
+      "years": {
+        "2025": "https://pakdd2025.org",
+        "2026": "https://www.pakdd2026.org/"
+      },
+      "directory_title": "PAKDD"
+    },
+    "PKDD": {
+      "series_url": "https://ecmlpkdd.org/2027/",
+      "registration_urls": {"2026": "https://ecmlpkdd.org/2026/attending-registration/"},
+      "years": {
+        "2021": "https://2021.ecmlpkdd.org/",
+        "2022": "https://2022.ecmlpkdd.org/index.php/key-dates-deadlines/",
+        "2023": "https://2023.ecmlpkdd.org/submissions/key-dates-deadlines/",
+        "2024": "https://2024.ecmlpkdd.org/submissions/key-dates-and-deadlines/",
+        "2025": "https://ecmlpkdd.org/2025/",
+        "2026": "https://ecmlpkdd.org/2026/",
+        "2027": "https://ecmlpkdd.org/2027/"
+      },
+      "directory_title": "ECML-PKDD"
+    },
+    "RO-MAN": {
+      "series_url": "https://www.ieee-ras.org/conferences-workshops/financially-co-sponsored/ro-man",
+      "years": {"2026": "https://ro-man2026.org/"},
+      "registration_urls": {"2026": "https://ro-man2026.org/registration/"},
+      "directory_title": ""
+    },
+    "RSS": {
+      "series_url": "https://roboticsconference.org",
+      "years": {
+        "2023": "https://roboticsconference.org/",
+        "2024": "https://roboticsconference.org/",
+        "2025": "https://roboticsconference.org",
+        "2026": "https://roboticsconference.org"
+      },
+      "directory_title": "RSS"
+    },
+    "RTAS": {
+      "series_url": "https://2026.rtas.org/",
+      "years": {
+        "2024": "https://2024.rtas.org/",
+        "2026": "https://2026.rtas.org/"
+      },
+      "directory_title": "RTAS"
+    },
+    "RTSS": {
+      "series_url": "http://2026.rtss.org/",
+      "years": {
+        "2022": "http://2022.rtss.org/",
+        "2025": "http://2025.rtss.org/",
+        "2026": "http://2026.rtss.org/"
+      },
+      "directory_title": "RTSS"
+    },
+    "RiTA": {
+      "series_url": "https://rita.asia/",
+      "years": {},
+      "directory_title": ""
+    },
+    "SIGGRAPH": {
+      "series_url": "https://www.siggraph.org/events/",
+      "years": {},
+      "directory_title": ""
+    },
+    "SIGGRAPH Asia": {
+      "series_url": "https://asia.siggraph.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "SIGIR": {
+      "series_url": "https://sigir2026.org/en-AU",
+      "years": {
+        "2021": "http://sigir.org/sigir2021/",
+        "2022": "https://sigir.org/sigir2022/",
+        "2023": "https://sigir.org/sigir2023/",
+        "2024": "https://sigir-2024.github.io/index.html",
+        "2025": "https://sigir2025.dei.unipd.it/",
+        "2026": "https://sigir2026.org/en-AU"
+      },
+      "directory_title": "SIGIR"
+    },
+    "SMC": {
+      "series_url": "https://www.ieeesmc2026.org/",
+      "years": {
+        "2023": "https://ieeesmc2023.org/",
+        "2024": "https://www.ieeesmc2024.org/",
+        "2025": "https://www.ieeesmc2025.org/",
+        "2026": "https://www.ieeesmc2026.org/"
+      },
+      "directory_title": "SMC"
+    },
+    "SODA": {
+      "series_url": "https://www.siam.org/conferences-events/siam-conferences/soda27/",
+      "years": {
+        "2025": "https://www.siam.org/conferences/cm/conference/soda25",
+        "2026": "https://www.siam.org/conferences-events/siam-conferences/soda26/",
+        "2027": "https://www.siam.org/conferences-events/siam-conferences/soda27/"
+      },
+      "directory_title": "SODA"
+    },
+    "SSRR": {
+      "series_url": "https://www.ieee-ras.org/conferences-workshops/technically-co-sponsored/ssrr",
+      "years": {},
+      "directory_title": ""
+    },
+    "SenSys": {
+      "series_url": "https://sensys.acm.org/2027/",
+      "years": {
+        "2026": "https://sensys.acm.org/2026/",
+        "2027": "https://sensys.acm.org/2027/"
+      },
+      "directory_title": "SenSys"
+    },
+    "UAI": {
+      "series_url": "https://www.auai.org/uai2026/",
+      "registration_urls": {"2026": "https://www.auai.org/uai2026/registration"},
+      "years": {
+        "2021": "http://auai.org/uai2021/",
+        "2023": "http://auai.org/uai2023/",
+        "2024": "http://auai.org/uai2024/",
+        "2025": "https://www.auai.org/uai2025/",
+        "2026": "https://www.auai.org/uai2026/"
+      },
+      "directory_title": "UAI"
+    },
+    "UR": {
+      "series_url": "https://ubiquitousrobots.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "VIS": {
+      "series_url": "https://ieeevis.org/year/2026/welcome",
+      "years": {
+        "2023": "https://ieeevis.org/year/2023/welcome",
+        "2025": "https://ieeevis.org/year/2025/welcome",
+        "2026": "https://ieeevis.org/year/2026/welcome"
+      },
+      "directory_title": "IEEE VIS"
+    },
+    "VR": {
+      "series_url": "https://ieeevr.org/2027/",
+      "years": {
+        "2024": "http://ieeevr.org/2024/",
+        "2025": "https://ieeevr.org/2025/",
+        "2026": "https://ieeevr.org/2026/",
+        "2027": "https://ieeevr.org/2027/"
+      },
+      "directory_title": "IEEE VR",
+      "year_url_template": "https://ieeevr.org/{year}/"
+    },
+    "VRST": {
+      "series_url": "https://vrst.acm.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "VTC-Fall": {
+      "series_url": "https://events.vtsociety.org/",
+      "years": {"2026": "https://events.vtsociety.org/vtc2026-fall/"},
+      "directory_title": ""
+    },
+    "VTC-Spring": {
+      "series_url": "https://events.vtsociety.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "WACV": {
+      "series_url": "https://wacv.thecvf.com/",
+      "years": {
+        "2025": "https://wacv2025.thecvf.com/",
+        "2026": "https://wacv.thecvf.com/",
+        "2027": "https://wacv.thecvf.com/"
+      },
+      "directory_title": "WACV",
+      "year_url_template": "https://wacv.thecvf.com/Conferences/{year}"
+    },
+    "WAFR": {
+      "series_url": "https://wafr.org/",
+      "years": {},
+      "directory_title": ""
+    },
+    "WINE": {
+      "series_url": "https://wine2026conf.github.io/",
+      "years": {
+        "2023": "https://wine2023.shanghaitech.edu.cn/",
+        "2024": "https://wine2024.org/",
+        "2025": "https://wine2025.cs.rutgers.edu/",
+        "2026": "https://wine2026conf.github.io/"
+      },
+      "directory_title": "WINE"
+    },
+    "WSDM": {
+      "series_url": "https://wsdm-conference.org/2027/",
+      "years": {
+        "2022": "https://www.wsdm-conference.org/2022/",
+        "2023": "https://www.wsdm-conference.org/2023/",
+        "2024": "https://www.wsdm-conference.org/2024/",
+        "2025": "https://www.wsdm-conference.org/2025/",
+        "2026": "https://wsdm-conference.org/2026/",
+        "2027": "https://wsdm-conference.org/2027/"
+      },
+      "directory_title": "WSDM",
+      "year_url_template": "https://www.wsdm-conference.org/{year}/"
+    },
+    "WWW": {
+      "series_url": "https://acmweb2027.org/",
+      "years": {
+        "2021": "https://www2021.thewebconf.org/",
+        "2022": "https://www2022.thewebconf.org/",
+        "2023": "https://www2023.thewebconf.org/",
+        "2024": "https://www2024.thewebconf.org/",
+        "2025": "https://www2025.thewebconf.org/",
+        "2026": "https://www2026.thewebconf.org/",
+        "2027": "https://acmweb2027.org/"
+      },
+      "directory_title": "WWW"
+    }
+  }
+}

@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { mockBaseRoutes, gotoApp } from './helpers.js'
 
-test('홈 노트 탭에서 자동 생성된 논문 노트를 열 수 있다', async ({ page }) => {
-  await mockBaseRoutes(page)
+test('보관함의 노트 보기에서 자동 생성된 논문 노트를 열 수 있다', async ({ page }) => {
+  const document = { id: 'cam4docc', filename: 'cam4docc.pdf', total_pages: 13, metadata: { title: 'Cam4DOcc' }, translated_pages: [] }
+  await mockBaseRoutes(page, { documents: [document] })
 
   const content = {
     title: 'Cam4DOcc',
@@ -38,7 +39,8 @@ test('홈 노트 탭에서 자동 생성된 논문 노트를 열 수 있다', as
   }))
 
   await gotoApp(page)
-  await page.click('#lib-tab-notes')
+  await expect(page.locator('#lib-tab-notes')).toHaveCount(0)
+  await page.locator('.library-content-switch-btn', { hasText: '노트' }).click()
 
   await expect(page.locator('.paper-note-card')).toContainText('Cam4DOcc')
   await expect(page.locator('.paper-note-card')).toContainText('완료')
@@ -51,4 +53,18 @@ test('홈 노트 탭에서 자동 생성된 논문 노트를 열 수 있다', as
 
   await page.click('#paper-note-back-btn')
   await expect(page.locator('#library-screen')).toHaveClass(/active/)
+})
+
+test('논문 카드의 노트 버튼으로 연결된 노트를 바로 연다', async ({ page }) => {
+  const document = { id: 'paper-1', filename: 'paper.pdf', total_pages: 5, metadata: { title: 'Linked Note Paper' }, translated_pages: [] }
+  const content = { title: 'Linked Note Paper', summary: '연결된 노트입니다.', visuals: [] }
+  await mockBaseRoutes(page, { documents: [document] })
+  await page.route('**/api/notes/paper-1', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ doc_id: 'paper-1', status: 'ready', content }),
+  }))
+  await gotoApp(page)
+  await page.locator('[data-id="paper-1"] .doc-note-btn').click()
+  await expect(page.locator('#paper-note-screen')).toHaveClass(/active/)
+  await expect(page.locator('#paper-note-modal-body')).toContainText('연결된 노트입니다.')
 })

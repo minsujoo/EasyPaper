@@ -22,8 +22,10 @@ from services.auth import (
 
 class FakeRequest:
     """request.client.host만 흉내내는 최소 페이크(라우터의 Request 대신 사용)."""
-    def __init__(self, ip="1.2.3.4"):
+    def __init__(self, ip="1.2.3.4", headers=None):
         self.client = type("Client", (), {"host": ip})()
+        self.headers = headers or {}
+        self.cookies = {}
 
 
 def test_hash_password_produces_verifiable_hash():
@@ -99,6 +101,45 @@ async def test_get_current_user_bypasses_cookie_check_when_skip_login_enabled(mo
     monkeypatch.setattr(auth_module, "get_app_username", lambda: "admin")
     username = await get_current_user(None)
     assert username == "admin"
+
+
+async def test_get_current_user_accepts_runtime_integration_token(monkeypatch):
+    import services.auth as auth_module
+    monkeypatch.setenv("EASYPAPER_INTEGRATION_TOKEN", "runtime-secret")
+    monkeypatch.setattr(auth_module, "get_skip_login", lambda: False)
+    monkeypatch.setattr(auth_module, "get_app_username", lambda: "researcher")
+    request = FakeRequest(headers={"authorization": "Bearer runtime-secret"})
+    assert await get_current_user(request) == "researcher"
+
+
+async def test_get_current_user_rejects_wrong_integration_token(monkeypatch):
+    import services.auth as auth_module
+    monkeypatch.setenv("EASYPAPER_INTEGRATION_TOKEN", "runtime-secret")
+    monkeypatch.setattr(auth_module, "get_skip_login", lambda: False)
+    request = FakeRequest(headers={"authorization": "Bearer wrong"})
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(request)
+    assert exc.value.status_code == 401
+
+
+async def test_integration_login_issues_cross_site_cookie_and_safe_redirect(monkeypatch):
+    import routers.auth as auth_router
+    monkeypatch.setenv("EASYPAPER_INTEGRATION_TOKEN", "runtime-secret")
+    monkeypatch.setattr(auth_router, "get_app_username", lambda: "researcher")
+    response = await auth_router.integration_login("runtime-secret", "/?embedded=obsidian#vocabulary")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/?embedded=obsidian#vocabulary"
+    cookie = response.headers["set-cookie"]
+    assert "integration_session=" in cookie
+    assert "SameSite=none" in cookie
+    assert "Secure" in cookie
+
+
+async def test_integration_login_rejects_external_redirect(monkeypatch):
+    import routers.auth as auth_router
+    monkeypatch.setenv("EASYPAPER_INTEGRATION_TOKEN", "runtime-secret")
+    response = await auth_router.integration_login("runtime-secret", "//attacker.example/path")
+    assert response.headers["location"] == "/"
 
 
 async def test_get_current_user_still_requires_cookie_when_skip_login_disabled(monkeypatch):

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-kill-backend-sidecar"
+description = "Enables the kill_backend_sidecar command without any pre-configured scope."
+commands.allow = ["kill_backend_sidecar"]
+
+[[permission]]
+identifier = "deny-kill-backend-sidecar"
+description = "Denies the kill_backend_sidecar command without any pre-configured scope."
+commands.deny = ["kill_backend_sidecar"]

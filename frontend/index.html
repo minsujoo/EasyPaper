@@ -89,14 +89,42 @@
       <!-- 탭 영역 -->
       <div class="library-tabs-container">
         <button id="lib-tab-archive" class="library-tab-btn active" data-tab="archive"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>보관함</button>
+        <button id="lib-tab-paper-search" class="library-tab-btn" data-tab="paper-search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 7v8M7 11h8"/></svg>Scholar</button>
         <button id="lib-tab-history" class="library-tab-btn" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>히스토리</button>
         <button id="lib-tab-chat" class="library-tab-btn" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>채팅</button>
         <button id="lib-tab-annotations" class="library-tab-btn" data-tab="annotations"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>주석</button>
-        <button id="lib-tab-notes" class="library-tab-btn" data-tab="notes"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>노트</button>
+        <button id="lib-tab-vocabulary" class="library-tab-btn" data-tab="vocabulary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M4 19.5V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14.5"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20"/><path d="M8 7h7M8 11h5"/></svg>단어장</button>
+      </div>
+
+      <div id="library-content-switch" class="library-content-switch">
+        <button type="button" class="library-content-switch-btn active" data-view="papers">논문</button>
+        <button type="button" class="library-content-switch-btn" data-view="notes">노트</button>
       </div>
 
       <!-- 독서 통계 위젯 영역 -->
       <div id="library-stats-container" class="hidden" style="margin-bottom: 16px;"></div>
+
+      <section id="library-history-section" class="reading-history-section hidden">
+        <div class="reading-calendar-card">
+          <header class="reading-calendar-header">
+            <div>
+              <span class="reading-calendar-eyebrow">READING HISTORY</span>
+              <h2 id="reading-calendar-title"></h2>
+            </div>
+            <div class="reading-calendar-nav">
+              <button type="button" id="reading-calendar-prev" class="icon-btn" title="이전 달"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+              <button type="button" id="reading-calendar-today" class="file-btn-outline compact">오늘</button>
+              <button type="button" id="reading-calendar-next" class="icon-btn" title="다음 달"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+          </header>
+          <div class="reading-calendar-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+          <div id="reading-calendar-grid" class="reading-calendar-grid"></div>
+        </div>
+        <aside class="reading-day-panel">
+          <div id="reading-day-heading" class="reading-day-heading">날짜를 선택하세요</div>
+          <div id="reading-day-list" class="reading-day-list"><p>달력에서 읽은 날짜를 선택하면 논문과 진도를 볼 수 있습니다.</p></div>
+        </aside>
+      </section>
 
       <!-- 라이브러리 전체 검색 (파일명/제목/카테고리 + 번역된 본문 텍스트) -->
       <div id="library-search-box" style="position: relative; margin-bottom: 14px;">
@@ -134,6 +162,54 @@
         </div>
       </div>
 
+      <section id="paper-search-section" class="paper-search-section hidden">
+        <div class="scholar-toolbar">
+          <div>
+            <div class="paper-search-eyebrow">PERSONAL RESEARCH DISCOVERY</div>
+            <h2>Scholar</h2>
+          </div>
+          <div class="scholar-mode-tabs">
+            <button type="button" class="scholar-mode-btn active" data-mode="recommended">맞춤 추천</button>
+            <button type="button" class="scholar-mode-btn" data-mode="search">AI 검색</button>
+            <button type="button" class="scholar-mode-btn" data-mode="latest">최신 논문</button>
+          </div>
+          <label class="scholar-folder-label">추천 기준
+            <select id="scholar-folder-select"><option value="">전체 보관함</option></select>
+          </label>
+          <button type="button" id="scholar-refresh-btn" class="file-btn-outline">새로고침</button>
+        </div>
+        <div id="scholar-feed-intro" class="scholar-feed-intro">
+          <h3 id="scholar-feed-title">내 연구에 맞는 논문</h3>
+          <p id="scholar-feed-description">보관함과 관심 평가를 바탕으로 관련 연구를 추천합니다.</p>
+        </div>
+        <div id="paper-search-hero" class="paper-search-hero hidden">
+          <div class="paper-search-eyebrow">AI RESEARCH SEARCH</div>
+          <h2>연구 질문으로 논문 찾기</h2>
+          <p>자연어로 질문하면 검증된 OpenAlex 논문을 찾고, 현재 설정된 AI가 관련성을 설명합니다.</p>
+          <form id="paper-search-form" class="paper-search-form">
+            <textarea id="paper-search-input" rows="2" maxlength="500" placeholder="예: 카메라 기반 4D 점유 예측에서 시간적 일관성을 다룬 최신 연구"></textarea>
+            <button id="paper-search-submit" type="submit" class="file-btn">검색</button>
+          </form>
+          <div class="paper-search-filters">
+            <label>시작 연도<input id="paper-search-year-from" type="number" min="1800" max="2100" placeholder="예: 2022"></label>
+            <label>종료 연도<input id="paper-search-year-to" type="number" min="1800" max="2100" placeholder="현재"></label>
+            <label>정렬<select id="paper-search-sort"><option value="relevance">관련도순</option><option value="newest">최신순</option><option value="cited">인용순</option></select></label>
+            <label class="paper-search-check"><input id="paper-search-open-access" type="checkbox"> 무료 원문만</label>
+          </div>
+        </div>
+        <div id="paper-search-loading" class="paper-search-loading hidden"><span class="spinner"></span><strong>논문을 찾고 AI가 분석하고 있습니다</strong><small>설정한 모델에 따라 잠시 걸릴 수 있습니다.</small></div>
+        <div id="paper-search-error" class="paper-search-error hidden"></div>
+        <div id="paper-search-output" class="hidden">
+          <article class="paper-search-answer">
+            <div class="paper-search-answer-label">AI 검색 요약 <span id="paper-search-ai-badge"></span></div>
+            <p id="paper-search-answer-text"></p>
+            <div id="paper-search-query-meta" class="paper-search-query-meta"></div>
+          </article>
+          <div class="paper-search-result-heading"><h3 id="paper-search-result-title">추천 결과</h3><span id="paper-search-result-count"></span></div>
+          <div id="paper-search-results" class="paper-search-results"></div>
+        </div>
+      </section>
+
       <!-- 채팅 세션 조회 (AI 어시스턴트 / 논문 비교 채팅 세션 목록) -->
       <div id="library-chat-section" class="hidden">
         <div class="chat-session-subtabs">
@@ -152,6 +228,19 @@
         </div>
         <div id="annotation-list" class="chat-session-list"></div>
       </div>
+
+      <section id="library-vocabulary-section" class="vocabulary-section hidden">
+        <div class="vocabulary-toolbar">
+          <div><h2>논문 단어장</h2><p>논문에서 저장한 단어를 모아 보고 Anki로 복습합니다.</p></div>
+          <div class="vocabulary-toolbar-actions">
+            <span id="anki-connection-badge" class="anki-badge offline">Anki 확인 중</span>
+            <button id="vocabulary-review-btn" class="file-btn compact" type="button">복습 시작</button>
+            <button id="vocabulary-settings-btn" class="file-btn-outline compact" type="button">연동 설정</button>
+            <button id="vocabulary-sync-btn" class="file-btn compact" type="button">Anki 동기화</button>
+          </div>
+        </div>
+        <div id="vocabulary-list" class="vocabulary-list"></div>
+      </section>
 
       <!-- 업로드 시 자동 생성되는 논문 요약/정리 노트 -->
       <div id="library-notes-section" class="hidden">
@@ -254,6 +343,10 @@
             <path d="m9 12 2 2 4-4"></path>
           </svg>
           <span class="read-btn-text">독서 완료</span>
+        </button>
+        <button id="viewer-bookmark-btn" class="viewer-bookmark-btn" title="현재 페이지를 책갈피로 저장">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+          <span id="viewer-bookmark-text">책갈피</span>
         </button>
         <button id="outline-toggle-btn" class="icon-btn" title="논문 목차 보기" style="margin-left: 6px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
@@ -371,9 +464,10 @@
 
     <!-- 메인 패널 -->
     <main class="panels">
-      <!-- 단일 뷰어 스크롤 컨테이너 -->
+      <!-- 원문과 번역이 서로 독립적으로 스크롤되는 뷰어 -->
       <div class="viewer-scroll-container" id="viewer-scroll-container">
-        <!-- page-pair 요소가 동적으로 생성됨 -->
+        <div class="viewer-scroll-column pdf-scroll-column" id="pdf-scroll-column"></div>
+        <div class="viewer-scroll-column translation-scroll-column" id="translation-scroll-column"></div>
       </div>
 
       <!-- 우측 하단 floating 스크롤 내비게이션 -->
@@ -649,6 +743,7 @@
         <button class="tab-btn active" data-tab="tab-general">일반 설정</button>
         <button class="tab-btn" data-tab="tab-model">모델 설정</button>
         <button class="tab-btn" data-tab="tab-account">계정 설정</button>
+        <button class="tab-btn" data-tab="tab-sync">동기화</button>
         <button class="tab-btn" data-tab="tab-advanced">고급 설정</button>
         <button class="tab-btn" data-tab="tab-info">정보</button>
       </div>
@@ -954,6 +1049,39 @@
             </label>
           </div>
         </form>
+      </div>
+
+      <!-- 중앙 데이터 동기화 탭 -->
+      <div id="tab-sync" class="tab-pane">
+        <div class="modal-form">
+          <div class="form-group">
+            <label for="setting-sync-server-url">중앙 동기화 서버</label>
+            <input type="url" id="setting-sync-server-url" placeholder="https://sync.example.com" autocomplete="off" />
+            <p style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">
+              논문 정보, 폴더, 번역, 읽기 기록, 단어장과 PDF를 여러 기기에서 맞춥니다. AI 계정과 API 키는 이 컴퓨터에만 남습니다.
+            </p>
+          </div>
+          <div class="form-group">
+            <label for="setting-sync-token">기기 인증 토큰</label>
+            <input type="password" id="setting-sync-token" placeholder="기기 동기화 토큰" autocomplete="new-password" />
+          </div>
+          <div class="form-group">
+            <label for="setting-sync-interval">자동 동기화 주기</label>
+            <select id="setting-sync-interval" class="form-select">
+              <option value="60">1분</option>
+              <option value="300">5분</option>
+              <option value="900">15분</option>
+              <option value="3600">1시간</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="setting-sync-save-btn" class="btn btn-primary">설정 저장</button>
+            <button type="button" id="setting-sync-run-btn" class="btn btn-secondary" disabled>지금 동기화</button>
+          </div>
+          <div id="setting-sync-status" style="margin-top:12px; padding:11px 13px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12px; color:var(--text-secondary); line-height:1.5; overflow-wrap:anywhere;">
+            중앙 동기화가 설정되지 않았습니다.
+          </div>
+        </div>
       </div>
 
       <!-- 고급 설정 탭 -->
