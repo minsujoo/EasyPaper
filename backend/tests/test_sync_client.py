@@ -85,3 +85,37 @@ def test_remote_tombstone_deletes_natural_key_record(isolated_dirs):
         "modified_at": "2026-08-03T02:00:00+00:00", "deleted": True, "payload": payload,
     }])
     assert db.db_get_translation("doc-1", 1, suffix="ko") is None
+
+
+def test_remote_chat_without_unique_constraint_inserts_once(isolated_dirs):
+    from services import sync_client
+
+    db = isolated_dirs["db"]
+    db.db_save_document("doc-1", "testuser", "paper.pdf", "/tmp/paper.pdf", 1, {})
+    change = {
+        "entity_type": "chat",
+        "entity_id": sync_client._stable_id(
+            "doc-1", "assistant", "2026-08-03T01:00:00+00:00", "new answer"
+        ),
+        "version": 1,
+        "modified_at": "2026-08-03T01:00:00+00:00",
+        "deleted": False,
+        "payload": {
+            "doc_id": "doc-1",
+            "role": "assistant",
+            "content": "new answer",
+            "created_at": "2026-08-03T01:00:00+00:00",
+        },
+    }
+
+    sync_client.apply_remote_changes([change])
+    sync_client.apply_remote_changes([change])
+
+    with db.get_db() as conn:
+        rows = conn.execute(
+            "SELECT role, content, created_at FROM chats WHERE doc_id=?",
+            ("doc-1",),
+        ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("assistant", "new answer", "2026-08-03T01:00:00+00:00")
+    ]

@@ -303,6 +303,7 @@ def _upsert(
     *,
     preserve: Iterable[str] = (),
 ) -> None:
+    conflict_columns = tuple(conflict_columns)
     columns = list(payload)
     values = [payload[column] for column in columns]
     quoted = ", ".join(f'"{column}"' for column in columns)
@@ -314,10 +315,10 @@ def _upsert(
         if column not in set(conflict_columns) and column not in preserved
     )
     sql = f'INSERT INTO "{table}" ({quoted}) VALUES ({placeholders})'
-    if updates:
+    if conflict_columns and updates:
         targets = ", ".join(f'"{column}"' for column in conflict_columns)
         sql += f" ON CONFLICT({targets}) DO UPDATE SET {updates}"
-    else:
+    elif conflict_columns:
         sql += " ON CONFLICT DO NOTHING"
     conn.execute(sql, values)
 

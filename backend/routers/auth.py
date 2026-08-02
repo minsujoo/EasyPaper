@@ -40,6 +40,8 @@ from config import (
     get_project_root,
     get_skip_login,
     set_skip_login,
+    get_anki_auto_launch,
+    set_anki_auto_launch,
 )
 from services.llm_client import check_ollama_health
 
@@ -279,6 +281,8 @@ class SystemSettingsRequest(BaseModel):
     openalex_mailto: str = ""
     semantic_scholar_api_key: str | None = None
     translation_prompt_template: str = ""
+    # None은 이 필드를 모르는 구버전 클라이언트가 기존 설정을 덮어쓰지 않게 한다.
+    anki_auto_launch: bool | None = None
 
 @router.get("/settings/system")
 async def get_system_settings(current_user: str = Depends(get_current_user)):
@@ -299,7 +303,8 @@ async def get_system_settings(current_user: str = Depends(get_current_user)):
         # 검색 키 원문은 설정 조회 응답이나 브라우저 DOM으로 되돌려 보내지 않는다.
         "semantic_scholar_api_key": "",
         "semantic_scholar_api_key_set": bool(get_semantic_scholar_api_key()),
-        "translation_prompt_template": get_translation_prompt_template()
+        "translation_prompt_template": get_translation_prompt_template(),
+        "anki_auto_launch": get_anki_auto_launch(),
     }
 
 @router.post("/settings/system")
@@ -333,6 +338,8 @@ async def save_system_settings(data: SystemSettingsRequest, current_user: str = 
     
     # 고급 설정: 번역 프롬프트 템플릿 저장
     update_translation_prompt_template(data.translation_prompt_template)
+    if data.anki_auto_launch is not None:
+        set_anki_auto_launch(data.anki_auto_launch)
     
     return {"message": "시스템 설정이 성공적으로 변경되었습니다."}
 

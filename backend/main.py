@@ -11,7 +11,7 @@ from logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-from config import CORS_ORIGINS, UPLOAD_DIR, APP_HOST, APP_PORT
+from config import CORS_ORIGINS, UPLOAD_DIR, APP_HOST, APP_PORT, get_anki_auto_launch
 from routers import upload, translate, chat
 from routers import library as library_router
 from routers import jobs as jobs_router
@@ -64,10 +64,11 @@ async def startup_event():
     init_db()
     init_usage_table()
     upload.restore_sessions_from_library()
-    # 논문 단어장 동기화를 위해 데스크톱 앱과 함께 Anki도 시작한다. 설치 전이거나
-    # 실행 파일을 찾지 못해도 본 앱 시작에는 영향을 주지 않는다.
-    from services.anki import launch_anki
-    launch_anki()
+    # 내장 단어장/복습은 Anki 없이도 작동한다. AnkiConnect로 외부 덱까지
+    # 동기화하려는 사용자가 명시적으로 자동 실행을 켠 경우에만 시작한다.
+    if get_anki_auto_launch():
+        from services.anki import launch_anki
+        launch_anki()
     # 24시간 간격으로 새 학술 레코드를 로컬 캐시에 모은다. 앱이 꺼져 있던
     # 기간은 다음 실행 직후 한 번 수집하여 놓친 논문 피드에 합친다.
     from services.scholar_crawler import scholar_crawl_loop

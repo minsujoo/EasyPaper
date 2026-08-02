@@ -512,6 +512,17 @@ class AISettingsModal extends Modal {
       text: '검색 요청은 OpenAlex와 결합되며 Semantic Scholar 제한에 맞춰 1.1초 이상 간격으로 전송합니다.',
     });
 
+    const integrationGroup = content.createDiv('paper-ai-settings-group');
+    integrationGroup.createEl('h3', { text: '단어장 연동' });
+    const ankiRow = integrationGroup.createEl('label', { cls: 'paper-ai-same-model' });
+    const ankiAutoLaunch = ankiRow.createEl('input', { type: 'checkbox' });
+    ankiAutoLaunch.checked = this.system.anki_auto_launch === true;
+    ankiRow.createSpan({ text: '연구 공간을 시작할 때 Anki도 실행' });
+    integrationGroup.createEl('p', {
+      cls: 'paper-ai-settings-help',
+      text: '꺼져 있어도 내장 단어장과 복습은 그대로 작동합니다. AnkiConnect 외부 덱 동기화를 사용할 때만 켜세요.',
+    });
+
     const status = content.createDiv('paper-ai-settings-status');
     const actions = content.createDiv('paper-ai-settings-actions');
     actions.createEl('button', { text: '취소' }).onclick = () => this.close();
@@ -539,6 +550,7 @@ class AISettingsModal extends Modal {
           openalex_mailto: this.system.openalex_mailto || '',
           semantic_scholar_api_key: scholarKey.value.trim() || (scholarKey.dataset.remove === 'true' ? '' : null),
           translation_prompt_template: this.system.translation_prompt_template || '',
+          anki_auto_launch: ankiAutoLaunch.checked,
         }});
         status.setText('저장했습니다. 새 요청부터 선택한 모델을 사용합니다.');
         new Notice('AI 모델 설정을 저장했습니다.');

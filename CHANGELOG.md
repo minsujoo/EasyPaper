@@ -5,6 +5,8 @@ EasyPaper의 변경 이력입니다. 이 프로젝트는 커밋 해시 기반 �
 
 ## 2026-08-03
 
+- fix: Anki 자동 실행을 기본 해제하고 설정에서 명시적으로 켤 때만 시작하도록 변경
+- fix: UNIQUE 제약이 없는 신규 채팅 동기화에서 빈 `ON CONFLICT()` 절이 생성되던 오류 수정
 - feat: Ubuntu 중앙 서버와 Mac 클라이언트 사이의 Tailscale 전용 레코드·PDF 동기화 추가
 - feat: Obsidian 플러그인이 Intel Mac용 로컬 연구 엔진을 직접 시작하고 종료하도록 통합
 - feat: 별도 데스크톱 앱 없이 설치하는 Obsidian 전용 Mac 설치 묶음과 설정 도우미 추가

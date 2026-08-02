@@ -212,3 +212,18 @@ def test_set_skip_login_persists_and_updates_getter(tmp_path, monkeypatch):
     assert config.get_skip_login() is False
     env_content = (tmp_path / ".env").read_text()
     assert "SKIP_LOGIN=false" in env_content
+
+
+def test_anki_auto_launch_defaults_to_disabled(monkeypatch):
+    monkeypatch.delenv("ANKI_AUTO_LAUNCH", raising=False)
+    assert config.get_anki_auto_launch() is False
+
+
+def test_set_anki_auto_launch_persists_and_updates_getter(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_get_config_dir", lambda: str(tmp_path))
+
+    assert config.set_anki_auto_launch(True) is True
+    assert "ANKI_AUTO_LAUNCH=true" in (tmp_path / ".env").read_text()
+
+    assert config.set_anki_auto_launch(False) is False
+    assert "ANKI_AUTO_LAUNCH=false" in (tmp_path / ".env").read_text()

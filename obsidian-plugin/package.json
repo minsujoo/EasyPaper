@@ -1,7 +1,7 @@
 {
   "name": "paper-research-workspace",
   "private": true,
-  "version": "2.9.9",
+  "version": "2.9.10",
   "dependencies": {
     "pdfjs-dist": "3.11.174"
   }

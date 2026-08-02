@@ -450,6 +450,23 @@ def update_sync_settings(server_url: str, token: str | None, interval_seconds: i
     _update_env_values(values)
     return get_sync_settings()
 
+
+def get_anki_auto_launch() -> bool:
+    """Return whether Anki should be launched with the local research engine.
+
+    The built-in vocabulary review does not depend on Anki, so external Anki
+    startup is opt-in. Reading the environment dynamically also makes a saved
+    setting visible without restarting the current process.
+    """
+    return os.getenv("ANKI_AUTO_LAUNCH", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def set_anki_auto_launch(enabled: bool) -> bool:
+    _update_env_values({"ANKI_AUTO_LAUNCH": "true" if enabled else "false"})
+    return get_anki_auto_launch()
+
 if SKIP_LOGIN:
     print(
         "\n" + "!" * 70 +
