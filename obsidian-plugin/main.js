@@ -37,7 +37,7 @@ const GENERATED_END = '<!-- paper-research-workspace:end -->';
 
 const DEFAULT_SETTINGS = {
   connectionFile: '',
-  backendExecutable: '/usr/lib/EasyPaper/binaries/easypaper-backend/easypaper-backend',
+  backendExecutable: defaultBackendExecutable(),
   dataDirectory: '',
   noteFolder: 'Research/Papers',
   pdfFolder: 'Research/Papers/PDF',
@@ -172,12 +172,30 @@ function parseReferenceNumbers(value) {
 
 function defaultConnectionFile() {
   if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'com.easypaper.desktop', 'integration.json');
+    return path.join(os.homedir(), 'Library', 'Application Support', 'paper-research-workspace', 'integration.json');
   }
   if (process.platform === 'win32') {
     return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'com.easypaper.desktop', 'integration.json');
   }
   return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'com.easypaper.desktop', 'integration.json');
+}
+
+function defaultBackendExecutable() {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'paper-research-workspace', 'engine', 'easypaper-backend');
+  }
+  if (process.platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'EasyPaper', 'binaries', 'easypaper-backend', 'easypaper-backend.exe');
+  }
+  return '/usr/lib/EasyPaper/binaries/easypaper-backend/easypaper-backend';
+}
+
+function shouldMigrateBackendExecutable(value) {
+  const configured = String(value || '').trim();
+  if (!configured) return true;
+  if (process.platform === 'darwin') return configured.startsWith('/usr/lib/') || configured.endsWith('.exe');
+  if (process.platform === 'win32') return configured.startsWith('/') || !configured.toLowerCase().endsWith('.exe');
+  return false;
 }
 
 function safeName(value, fallback = 'paper') {
@@ -2493,6 +2511,10 @@ class ResearchWorkspaceSettingTab extends PluginSettingTab {
 module.exports = class PaperResearchWorkspacePlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (shouldMigrateBackendExecutable(this.settings.backendExecutable)) {
+      this.settings.backendExecutable = defaultBackendExecutable();
+      await this.saveSettings();
+    }
     pdfJsBaseDir = path.join(this.app.vault.adapter.basePath, this.manifest.dir || `.obsidian/plugins/${this.manifest.id}`);
     pdfJsWorkerSrc = this.app.vault.adapter.getResourcePath(normalizePath(`${this.manifest.dir || `.obsidian/plugins/${this.manifest.id}`}/pdfjs/pdf.worker.js`));
     this.connection = null;

@@ -3,6 +3,13 @@
 EasyPaper의 변경 이력입니다. 이 프로젝트는 커밋 해시 기반 롤링 업데이트를 사용하며,
 별도의 버전 번호 대신 병합된 날짜 기준으로 정리합니다.
 
+## 2026-08-03
+
+- feat: Ubuntu 중앙 서버와 Mac 클라이언트 사이의 Tailscale 전용 레코드·PDF 동기화 추가
+- feat: Obsidian 플러그인이 Intel Mac용 로컬 연구 엔진을 직접 시작하고 종료하도록 통합
+- feat: 별도 데스크톱 앱 없이 설치하는 Obsidian 전용 Mac 설치 묶음과 설정 도우미 추가
+- security: Mac 연결 토큰을 GitHub 산출물에서 제외하고 Tailscale Taildrop 설정 파일로만 전달
+
 ## 2026-08-02
 
 - feat: 학회를 제출 가능·제출 불가능으로 나누고 논문 제출 데드라인 기준으로 정렬
