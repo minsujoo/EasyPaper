@@ -23,13 +23,25 @@ if [[ ! -d "${vault_path}/.obsidian" ]]; then
   exit 1
 fi
 
+env_file="${data_dir}/.env"
 connection_file="${2:-${HOME}/Downloads/paper-sync-connection.env}"
-if [[ ! -f "${connection_file}" ]]; then
-  connection_file="$(osascript -e 'POSIX path of (choose file with prompt "Tailscale로 받은 paper-sync-connection.env 파일을 선택하세요")')"
+connection_source=""
+sync_token=""
+if [[ -f "${connection_file}" ]]; then
+  sync_token="$(sed -n 's/^SYNC_TOKEN=//p' "${connection_file}" | head -n 1)"
+  connection_source="${connection_file}"
+elif [[ -f "${env_file}" ]]; then
+  # Update installs reuse the token already protected in the user's data
+  # directory, so a deleted one-time Taildrop file is not needed again.
+  sync_token="$(sed -n 's/^SYNC_TOKEN=//p' "${env_file}" | head -n 1)"
 fi
-sync_token="$(sed -n 's/^SYNC_TOKEN=//p' "${connection_file}" | head -n 1)"
 if [[ -z "${sync_token}" ]]; then
-  echo "연결 설정 파일에서 SYNC_TOKEN을 찾지 못했습니다." >&2
+  connection_file="$(osascript -e 'POSIX path of (choose file with prompt "Tailscale로 받은 paper-sync-connection.env 파일을 선택하세요")')"
+  sync_token="$(sed -n 's/^SYNC_TOKEN=//p' "${connection_file}" | head -n 1)"
+  connection_source="${connection_file}"
+fi
+if [[ -z "${sync_token}" ]]; then
+  echo "기존 설정이나 연결 설정 파일에서 SYNC_TOKEN을 찾지 못했습니다." >&2
   exit 1
 fi
 
@@ -49,7 +61,6 @@ if command -v xattr >/dev/null 2>&1; then
   xattr -dr com.apple.quarantine "${plugin_target}" "${engine_target}" 2>/dev/null || true
 fi
 
-env_file="${data_dir}/.env"
 touch "${env_file}"
 chmod 0600 "${env_file}"
 
@@ -72,6 +83,10 @@ echo "설치가 완료됐습니다."
 echo "1. Obsidian을 완전히 종료했다가 다시 실행하세요."
 echo "2. 설정 > 커뮤니티 플러그인에서 Paper Research Workspace를 활성화하세요."
 echo "3. 왼쪽 리본의 논문 연구 아이콘을 여세요."
-echo "4. 연결 확인 후 ${connection_file} 파일은 삭제해도 됩니다."
+if [[ -n "${connection_source}" ]]; then
+  echo "4. 연결 확인 후 ${connection_source} 파일은 삭제해도 됩니다."
+else
+  echo "4. 기존 Mac 연결 설정을 그대로 재사용했습니다."
+fi
 echo
 read -r -p "Enter를 누르면 창을 닫습니다. " _
