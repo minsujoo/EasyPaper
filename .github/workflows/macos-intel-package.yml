@@ -2,6 +2,11 @@ name: macOS Intel Package
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - agent/macos-intel-sync-build
+    paths:
+      - .github/workflows/macos-intel-package.yml
 
 jobs:
   package:
