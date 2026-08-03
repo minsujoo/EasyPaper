@@ -45,6 +45,7 @@ class DeviceRegistration(BaseModel):
     username: str = Field(min_length=1, max_length=200)
     device_id: str = Field(min_length=1, max_length=200)
     device_name: str = Field(default="", max_length=200)
+    capabilities: list[str] = Field(default_factory=list, max_length=20)
 
 
 class PushRequest(DeviceRegistration):
@@ -408,6 +409,12 @@ def create_sync_app(
 
     @app.post("/v1/push", dependencies=[Depends(authenticate)])
     def push(data: PushRequest) -> dict[str, Any]:
+        if any(change.entity_type == "vault_file" for change in data.changes):
+            if "vault-files-v1" not in data.capabilities:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Vault 파일 변경은 vault-files-v1 동기화 클라이언트에서만 보낼 수 있습니다.",
+                )
         return store.push(data)
 
     @app.get("/v1/pull", dependencies=[Depends(authenticate)])

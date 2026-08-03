@@ -122,6 +122,10 @@ def init_local_sync_schema() -> None:
                 mtime_ns INTEGER NOT NULL,
                 sha256 TEXT NOT NULL
             );
+            -- 2.9.10 이하 클라이언트가 별도 Vault 레코드를 일반 DB 상태로
+            -- 잘못 저장한 경우 다음 스캔에서 대량 tombstone을 만들 수 있다.
+            -- Vault 상태는 local_vault_sync_state가 전담하므로 안전하게 제거한다.
+            DELETE FROM local_sync_state WHERE entity_type='vault_file';
             """
         )
         try:
@@ -265,6 +269,7 @@ def collect_local_changes() -> list[dict[str, Any]]:
         states = {
             (row["entity_type"], row["entity_id"]): _row_dict(row)
             for row in conn.execute("SELECT * FROM local_sync_state")
+            if row["entity_type"] in _APPLY_PRIORITY
         }
     for key, record in current.items():
         state = states.get(key)

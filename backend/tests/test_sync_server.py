@@ -79,6 +79,7 @@ def test_tombstone_retains_natural_key_payload(tmp_path):
 def test_vault_file_version_mismatch_always_preserves_server_winner(tmp_path):
     client, headers = _client(tmp_path)
     initial = _push_payload(title="first")
+    initial["capabilities"] = ["vault-files-v1"]
     initial["changes"][0].update({
         "entity_type": "vault_file",
         "entity_id": "vault-note",
@@ -92,6 +93,7 @@ def test_vault_file_version_mismatch_always_preserves_server_winner(tmp_path):
         title="ignored",
     )
     concurrent["device_id"] = "device-b"
+    concurrent["capabilities"] = ["vault-files-v1"]
     concurrent["changes"][0].update({
         "entity_type": "vault_file",
         "entity_id": "vault-note",
@@ -101,6 +103,20 @@ def test_vault_file_version_mismatch_always_preserves_server_winner(tmp_path):
     assert result["accepted"] == []
     assert result["conflicts"][0]["version"] == first["version"]
     assert result["conflicts"][0]["payload"]["sha256"] == "1" * 64
+
+
+def test_legacy_client_cannot_push_vault_tombstones(tmp_path):
+    client, headers = _client(tmp_path)
+    legacy = _push_payload()
+    legacy["changes"][0].update({
+        "entity_type": "vault_file",
+        "entity_id": "vault-note",
+        "deleted": True,
+        "payload": {"scope": "primary", "path": "note.md", "sha256": "1" * 64},
+    })
+    response = client.post("/v1/push", headers=headers, json=legacy)
+    assert response.status_code == 409
+    assert client.get("/v1/status", headers=headers).json()["records"] == 0
 
 
 def test_content_addressed_file_upload_validates_hash(tmp_path):

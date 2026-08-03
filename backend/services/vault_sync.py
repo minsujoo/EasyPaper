@@ -469,7 +469,12 @@ def sync_vault_once(
         client.get("/v1/health").raise_for_status()
         client.post(
             "/v1/devices/register",
-            json={"username": username, "device_id": device_id, "device_name": device_name},
+            json={
+                "username": username,
+                "device_id": device_id,
+                "device_name": device_name,
+                "capabilities": ["vault-files-v1"],
+            },
         ).raise_for_status()
 
         cursor = int(_meta_get(scope, f"cursor:{username}") or 0)
@@ -511,6 +516,7 @@ def sync_vault_once(
                     "username": username,
                     "device_id": device_id,
                     "device_name": device_name,
+                    "capabilities": ["vault-files-v1"],
                     "changes": batch,
                 },
             )

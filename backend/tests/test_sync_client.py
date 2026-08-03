@@ -119,3 +119,25 @@ def test_remote_chat_without_unique_constraint_inserts_once(isolated_dirs):
     assert [tuple(row) for row in rows] == [
         ("assistant", "new answer", "2026-08-03T01:00:00+00:00")
     ]
+
+
+def test_legacy_vault_state_is_removed_before_database_change_scan(isolated_dirs):
+    from services import sync_client
+
+    sync_client.init_local_sync_schema()
+    with isolated_dirs["db"].get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO local_sync_state
+                (entity_type, entity_id, payload_hash, payload_json,
+                 server_version, modified_at, deleted)
+            VALUES ('vault_file', 'legacy-note', 'hash', '{}', 1, ?, 0)
+            """,
+            ("2026-08-03T01:00:00+00:00",),
+        )
+
+    assert sync_client.collect_local_changes() == []
+    with isolated_dirs["db"].get_db() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM local_sync_state WHERE entity_type='vault_file'"
+        ).fetchone()[0] == 0
