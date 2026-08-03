@@ -39,6 +39,7 @@ CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 # 가능한 이메일을 mailto 파라미터로 실어 보내면 더 여유로운 한도의 "polite
 # pool"로 분류된다. 선택 사항이라 비워둬도 정상 동작한다.
 OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "")
+SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
 
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
@@ -163,6 +164,9 @@ def get_claude_api_key() -> str:
 def get_openalex_mailto() -> str:
     return OPENALEX_MAILTO
 
+def get_semantic_scholar_api_key() -> str:
+    return SEMANTIC_SCHOLAR_API_KEY
+
 def update_system_settings(
     ollama_host: str,
     trans_provider: str,
@@ -172,9 +176,10 @@ def update_system_settings(
     openai_api_key: str = "",
     gemini_api_key: str = "",
     claude_api_key: str = "",
-    openalex_mailto: str = ""
+    openalex_mailto: str = "",
+    semantic_scholar_api_key: str = ""
 ):
-    global OLLAMA_HOST, TRANS_PROVIDER, TRANS_MODEL, CHAT_PROVIDER, CHAT_MODEL, OPENAI_API_KEY, GEMINI_API_KEY, CLAUDE_API_KEY, OPENALEX_MAILTO
+    global OLLAMA_HOST, TRANS_PROVIDER, TRANS_MODEL, CHAT_PROVIDER, CHAT_MODEL, OPENAI_API_KEY, GEMINI_API_KEY, CLAUDE_API_KEY, OPENALEX_MAILTO, SEMANTIC_SCHOLAR_API_KEY
 
     OLLAMA_HOST = ollama_host
     TRANS_PROVIDER = trans_provider
@@ -185,6 +190,7 @@ def update_system_settings(
     GEMINI_API_KEY = gemini_api_key
     CLAUDE_API_KEY = claude_api_key
     OPENALEX_MAILTO = openalex_mailto
+    SEMANTIC_SCHOLAR_API_KEY = semantic_scholar_api_key
 
     env_path = os.path.join(_get_config_dir(), ".env")
     settings = {
@@ -196,7 +202,8 @@ def update_system_settings(
         "OPENAI_API_KEY": openai_api_key,
         "GEMINI_API_KEY": gemini_api_key,
         "CLAUDE_API_KEY": claude_api_key,
-        "OPENALEX_MAILTO": openalex_mailto
+        "OPENALEX_MAILTO": openalex_mailto,
+        "SEMANTIC_SCHOLAR_API_KEY": semantic_scholar_api_key
     }
 
     if not os.path.exists(env_path):
@@ -393,6 +400,72 @@ def set_skip_login(enabled: bool):
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
+
+
+def _update_env_values(values: dict[str, str]) -> None:
+    """Update selected .env keys without exposing or rewriting unrelated secrets."""
+    env_path = os.path.join(_get_config_dir(), ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+    remaining = dict(values)
+    updated: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        key = stripped.split("=", 1)[0] if "=" in stripped and not stripped.startswith("#") else ""
+        if key in remaining:
+            updated.append(f"{key}={remaining.pop(key)}\n")
+        else:
+            updated.append(line)
+    for key, value in remaining.items():
+        updated.append(f"{key}={value}\n")
+    os.makedirs(os.path.dirname(env_path), exist_ok=True)
+    with open(env_path, "w", encoding="utf-8") as handle:
+        handle.writelines(updated)
+    for key, value in values.items():
+        os.environ[key] = value
+
+
+def get_sync_settings() -> dict:
+    """Return non-secret device sync settings for the settings UI."""
+    try:
+        interval = max(30, int(os.getenv("SYNC_INTERVAL_SECONDS", "300")))
+    except ValueError:
+        interval = 300
+    return {
+        "server_url": os.getenv("SYNC_SERVER_URL", "").strip().rstrip("/"),
+        "token_set": bool(os.getenv("SYNC_TOKEN", "").strip()),
+        "interval_seconds": interval,
+    }
+
+
+def update_sync_settings(server_url: str, token: str | None, interval_seconds: int) -> dict:
+    values = {
+        "SYNC_SERVER_URL": server_url.strip().rstrip("/"),
+        "SYNC_INTERVAL_SECONDS": str(max(30, int(interval_seconds))),
+    }
+    if token is not None:
+        values["SYNC_TOKEN"] = token.strip()
+    _update_env_values(values)
+    return get_sync_settings()
+
+
+def get_anki_auto_launch() -> bool:
+    """Return whether Anki should be launched with the local research engine.
+
+    The built-in vocabulary review does not depend on Anki, so external Anki
+    startup is opt-in. Reading the environment dynamically also makes a saved
+    setting visible without restarting the current process.
+    """
+    return os.getenv("ANKI_AUTO_LAUNCH", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def set_anki_auto_launch(enabled: bool) -> bool:
+    _update_env_values({"ANKI_AUTO_LAUNCH": "true" if enabled else "false"})
+    return get_anki_auto_launch()
 
 if SKIP_LOGIN:
     print(

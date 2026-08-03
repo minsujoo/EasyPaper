@@ -111,10 +111,27 @@ def verify_session_token(token: str) -> bool:
         return False
 
 async def get_current_user(request: Request) -> str:
+    # Obsidian 데스크톱 플러그인은 WebView 쿠키 저장소를 이 앱과 공유하지
+    # 않는다. 같은 사용자 계정으로 로컬 API를 호출할 수 있도록 Tauri가 매
+    # 실행마다 발급한 일회성 통합 토큰도 허용한다. 토큰은 127.0.0.1에만
+    # 바인딩된 백엔드와 권한 0600 연결 파일을 통해 전달되며 앱을 종료하면
+    # 함께 무효화된다.
+    if request is not None:
+        authorization = getattr(request, "headers", {}).get("authorization", "")
+        scheme, _, supplied = authorization.partition(" ")
+        expected = os.getenv("EASYPAPER_INTEGRATION_TOKEN", "")
+        if (
+            scheme.casefold() == "bearer"
+            and expected
+            and supplied
+            and hmac.compare_digest(supplied, expected)
+        ):
+            return get_app_username()
+
     if get_skip_login():
         return get_app_username()
 
-    token = request.cookies.get("session_token")
+    token = request.cookies.get("session_token") or request.cookies.get("integration_session")
     if not token or not verify_session_token(token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

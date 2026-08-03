@@ -1,0 +1,63 @@
+name: Obsidian macOS Intel Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/macos-intel-sync-build
+
+jobs:
+  package:
+    name: Build Obsidian Intel bundle
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build local backend sidecar
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+          packaging/build.sh
+
+      - name: Create Obsidian-only Intel bundle
+        shell: bash
+        run: |
+          bundle_dir="${RUNNER_TEMP}/paper-research-obsidian-macos-intel"
+          mkdir -p "${bundle_dir}/plugin/pdfjs"
+          cp obsidian-plugin/main.js obsidian-plugin/manifest.json obsidian-plugin/styles.css "${bundle_dir}/plugin/"
+          cp obsidian-plugin/pdfjs/pdf.js obsidian-plugin/pdfjs/pdf.worker.js "${bundle_dir}/plugin/pdfjs/"
+          /usr/bin/ditto backend/packaging/dist/easypaper-backend "${bundle_dir}/engine"
+          cp scripts/macos/install-obsidian-integration.command scripts/macos/README.txt "${bundle_dir}/"
+          chmod 0755 "${bundle_dir}/install-obsidian-integration.command" "${bundle_dir}/engine/easypaper-backend"
+          file "${bundle_dir}/engine/easypaper-backend" | grep -q 'x86_64'
+          codesign --force --sign - "${bundle_dir}/engine/easypaper-backend"
+          codesign --verify --strict "${bundle_dir}/engine/easypaper-backend"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent \
+            "${bundle_dir}" "${GITHUB_WORKSPACE}/paper-research-obsidian-macos-intel.zip"
+
+      - name: Upload Obsidian Intel bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-research-obsidian-macos-intel-${{ github.sha }}
+          path: paper-research-obsidian-macos-intel.zip
+          if-no-files-found: error
+          retention-days: 14

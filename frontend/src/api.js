@@ -313,6 +313,40 @@ export async function getSystemSettingsAPI() {
   return res.json()
 }
 
+export async function getSyncSettingsAPI() {
+  const res = await fetch(`${API_BASE}/settings/sync`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('동기화 설정 조회 실패')
+  return res.json()
+}
+
+export async function saveSyncSettingsAPI(payload) {
+  const res = await fetch(`${API_BASE}/settings/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '동기화 설정 저장 실패')
+  }
+  return res.json()
+}
+
+export async function runSyncNowAPI() {
+  const res = await fetch(`${API_BASE}/sync/run`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '동기화 실패')
+  }
+  return res.json()
+}
+
+export async function getSyncStatusAPI() {
+  const res = await fetch(`${API_BASE}/sync/status`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('동기화 상태 조회 실패')
+  return res.json()
+}
+
 /**
  * 시스템 설정(Ollama 호스트 및 모델)을 변경합니다.
  */
@@ -779,7 +813,6 @@ export async function emptyTrashAPI() {
   if (!res.ok) throw new Error('휴지통 비우기 실패')
   return res.json()
 }
-
 
 
 

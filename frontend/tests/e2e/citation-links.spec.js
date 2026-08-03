@@ -105,6 +105,38 @@ test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후�
 
   const explanation = page.locator('.explanation-popup').first()
   await expect(explanation).toBeVisible()
+  await expect(page.locator('#explanation-overlay-layer > .explanation-popup')).toHaveCount(1)
+  await expect(explanation.locator('.explanation-popup-close')).toBeVisible()
+  await expect(explanation.locator('.explanation-popup-resize-handle')).toHaveCount(8)
+
+  // 오른쪽 아래뿐 아니라 왼쪽·위쪽에서도 반대편 모서리를 고정한 채 크기가 변한다.
+  const beforeResize = await explanation.boundingBox()
+  const westHandle = explanation.locator('.resize-w')
+  const westBox = await westHandle.boundingBox()
+  await page.mouse.move(westBox.x + westBox.width / 2, westBox.y + westBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(westBox.x - 45, westBox.y + westBox.height / 2)
+  await page.mouse.up()
+  const afterWestResize = await explanation.boundingBox()
+  expect(afterWestResize.x).toBeLessThan(beforeResize.x - 30)
+  expect(afterWestResize.width).toBeGreaterThan(beforeResize.width + 30)
+
+  const northHandle = explanation.locator('.resize-n')
+  const northBox = await northHandle.boundingBox()
+  await page.mouse.move(northBox.x + northBox.width / 2, northBox.y + northBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(northBox.x + northBox.width / 2, northBox.y - 35)
+  await page.mouse.up()
+  const afterNorthResize = await explanation.boundingBox()
+  expect(afterNorthResize.y).toBeLessThan(afterWestResize.y - 20)
+  expect(afterNorthResize.height).toBeGreaterThan(afterWestResize.height + 20)
+
+  const viewport = page.viewportSize()
+  const popupBounds = await explanation.boundingBox()
+  expect(popupBounds.x).toBeGreaterThanOrEqual(0)
+  expect(popupBounds.y).toBeGreaterThanOrEqual(0)
+  expect(popupBounds.x + popupBounds.width).toBeLessThanOrEqual(viewport.width)
+  expect(popupBounds.y + popupBounds.height).toBeLessThanOrEqual(viewport.height)
   await expect(explanation.locator('.explanation-popup-title')).toHaveText('설명')
   await expect(explanation.locator('.explanation-popup-target')).toContainText('참고문헌 1')
   await expect(explanation.locator('.explanation-popup-message.user')).toHaveCount(0)
@@ -124,6 +156,8 @@ test('설명을 누르면 자동 프롬프트를 숨긴 독립 팝업에서 후�
   expect(chatRequests[1].messages.at(-1).content).toContain('[설명 대상: 인용')
   expect(chatRequests[1].messages.at(-1).content).toContain('이 방법과 현재 논문의 차이는 뭐야?')
   await expect(explanation.locator('.explanation-popup-message.user')).toContainText('이 방법과 현재 논문의 차이는 뭐야?')
+  await explanation.locator('.explanation-popup-close').click()
+  await expect(explanation).toHaveCount(0)
 })
 
 test('번호 없는 일반 제목과 수식에는 설명 아이콘을 만들지 않는다', async ({ page }) => {

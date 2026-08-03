@@ -24,6 +24,9 @@ a = Analysis(
         # 사용자가 커스터마이징하기 전 기본 템플릿 파일을 그대로 들고 있으면
         # 첫 실행 UX가 서버/Docker 배포와 동일해진다.
         (os.path.join(BACKEND_DIR, "translation_prompt.txt"), "."),
+        # 사용자가 제공한 학회 목록을 네트워크 없이 읽을 수 있게 포함한다.
+        (os.path.join(BACKEND_DIR, "data", "conferences.json"), "data"),
+        (os.path.join(BACKEND_DIR, "data", "conference_official_sites.json"), "data"),
         # frontend/dist를 _internal/frontend/dist에 둔다(PyInstaller는 datas
         # 목적지가 onedir 최상위 밖을 가리키는 것을 허용하지 않는다). main.py는
         # EASYPAPER_FRONTEND_DIST 환경변수가 있으면 그 경로를 그대로 쓰도록

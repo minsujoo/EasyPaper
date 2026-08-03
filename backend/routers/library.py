@@ -6,11 +6,13 @@ from services.library import (
     soft_delete_document, restore_document, empty_trash,
     get_translation, get_pdf_path, get_cover_path, update_document_metadata
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
+from datetime import datetime
 from services.db import (
     db_list_folders, db_create_folder, db_get_folder, db_rename_folder,
     db_delete_folder, db_move_document_to_folder,
+    db_list_reading_activity, db_record_reading_activity,
 )
 
 router = APIRouter()
@@ -29,6 +31,13 @@ class FolderPayload(BaseModel):
 
 class MoveToFolderPayload(BaseModel):
     folder_id: Optional[int] = None
+
+
+class ReadingProgressPayload(BaseModel):
+    page: int = Field(ge=1)
+    total_pages: int = Field(ge=1)
+    activity_date: str = Field(min_length=10, max_length=10)
+    remember_position: bool = True
 
 
 def _clean_folder_name(name: str) -> str:
@@ -108,6 +117,54 @@ async def list_library_folders(current_user: str = Depends(get_current_user)):
     return {"folders": folders, "total": len(folders)}
 
 
+@router.get("/library/reading-history")
+async def get_reading_history(
+    year: int,
+    month: int,
+    current_user: str = Depends(get_current_user),
+):
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        raise HTTPException(status_code=422, detail="올바른 연월을 입력하세요.")
+
+    activities = db_list_reading_activity(current_user, year, month)
+    month_prefix = f"{year:04d}-{month:02d}"
+    seen = {(item["doc_id"], item["activity_date"]) for item in activities}
+
+    # 새 활동 테이블 도입 전의 완독 기록도 달력에서 사라지지 않게 호환한다.
+    for doc in list_documents(current_user):
+        metadata = doc.get("metadata") or {}
+        read_at = metadata.get("read_at")
+        if not read_at or not str(read_at).startswith(month_prefix):
+            continue
+        activity_date = str(read_at)[:10]
+        key = (doc["id"], activity_date)
+        if key in seen:
+            continue
+        activities.append({
+            "doc_id": doc["id"],
+            "activity_date": activity_date,
+            "first_opened_at": read_at,
+            "last_read_at": read_at,
+            "last_page": metadata.get("last_page") or doc.get("total_pages") or 1,
+            "furthest_page": metadata.get("last_page") or doc.get("total_pages") or 1,
+            "total_pages": doc.get("total_pages") or 1,
+            "filename": doc.get("filename"),
+            "metadata": metadata,
+            "folder_id": doc.get("folder_id"),
+        })
+
+    for item in activities:
+        item["completed"] = (item.get("metadata") or {}).get("read") is True
+    activities.sort(key=lambda item: (item["activity_date"], item["last_read_at"]), reverse=True)
+    return {
+        "year": year,
+        "month": month,
+        "activities": activities,
+        "active_days": len({item["activity_date"] for item in activities}),
+        "paper_count": len({item["doc_id"] for item in activities}),
+    }
+
+
 @router.post("/library/folders", status_code=201)
 async def create_library_folder(
     payload: FolderPayload,
@@ -177,6 +234,35 @@ async def get_library_document(
     doc = get_document(doc_id, target_lang, style, ignore_math, ignore_table, ignore_refs)
     _require_owned_document(doc_id, current_user, doc)
     return doc
+
+
+@router.post("/library/{doc_id}/reading-progress")
+async def save_reading_progress(
+    doc_id: str,
+    payload: ReadingProgressPayload,
+    current_user: str = Depends(get_current_user),
+):
+    doc = _require_owned_document(doc_id, current_user)
+    try:
+        datetime.strptime(payload.activity_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="올바른 날짜를 입력하세요.")
+
+    total_pages = max(1, int(doc.get("total_pages") or payload.total_pages))
+    page = min(payload.page, total_pages)
+    activity = db_record_reading_activity(
+        current_user, doc_id, payload.activity_date, page, total_pages,
+    )
+
+    metadata = doc.get("metadata") or {}
+    metadata["last_read_at"] = activity["last_read_at"]
+    if payload.remember_position:
+        metadata["last_page"] = page
+    update_document_metadata(doc_id, metadata)
+    from routers.upload import sessions
+    if doc_id in sessions:
+        sessions[doc_id]["metadata"] = metadata
+    return {"status": "success", "activity": activity, "metadata": metadata}
 
 
 @router.get("/library/{doc_id}/translation/{page_num}")

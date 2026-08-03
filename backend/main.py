@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+import asyncio
+import contextlib
 import os
 import logging
 
@@ -9,7 +11,7 @@ from logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-from config import CORS_ORIGINS, UPLOAD_DIR, APP_HOST, APP_PORT
+from config import CORS_ORIGINS, UPLOAD_DIR, APP_HOST, APP_PORT, get_anki_auto_launch
 from routers import upload, translate, chat
 from routers import library as library_router
 from routers import jobs as jobs_router
@@ -18,6 +20,9 @@ from routers import agy as agy_router
 from routers import insight as insight_router
 from routers import primer as primer_router
 from routers import notes as notes_router
+from routers import paper_search as paper_search_router
+from routers import vocabulary as vocabulary_router
+from routers import sync_control as sync_control_router
 from services.auth import get_current_user
 
 app = FastAPI(
@@ -46,6 +51,9 @@ app.include_router(agy_router.router, prefix="/api", dependencies=[Depends(get_c
 app.include_router(insight_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Insight"])
 app.include_router(primer_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Primer"])
 app.include_router(notes_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Notes"])
+app.include_router(paper_search_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Paper Search"])
+app.include_router(vocabulary_router.router, prefix="/api", dependencies=[Depends(get_current_user)], tags=["Vocabulary"])
+app.include_router(sync_control_router.router, prefix="/api", tags=["Sync"])
 
 
 @app.on_event("startup")
@@ -56,6 +64,34 @@ async def startup_event():
     init_db()
     init_usage_table()
     upload.restore_sessions_from_library()
+    # 내장 단어장/복습은 Anki 없이도 작동한다. AnkiConnect로 외부 덱까지
+    # 동기화하려는 사용자가 명시적으로 자동 실행을 켠 경우에만 시작한다.
+    if get_anki_auto_launch():
+        from services.anki import launch_anki
+        launch_anki()
+    # 24시간 간격으로 새 학술 레코드를 로컬 캐시에 모은다. 앱이 꺼져 있던
+    # 기간은 다음 실행 직후 한 번 수집하여 놓친 논문 피드에 합친다.
+    from services.scholar_crawler import scholar_crawl_loop
+    app.state.scholar_crawl_task = asyncio.create_task(scholar_crawl_loop())
+    from services.conference_official import conference_refresh_loop
+    app.state.conference_refresh_task = asyncio.create_task(conference_refresh_loop())
+    from services.scholar_tools import install_scholar_user_timer
+    app.state.scholar_timer_status = await asyncio.to_thread(install_scholar_user_timer)
+    # 중앙 서버가 아직 설정되지 않았을 때는 잠자기만 하며, 설정 화면에서 URL과
+    # 토큰을 저장하면 앱 재시작 없이 다음 주기부터 활성화된다.
+    from services.sync_client import init_local_sync_schema, sync_loop
+    init_local_sync_schema()
+    app.state.sync_task = asyncio.create_task(sync_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    for name in ("scholar_crawl_task", "conference_refresh_task", "sync_task"):
+        task = getattr(app.state, name, None)
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 @app.get("/api/pdf-file/{session_id}")
@@ -114,5 +150,22 @@ else:
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host=APP_HOST, port=APP_PORT, reload=False)
+    import sys
+    if "--scholar-crawl-once" in sys.argv:
+        from services.db import init_db
+        from services.scholar_crawler import refresh_scholar_cache
+        from services.conference_official import refresh_official_conferences
+        from config import get_app_username
+        init_db()
+        async def scheduled_refresh():
+            scholar, conferences = await asyncio.gather(
+                refresh_scholar_cache(get_app_username(), force=True),
+                refresh_official_conferences(force=True),
+                return_exceptions=True,
+            )
+            return {"scholar": scholar, "conferences": conferences}
+        result = asyncio.run(scheduled_refresh())
+        logger.info("scheduled research refresh complete: %s", result)
+    else:
+        import uvicorn
+        uvicorn.run(app, host=APP_HOST, port=APP_PORT, reload=False)

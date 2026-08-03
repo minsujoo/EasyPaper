@@ -47,6 +47,35 @@ fn find_available_port(preferred: u16) -> u16 {
     listener.local_addr().unwrap().port()
 }
 
+/// 같은 사용자로 실행되는 Obsidian 플러그인이 현재 sidecar를 찾고 인증할 수
+/// 있도록 실행별 연결 정보를 쓴다. 고정 비밀번호를 디스크에 두지 않고 앱을
+/// 다시 켤 때마다 새 토큰으로 교체한다.
+fn write_integration_discovery(app_data_dir: &PathBuf, port: u16, token: &str) {
+    let path = app_data_dir.join("integration.json");
+    let payload = serde_json::json!({
+        "version": 1,
+        "baseUrl": format!("http://127.0.0.1:{port}"),
+        "port": port,
+        "token": token,
+        "pid": std::process::id(),
+        "updatedAt": SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    });
+    if let Err(error) = std::fs::write(&path, payload.to_string()) {
+        log::warn!("failed to write Obsidian integration discovery file: {error}");
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(error) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)) {
+            log::warn!("failed to restrict integration discovery permissions: {error}");
+        }
+    }
+}
+
 /// macOS(Finder/Dock에서 더블클릭)나 Linux 데스크탑 런처로 실행된 GUI 앱은
 /// launchd/데스크탑 환경이 주는 최소한의 기본 PATH만 물려받고, 사용자의
 /// 로그인 셸(.zshrc/.bash_profile 등)이 추가하는 PATH는 전혀 보지 못한다.
@@ -342,7 +371,10 @@ pub fn run() {
             // wait_for_backend()의 헬스체크 타임아웃으로 감지되어 아래에서
             // 에러 로그로 남는다.
             let port = find_available_port(8000);
+            let integration_token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
             command.env("APP_PORT", port.to_string());
+            command.env("EASYPAPER_INTEGRATION_TOKEN", &integration_token);
+            write_integration_discovery(&app_data_dir, port, &integration_token);
             log::info!("spawning backend sidecar: {:?} on port {}", binary, port);
 
             let mut child = command

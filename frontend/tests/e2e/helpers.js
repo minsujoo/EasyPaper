@@ -33,6 +33,15 @@ export async function mockBaseRoutes(page, { documents = [] } = {}) {
         }),
       })
     }
+    if (url.includes('/api/settings/sync')) {
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          server_url: '', token_set: false, interval_seconds: 300,
+          runtime: { server_url: '', token_set: false, running: false },
+        }),
+      })
+    }
     if (url.includes('/api/availability')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ antigravity: false, claude_code: false, codex: false }) })
     }

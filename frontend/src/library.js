@@ -48,6 +48,23 @@ export async function updateLibraryDocMetadata(docId, payload) {
   return res.json()
 }
 
+export async function saveReadingProgress(docId, page, totalPages, activityDate, rememberPosition = true) {
+  const res = await fetch(`${API_BASE}/library/${docId}/reading-progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page, total_pages: totalPages, activity_date: activityDate, remember_position: rememberPosition }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '독서 위치를 저장하지 못했습니다.'))
+  return res.json()
+}
+
+export async function fetchReadingHistory(year, month) {
+  const params = new URLSearchParams({ year: String(year), month: String(month) })
+  const res = await fetch(`${API_BASE}/library/reading-history?${params}`)
+  if (!res.ok) throw new Error(await readApiError(res, '독서 히스토리를 불러오지 못했습니다.'))
+  return res.json()
+}
+
 export async function updateLibraryTranslation(docId, pageNum, payload, options = {}) {
   const res = await fetch(`${API_BASE}/library/${docId}/translation/${pageNum}${buildQuery(options)}`, {
     method: 'PUT',
@@ -81,6 +98,59 @@ export async function exportAnnotatedPdf(docId, payload) {
 export async function searchLibrary(query) {
   const res = await fetch(`${API_BASE}/library/search?q=${encodeURIComponent(query)}`)
   if (!res.ok) throw new Error('검색 실패')
+  return res.json()
+}
+
+export async function searchAcademicPapers(payload) {
+  const res = await fetch(`${API_BASE}/paper-search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, 'AI 논문 검색에 실패했습니다.'))
+  return res.json()
+}
+
+export async function fetchScholarFeed(mode = 'recommended', folderId = null) {
+  const params = new URLSearchParams({ mode })
+  if (folderId !== null && folderId !== '') params.set('folder_id', String(folderId))
+  const res = await fetch(`${API_BASE}/scholar/feed?${params}`)
+  if (!res.ok) throw new Error(await readApiError(res, '추천 논문을 불러오지 못했습니다.'))
+  return res.json()
+}
+
+export async function rateScholarPaper(paper, rating) {
+  const res = await fetch(`${API_BASE}/scholar/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paper_id: paper.id, rating, paper }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '관심 평가를 저장하지 못했습니다.'))
+  return res.json()
+}
+
+export async function importScholarPaper(paper, options) {
+  const res = await fetch(`${API_BASE}/scholar/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      paper_id: paper.id,
+      title: paper.title,
+      pdf_url: paper.pdf_url,
+      url: paper.url || '',
+      doi: paper.doi || '',
+      authors: paper.authors || [],
+      year: paper.year || null,
+      venue: paper.venue || '',
+      target_lang: options.targetLang,
+      style: options.style,
+      ignore_math: options.ignoreMath,
+      ignore_table: options.ignoreTable,
+      ignore_refs: options.ignoreRefs,
+      translation_mode: options.translationMode || 'auto',
+    }),
+  })
+  if (!res.ok) throw new Error(await readApiError(res, '논문을 라이브러리에 저장하지 못했습니다.'))
   return res.json()
 }
 
@@ -265,3 +335,75 @@ export async function regeneratePaperNote(docId, language = '한국어') {
   if (!res.ok) throw new Error('논문 노트 생성을 시작하지 못했습니다.')
   return res.json()
 }
+
+export async function fetchVocabularyCards() {
+  const res = await fetch(`${API_BASE}/vocabulary`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('단어장을 불러오지 못했습니다.')
+  return res.json()
+}
+
+export async function suggestVocabularyCard(payload) {
+  const res = await fetch(`${API_BASE}/vocabulary/suggest`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || '단어 뜻을 생성하지 못했습니다.')
+  }
+  return res.json()
+}
+
+export async function saveVocabularyCard(payload) {
+  const res = await fetch(`${API_BASE}/vocabulary`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || '단어 카드를 저장하지 못했습니다.')
+  }
+  return res.json()
+}
+
+export async function deleteVocabularyCard(cardId) {
+  const res = await fetch(`${API_BASE}/vocabulary/${cardId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('단어 카드를 삭제하지 못했습니다.')
+  return res.json()
+}
+
+export async function syncVocabularyCards() {
+  const res = await fetch(`${API_BASE}/vocabulary/sync`, { method: 'POST' })
+  if (!res.ok) throw new Error('Anki 동기화에 실패했습니다.')
+  return res.json()
+}
+
+export async function fetchAnkiStatus() {
+  const res = await fetch(`${API_BASE}/vocabulary/anki/status`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Anki 상태를 확인하지 못했습니다.')
+  return res.json()
+}
+
+export async function saveAnkiConfig(payload) {
+  const res = await fetch(`${API_BASE}/vocabulary/anki/config`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || 'Anki 설정을 저장하지 못했습니다.')
+  }
+  return res.json()
+}
+
+async function reviewRequest(path, body) {
+  const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+  if (body) options.body = JSON.stringify(body)
+  const res = await fetch(`${API_BASE}/vocabulary/review/${path}`, options)
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || '복습을 진행하지 못했습니다.')
+  }
+  return res.json()
+}
+
+export const startVocabularyReview = () => reviewRequest('start')
+export const revealVocabularyReview = () => reviewRequest('reveal')
+export const answerVocabularyReview = (ease) => reviewRequest('answer', { ease })

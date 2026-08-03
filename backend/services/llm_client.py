@@ -1002,6 +1002,61 @@ async def stream_page_insight(
         raise RuntimeError(f"Ollama HTTP 오류: {e.response.status_code}")
 
 
+async def stream_vocabulary_suggestion(
+    term: str,
+    context_en: str,
+    context_ko: str = "",
+    doc_title: str = "",
+    session_id: str = None,
+) -> AsyncGenerator[str, None]:
+    """선택한 논문 어휘를 문맥에 맞는 한국어 카드 데이터로 만든다."""
+    prompt = (
+        "영어 학술 논문을 읽는 한국인 연구자를 위한 단어 카드를 작성하세요. "
+        "사전의 모든 뜻을 나열하지 말고 아래 문장에서 실제로 쓰인 뜻만 간결하게 설명하세요. "
+        "context_ko는 영어 문장 전체를 자연스럽고 정확한 한국어로 번역하세요. "
+        "반드시 JSON 하나만 출력하세요: "
+        '{"meaning_ko":"문맥상 뜻","context_ko":"문장 번역"}\n\n'
+        f"논문: {doc_title}\n용어: {term}\n영문 문맥: {context_en}\n"
+        f"기존 번역(참고용, 틀리면 교정): {context_ko}"
+    )
+    provider = get_chat_provider()
+    model = get_chat_model()
+    if provider == "antigravity":
+        async for token in stream_antigravity(prompt, model=model, session_id=session_id, usage_label="vocabulary"):
+            yield token
+        return
+    if provider == "claude_code":
+        async for token in stream_claude_code(prompt, model=model, session_id=session_id, usage_label="vocabulary", effort_override="low"):
+            yield token
+        return
+    if provider == "codex":
+        async for token in stream_codex(prompt, model=model, session_id=session_id, usage_label="vocabulary", effort_override="low"):
+            yield token
+        return
+    messages = [{"role": "user", "content": prompt}]
+    if provider == "openai":
+        async for token in stream_openai(messages, model=model, temperature=0.2): yield token
+        return
+    if provider == "gemini":
+        async for token in stream_gemini(messages, model=model, temperature=0.2): yield token
+        return
+    if provider == "claude":
+        async for token in stream_claude(messages, model=model, temperature=0.2): yield token
+        return
+    payload = {"model": model, "messages": messages, "stream": True, "options": {"temperature": 0.2}}
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        async with client.stream("POST", f"{get_ollama_host()}/api/chat", json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line: continue
+                try:
+                    data = json.loads(line)
+                    token = data.get("message", {}).get("content", "")
+                    if token: yield token
+                except json.JSONDecodeError:
+                    continue
+
+
 _PRIMER_LINE_RE = re.compile(
     r'^[\s\-\*>]*\**\s*(HOOK|SUMMARY|METHOD_SUMMARY|RESULTS_SUMMARY|LIMITATIONS|'
     r'KEYWORDS|LINEAGE|FEYNMAN|Q1|Q2|Q3|CHECK1|CHECK2|CHECK3|'
